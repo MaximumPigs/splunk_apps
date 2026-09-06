@@ -17,10 +17,11 @@
 """Gap filling for time-binned Splunk results, independent of splunklib.
 
 ``timechart`` and ``makecontinuous`` both densify a sparse time series, but only
-across a single split-by field. With more than one group-by field the same
-``_time`` legitimately recurs once per field combination, and ``makecontinuous``
-rejects that input as having duplicate ``_time`` values. This module does the
-same job keyed on the whole tuple of group-by fields.
+along a single dimension. ``makecontinuous`` has no concept of group-by fields,
+so given results split across several it does not error: it inserts one row per
+missing bucket, carrying no group-by values at all, rather than one row per
+series. This module does the same job keyed on the whole tuple of group-by
+fields, so every series gets its own row in every bucket.
 
 The bucket grid is anchored on the timestamps actually present in the data:
 synthetic buckets are only inserted *between* consecutive observed times, never

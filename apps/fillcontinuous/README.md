@@ -22,9 +22,24 @@ index=web
 ```
 
 `makecontinuous` is the built-in for densifying a series, but it cannot help
-here either: with more than one group-by field the same `_time` legitimately
-recurs once per field combination, and `makecontinuous` rejects the input as
-having duplicate `_time` values.
+here either. It fills along a **single dimension** and has no concept of
+group-by fields, so it does not know that one timestamp should now yield one row
+*per group*.
+
+The dangerous part is that it does not complain. Given the three sparse rows
+above, `| makecontinuous _time span=1h` returns:
+
+| `_time` | host | count |
+| --- | --- | --- |
+| 1767225600 | web01 | 5 |
+| 1767225600 | web02 | 3 |
+| 1767229200 | *(none)* | *(none)* |
+| 1767232800 | web01 | 7 |
+
+It inserted **one** row for the missing hour, belonging to no host, rather than
+one row for each of the two hosts — and `web02` is still missing its
+1767232800 bucket entirely. Four rows where the answer is six. Chart that and
+you get a phantom hostless series plus a gap that only half closed.
 
 The other common workaround — concatenating the fields into one synthetic
 series with `eval series=host.":".sourcetype` and feeding that to `timechart` —
