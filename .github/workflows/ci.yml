@@ -1,0 +1,188 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  discover:
+    name: Discover apps
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.find.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Find every app under apps/
+        id: find
+        shell: bash
+        run: |
+          set -euo pipefail
+          names=()
+          for dir in apps/*/; do
+            [ -f "${dir}default/app.conf" ] || continue
+            names+=("$(basename "$dir")")
+          done
+          if [ ${#names[@]} -eq 0 ]; then
+            echo "::error::No apps found under apps/ (expected apps/<name>/default/app.conf)"
+            exit 1
+          fi
+          printf '%s\n' "${names[@]}" | jq -R . | jq -s -c . > apps.json
+          echo "apps=$(cat apps.json)" >> "$GITHUB_OUTPUT"
+          echo "Discovered: $(cat apps.json)"
+
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is Splunk's LTS runtime and the fallback on 10.2+; 3.13 is the
+        # opt-in runtime. commands.conf declares both, so both must pass.
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Byte-compile every app script
+        # Catches syntax that only parses on a newer interpreter. Without this,
+        # a stray match statement or int | None annotation would sail through
+        # review and fail at search time on the 3.9 runtime.
+        run: python -m compileall -q apps/*/bin
+
+      - name: Run unit tests
+        run: pytest -q
+
+  package:
+    name: Package ${{ matrix.app }}
+    needs: [discover, test]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Build ${{ matrix.app }}.spl
+        run: python scripts/package_app.py "${{ matrix.app }}" --outdir dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.app }}-package
+          path: dist/*.spl
+          if-no-files-found: error
+
+  appinspect:
+    name: AppInspect ${{ matrix.app }}
+    needs: [discover, package]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.app }}-package
+          path: dist
+
+      - name: Resolve package path
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(ls dist/*.spl | head -n 1)"
+          echo "path=${package}" >> "$GITHUB_OUTPUT"
+          echo "Scanning ${package}"
+
+      - name: AppInspect (cloud checks)
+        # app_path must be the package FILE. Given a directory, the action's
+        # entrypoint globs it and scans only the first entry.
+        uses: splunk/appinspect-cli-action@v2.15.0
+        with:
+          app_path: ${{ steps.pkg.outputs.path }}
+          included_tags: cloud
+          result_file: appinspect_${{ matrix.app }}.json
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ${{ matrix.app }}-appinspect-report
+          path: appinspect_${{ matrix.app }}.json
+          if-no-files-found: warn
+
+  appinspect-api:
+    name: AppInspect API ${{ matrix.app }}
+    needs: [discover, package]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check for Splunk.com credentials
+        id: creds
+        shell: bash
+        env:
+          # The secrets context is unavailable in an `if:` expression, so it is
+          # surfaced through env and tested here. Forks have no secrets, so the
+          # job skips rather than failing for outside contributors.
+          APPINSPECT_USER: ${{ secrets.SPLUNK_COM_USERNAME }}
+        run: |
+          if [ -n "${APPINSPECT_USER:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SPLUNK_COM_USERNAME is not set, so the AppInspect API vetting was skipped."
+          fi
+
+      - uses: actions/download-artifact@v8
+        if: steps.creds.outputs.available == 'true'
+        with:
+          name: ${{ matrix.app }}-package
+          path: api-package
+
+      - name: AppInspect API (authoritative Cloud vetting)
+        if: steps.creds.outputs.available == 'true'
+        uses: splunk/appinspect-api-action@v3.0.5
+        with:
+          username: ${{ secrets.SPLUNK_COM_USERNAME }}
+          password: ${{ secrets.SPLUNK_COM_PASSWORD }}
+          # A DIRECTORY holding exactly one package, unlike the CLI action above
+          # which needs the file itself. This entrypoint runs `ls $app_path` and
+          # appends the result, so a file path resolves to <file>/<file>.
+          app_path: api-package
+          included_tags: "cloud"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.creds.outputs.available == 'true'
+        with:
+          name: ${{ matrix.app }}-appinspect-api-report
+          path: AppInspect_response.html
+          if-no-files-found: warn

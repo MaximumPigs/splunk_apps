@@ -1,0 +1,18 @@
+#
+# fillcontinuous - default object permissions
+#
+# The command is exported system-wide so it can be used from any app, and is
+# readable by everyone but writable only by admins.
+#
+# sc_admin is listed alongside admin because the admin role does not exist for
+# Splunk Cloud customers; without it, Cloud administrators cannot manage these
+# objects. AppInspect's check_kos_are_accessible flags its absence.
+#
+
+[]
+access = read : [ * ], write : [ admin, sc_admin, power ]
+export = system
+
+[commands]
+access = read : [ * ], write : [ admin, sc_admin, power ]
+export = system

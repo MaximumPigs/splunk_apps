@@ -1,0 +1,18 @@
+# AppInspect manual checks that have been reviewed by a human.
+#
+# AppInspect returns some checks it cannot decide automatically. The CI action
+# fails if any of them is missing from this file, or is listed without a
+# comment, so that no manual check is ever quietly ignored.
+#
+# Bootstrapping: the first CI run prints the exact YAML to paste here, under
+# "<file> is empty. You can initialize it with below yaml content". Copy that
+# list in, replace each empty comment with what you actually verified, and the
+# job goes green.
+#
+# Format:
+#
+#   check_for_example_manual_check:
+#     comment: "Reviewed 2026-09-06: the app ships no binaries, so this is n/a."
+#
+# A comment is mandatory. Ticket ids are not required here (only expected
+# failures in .appinspect.expect.yaml need those).

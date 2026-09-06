@@ -1,0 +1,13 @@
+# AppInspect failures that are known, accepted, and waived.
+#
+# This file should normally stay empty: a Splunk Cloud submission must have no
+# failures. Add an entry only when Splunk has agreed a check does not apply.
+#
+# Every comment here must carry a ticket id matching ADDON-<n> or APPCERT-<n>;
+# the CI action rejects a waiver without one, so a waiver is always traceable
+# back to the conversation that granted it.
+#
+# Format:
+#
+#   check_for_example_failure:
+#     comment: "APPCERT-1234: Splunk confirmed this does not apply to this app."

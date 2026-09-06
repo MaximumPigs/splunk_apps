@@ -1,0 +1,6 @@
+# Development and CI dependencies only. Nothing here ships inside an app:
+# runtime dependencies are vendored into <app>/lib/ instead.
+#
+# Must stay installable on Python 3.9, which is the oldest interpreter the
+# apps target and part of the CI matrix.
+pytest>=7.4,<9
