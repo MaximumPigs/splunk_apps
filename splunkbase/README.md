@@ -23,6 +23,27 @@ Splunkbase upload form, so each section copies straight across:
 Plain text rather than Markdown: Splunkbase renders these fields
 inconsistently, and text with spaced headings survives either way.
 
+## ASCII only
+
+Listing files must contain no characters above U+007F. Use `-` rather than an
+em dash, and straight quotes.
+
+This is not fussiness. The text is pasted into a third-party web form, so it
+survives at least one encoding round-trip outside our control. The first
+version of the `fillcontinuous` listing was written through a PowerShell
+pipeline that read UTF-8 as CP1252, and every em dash arrived as `a-hat, euro,
+right-quote` - eight of them - plus a byte-order mark at the start of the file.
+
+To check a file before committing it:
+
+```bash
+python -c "import sys;d=open(sys.argv[1],'rb').read();bad=[(i,b) for i,b in enumerate(d) if b>127];print('non-ASCII bytes:',bad[:10] or 'none');print('BOM:',d[:3]==b'\xef\xbb\xbf')" splunkbase/<app>/listing.md
+```
+
+Write these files with an editor or a tool that does UTF-8 properly. Windows
+PowerShell 5.1 is a poor choice for both halves of the job: `-Encoding utf8`
+always emits a BOM, and `Get-Content` defaults to the system ANSI codepage.
+
 ## This never ships inside an app
 
 The directory sits at the repository root, outside `apps/`, on purpose.

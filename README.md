@@ -7,9 +7,16 @@ Cloud vetting.
 
 ## Apps
 
-| App | What it does |
-| --- | --- |
-| [`fillcontinuous`](apps/fillcontinuous/) | Fills the missing time buckets that `timechart` and `makecontinuous` cannot, across any number of group-by fields. Registers `fillcontinuous` and the alias `fillgaps`. |
+| App ID | Splunkbase name | What it does |
+| --- | --- | --- |
+| [`fillcontinuous`](apps/fillcontinuous/) | MaximumPigs fillcontinuous Add-on | Fills the missing time buckets that `timechart` and `makecontinuous` cannot, across any number of group-by fields. Registers `fillcontinuous` and the alias `fillgaps`. |
+
+Splunkbase requires the display name to follow
+`(Company | Brand | Author) [solution] (App | Add-on | Connector)`, and to match
+`[ui] label` in `app.conf` exactly — so the two columns above differ on purpose.
+The app **ID** is unconstrained by that and stays short and lowercase. Change
+one of `app.conf` label, `app.manifest` title, or the listing, and change all
+three.
 
 ## Layout
 

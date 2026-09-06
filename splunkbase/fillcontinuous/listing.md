@@ -1,15 +1,42 @@
-﻿# fillcontinuous - Splunkbase listing
+# fillcontinuous - Splunkbase listing
 
 Copy each section below into the matching field on the Splunkbase upload form.
 See ../README.md for the field mapping and why this lives outside apps/.
 
+Deliberately ASCII only. This text gets pasted into a third-party web form, and
+non-ASCII punctuation is one encoding round-trip away from turning into
+mojibake. Keep it that way: use "-" rather than an em dash, and straight quotes.
+
 Last reviewed against app version 1.1.1.
+
+===============================================================================
+APP NAME
+===============================================================================
+
+MaximumPigs fillcontinuous Add-on
+
+This exact string must also appear as [ui] label in default/app.conf and as
+info.title in app.manifest. Splunkbase requires the listing name to correspond
+to the label shown in the Splunk user interface.
+
+It follows the required Splunkbase pattern:
+
+    (Company | Brand | Author) [solution name] (App | Add-on | Connector)
+
+so the author comes first, not the solution, and the Add-on suffix is
+mandatory. "Add-on" rather than "App" because this ships no views. There is no
+"for <technology>" suffix, since that form is only for interoperating with a
+third-party product.
+
+Note this is the display name, not the app ID. The ID and directory name stay
+"fillcontinuous".
+
 
 ===============================================================================
 SUMMARY
 ===============================================================================
 
-Fills missing time buckets across any number of group-by fields â€” the gap
+Fills missing time buckets across any number of group-by fields - the gap
 filling that timechart and makecontinuous cannot do.
 
 
@@ -19,9 +46,9 @@ SHORT DESCRIPTION
 
 Adds a row for every missing combination of time bucket and group-by values,
 turning a sparse "stats count by _time, host, sourcetype" into a complete grid
-with 0 â€” or a value you choose â€” in the gaps. Every series stays continuous, so
+with 0, or a value you choose, in the gaps. Every series stays continuous, so
 charts stop showing false drops to zero and averages stop being computed over
-the buckets that happen to exist.
+only the buckets that happen to exist.
 
 It does this across any number of group-by fields at once: timechart zero-fills
 only a single split-by field, and makecontinuous fills one dimension while
@@ -40,7 +67,8 @@ because it pivots that field into one column per value:
     index=web | timechart span=1h count by host
 
 Add a second dimension and that stops working. The usual fallback produces a
-sparse table â€” rows simply do not exist for buckets where nothing happened:
+sparse table, where rows simply do not exist for buckets in which nothing
+happened:
 
     index=web
     | bin _time span=1h
@@ -61,12 +89,12 @@ The dangerous part is that it does not complain. Given those three sparse rows,
     1767232800    web01    7
 
 It inserted one row for the missing hour, belonging to no host, rather than one
-row for each of the two hosts â€” and web02 is still missing its 1767232800
-bucket entirely. Four rows where the answer is six. Chart that and you get a
-phantom hostless series alongside a gap that only half closed.
+row for each of the two hosts, and web02 is still missing its 1767232800 bucket
+entirely. Four rows where the answer is six. Chart that and you get a phantom
+hostless series alongside a gap that only half closed.
 
-The other common workaround â€” concatenating fields into one synthetic series
-with eval and feeding that to timechart â€” works, but it collapses the fields
+The other common workaround, concatenating fields into one synthetic series
+with eval and feeding that to timechart, does work, but it collapses the fields
 into a string you then have to pull apart again, and it runs into timechart's
 series limits.
 
@@ -215,8 +243,8 @@ SPLUNK ENTERPRISE, SINGLE SEARCH HEAD
 
 1. In Splunk Web, go to Apps > Manage Apps > Install app from file.
 2. Upload the .spl file and click Upload.
-3. Restart Splunk when prompted. The restart is required for a new custom
-   search command to be registered.
+3. Restart Splunk when prompted. The restart is required before a new custom
+   search command is registered.
 
 Alternatively, unpack the archive into $SPLUNK_HOME/etc/apps/ and restart:
 
@@ -258,10 +286,10 @@ TROUBLESHOOTING
 
 "Unknown search command 'fillcontinuous'"
 
-  The command has not been registered. Restart Splunk â€” installing an app with
-  a new custom search command requires it. On a search head cluster, confirm
-  the bundle was applied to every member. Also check the app is enabled under
-  Apps > Manage Apps.
+  The command has not been registered. Restart Splunk, which is required after
+  installing an app that adds a custom search command. On a search head
+  cluster, confirm the bundle was applied to every member. Also check the app
+  is enabled under Apps > Manage Apps.
 
 Nothing is filled, and the result looks identical to the input
 
