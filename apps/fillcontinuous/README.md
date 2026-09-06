@@ -168,3 +168,9 @@ those.
 Install the `.spl` through **Apps → Manage Apps → Install app from file**, or
 unpack it into `$SPLUNK_HOME/etc/apps/` and restart. The command is exported
 system-wide, so it is usable from any app.
+
+## Author
+
+[MaximumPigs](https://github.com/maximumpigs)
+
+Licensed under Apache 2.0. See [LICENSE](LICENSE).

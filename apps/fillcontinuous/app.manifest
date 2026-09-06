@@ -9,7 +9,7 @@
         },
         "author": [
             {
-                "name": "Max",
+                "name": "MaximumPigs",
                 "email": null,
                 "company": null
             }
@@ -27,7 +27,7 @@
         "license": {
             "name": "Apache-2.0",
             "text": "LICENSE",
-            "uri": null
+            "uri": "https://github.com/maximumpigs"
         },
         "privacyPolicy": {
             "name": null,
@@ -37,7 +37,7 @@
         "releaseNotes": {
             "name": null,
             "text": "README.md",
-            "uri": null
+            "uri": "https://github.com/maximumpigs"
         }
     },
     "dependencies": null,

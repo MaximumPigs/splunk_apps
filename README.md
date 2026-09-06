@@ -193,6 +193,22 @@ workflow alone.
 
 CI picks it up automatically.
 
+## AI assistance
+
+Content in this repository — app code, tests, packaging scripts, CI workflows
+and documentation — was produced with the help of an AI coding assistant, then
+reviewed, tested and published by the author.
+
+Everything here has been exercised rather than taken on trust: the test suite
+runs on both supported Python versions, packages are validated against Splunk's
+AppInspect API, and the search commands have been run against a live Splunk
+instance. Treat it as you would any third-party code — read it before you run it
+on anything that matters.
+
+## Author
+
+[MaximumPigs](https://github.com/maximumpigs)
+
 ## Licence
 
 Apache 2.0. See [LICENSE](LICENSE).
