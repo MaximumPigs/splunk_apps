@@ -9,10 +9,25 @@ See ../README.md for the field mapping and why this lives outside apps/.
 straight quotes. This text is pasted into a third-party web form, so it
 survives at least one encoding round-trip outside our control.
 
-**Markdown in the long fields only.** APP NAME, SUMMARY and SHORT DESCRIPTION
-are short single-line fields pasted as plain text; markup there would appear
-literally. DETAILS, INSTALLATION and TROUBLESHOOTING are long-form fields and
-take Markdown.
+**Mind the character limits.** The submission form caps SUMMARY at 3000
+characters and SHORT DESCRIPTION at 380 - the summary is the longer of the two,
+which is the opposite of what the names suggest. Each section below states its
+limit and the current length.
+
+**Markdown in the long fields only.** APP NAME is a short plain-text field;
+markup there would appear literally. DETAILS, INSTALLATION and TROUBLESHOOTING
+take Markdown. SUMMARY and SHORT DESCRIPTION are kept to plain prose, since it
+is not confirmed whether those two render Markdown.
+
+**Each field has a job.** Summary explains the purpose and the problem, and
+becomes its own tab. Short description sits beside the title and on the app
+card, so it has to stand alone. Details carries the syntax, options and
+examples. Some overlap between summary and details is expected, since a reader
+may land on either tab first.
+
+The "Form guidance" line under each heading is Splunkbase's own description of
+that field, kept so the next person editing does not have to go and find it.
+Everything below the dashed rule is the content to paste.
 
 Keep angle brackets inside fenced code blocks, where they are literal. In
 prose, wrap them in backticks so no renderer mistakes them for a tag.
@@ -47,26 +62,64 @@ This is the display name, not the app ID. The ID and directory stay
 
 
 ===============================================================================
-SUMMARY  (plain text)
+SUMMARY  (plain text, max 3000 characters)
 ===============================================================================
 
-Fills missing time buckets across any number of group-by fields - the gap
-filling that timechart and makecontinuous cannot do.
+Form guidance: "Explain the purpose of the app and clearly indicate the problem
+or situation the app addresses. Splunkbase displays this content as the Summary
+tab in your app listing."
+
+-------------------------------------------------------------------------------
+
+fillcontinuous is a custom search command that makes sparse time-series results
+complete. It adds a row for every combination of time bucket and group-by
+values that is missing from your results, so every series has a value in every
+bucket.
+
+The situation it addresses is a familiar one. Splunk fills time gaps for you
+only when you group by a single field: "timechart span=1h count by host" works
+because timechart pivots that one field into a column per value. The moment you
+need a second dimension - host and sourcetype, service and status, index and
+source - you fall back to bin plus stats, and stats simply returns nothing for a
+bucket in which nothing happened.
+
+Those absent rows are not harmless. On a chart, a series that stopped reporting
+looks identical to a series reporting zero. An average taken across the result
+is an average over only the buckets that happened to contain data, which is not
+the average you asked for. A threshold alert quietly skips the intervals with no
+events, which are frequently the intervals worth knowing about.
+
+makecontinuous, the built-in command for densifying a series, does not solve
+this. It fills along a single dimension and has no concept of group-by fields,
+so given multi-dimensional results it inserts one valueless row per missing
+bucket rather than one row per series - and it reports no error while doing so,
+leaving you with a result that looks plausible and is wrong.
+
+fillcontinuous keys on the whole set of group-by fields at once. Add it after
+bin and stats, and every combination that appears in your data gets a row in
+every bucket, with 0 - or a value you choose - where there was nothing. It can
+also mark which rows it added, extend the grid to cover an entire search window
+rather than just the range that contained events, and infer the span from the
+data if you would rather not state it.
+
+The command is registered as fillcontinuous, with fillgaps as a shorter alias.
+It runs on the search head only, collects no data, and needs no configuration.
 
 
 ===============================================================================
-SHORT DESCRIPTION  (plain text)
+SHORT DESCRIPTION  (plain text, max 380 characters)
 ===============================================================================
 
-Adds a row for every missing combination of time bucket and group-by values,
-turning a sparse "stats count by _time, host, sourcetype" into a complete grid
-with 0, or a value you choose, in the gaps. Every series stays continuous, so
-charts stop showing false drops to zero and averages stop being computed over
-only the buckets that happen to exist.
+Form guidance: "Provide a short overview of your app to display near the title
+of the app listing and on the app card. If left empty, Splunkbase displays your
+Summary instead." Must stand alone beside the title.
 
-It does this across any number of group-by fields at once: timechart zero-fills
-only a single split-by field, and makecontinuous fills one dimension while
-ignoring group-by fields entirely.
+-------------------------------------------------------------------------------
+
+A custom search command that fills missing time buckets across any number of
+group-by fields. Where stats returns nothing for a quiet bucket, fillcontinuous
+adds a row with 0, so every series stays continuous and charts stop showing
+false drops to zero.
 
 
 ===============================================================================
