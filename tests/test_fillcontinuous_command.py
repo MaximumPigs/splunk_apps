@@ -28,9 +28,19 @@ def command():
     # write_* go through the record writer, which only exists once process()
     # has run, so collect the messages instead.
     instance.messages = []
-    instance.write_info = lambda m, *a: instance.messages.append(("INFO", m % a if a else m))
-    instance.write_warning = lambda m, *a: instance.messages.append(("WARN", m % a if a else m))
-    instance.write_error = lambda m, *a: instance.messages.append(("ERROR", m % a if a else m))
+
+    def _recorder(level):
+        def writer(message, *args, **kwargs):
+            # Must mirror splunklib's RecordWriter.write_message exactly, which
+            # renders with str.format. An earlier version of this double used
+            # %-formatting and happily "passed" a command whose real messages
+            # came out as a literal "%d" in Splunk.
+            instance.messages.append((level, message.format(*args, **kwargs)))
+        return writer
+
+    instance.write_info = _recorder("INFO")
+    instance.write_warning = _recorder("WARN")
+    instance.write_error = _recorder("ERROR")
 
     return instance
 
@@ -140,6 +150,55 @@ def test_transform_reports_a_bad_span_as_an_error_not_a_crash(command):
     command._finished = True
     assert list(command.transform(iter([{"_time": "0", "host": "A"}]))) == []
     assert any(level == "ERROR" for level, _ in command.messages)
+
+
+def test_summary_message_interpolates_its_counts(command):
+    command.fieldnames = ["host"]
+    command.span = "1h"
+    command.prepare()
+
+    command._finished = True
+    list(command.transform(iter([
+        {"_time": "0", "host": "A", "count": "1"},
+        {"_time": "7200", "host": "A", "count": "3"},
+    ])))
+
+    info = [text for level, text in command.messages if level == "INFO"]
+    assert info, "expected a summary message"
+    # Splunk renders these with str.format, so a %-style template would reach
+    # the user with its placeholders intact and the numbers thrown away.
+    assert "{}" not in info[0]
+    assert "%d" not in info[0]
+    assert "added 1 row(s) across 3 bucket(s) and 1 series." in info[0]
+
+
+def test_skipped_row_warning_interpolates_its_count(command):
+    command.fieldnames = ["host"]
+    command.span = "1h"
+    command.prepare()
+
+    command._finished = True
+    list(command.transform(iter([
+        {"_time": "0", "host": "A", "count": "1"},
+        {"_time": "7200", "host": "A", "count": "3"},
+        {"host": "A", "note": "no timestamp"},
+    ])))
+
+    warnings = [text for level, text in command.messages if level == "WARN"]
+    assert any("passed through 1 row(s)" in text for text in warnings)
+
+
+def test_a_brace_in_the_span_does_not_crash_the_message(command):
+    # Error text is rendered through str.format too, so a brace in whatever the
+    # user typed would raise instead of reporting the actual problem.
+    command.fieldnames = ["host"]
+    command.span = "1{h"
+
+    with pytest.raises(SystemExit):
+        command.prepare()
+
+    errors = [text for level, text in command.messages if level == "ERROR"]
+    assert any("1{h" in text for text in errors)
 
 
 def test_transform_clears_its_buffer_between_runs(command):

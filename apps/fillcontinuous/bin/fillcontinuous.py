@@ -139,22 +139,33 @@ class FillContinuousCommand(EventingCommand):
         self._span_seconds = None
         self._group_fields = []
 
+    def _fail(self, message):
+        """Report a fatal, user-facing error and stop.
+
+        Goes through write_error rather than error_exit so the text can be
+        passed as a format argument. splunklib renders messages with
+        str.format, so text interpolated into the template - a span the user
+        typed, say - would raise on any brace it contained.
+        """
+        self.write_error("{}", message)
+        self.logger.error("fillcontinuous aborted: %s", message)
+        sys.exit(1)
+
     def prepare(self):
         """Validate options during getinfo, before any data flows."""
         self._group_fields = self._resolve_group_fields()
 
         if not self._group_fields:
-            self.error_exit(
-                ValueError("no group-by fields"),
+            self._fail(
                 "fillcontinuous needs at least one group-by field, for example: "
-                "fillcontinuous span=1h by host, sourcetype",
+                "fillcontinuous span=1h by host, sourcetype"
             )
 
         if self.span is not None:
             try:
                 self._span_seconds = parse_span(self.span)
             except FillContinuousError as error:
-                self.error_exit(error, str(error))
+                self._fail(str(error))
 
     def transform(self, records):
         self._buffered.extend(records)
@@ -178,21 +189,22 @@ class FillContinuousCommand(EventingCommand):
                 max_buckets=self.maxbuckets,
             )
         except FillContinuousError as error:
-            self.write_error(str(error))
+            self.write_error("{}", str(error))
             return
         finally:
             self._buffered = []
 
+        # Placeholders are {}, not %s: splunklib renders these with str.format.
         if result.skipped_count:
             self.write_warning(
-                "fillcontinuous passed through %d row(s) with no numeric _time; "
+                "fillcontinuous passed through {} row(s) with no numeric _time; "
                 "run bin or stats before this command so results are bucketed.",
                 result.skipped_count,
             )
 
         if result.bucket_count:
             self.write_info(
-                "fillcontinuous added %d row(s) across %d bucket(s) and %d series.",
+                "fillcontinuous added {} row(s) across {} bucket(s) and {} series.",
                 result.filled_count,
                 result.bucket_count,
                 result.series_count,
