@@ -63,10 +63,11 @@ class FillContinuousCommand(EventingCommand):
 
     ##Description
 
-    `timechart` zero-fills gaps only for a single split-by field, and
-    `makecontinuous` rejects input in which `_time` repeats, which is exactly
-    what `stats by _time, a, b` produces. This command fills those gaps keyed on
-    the whole tuple of group-by fields.
+    `timechart` zero-fills gaps only for a single split-by field.
+    `makecontinuous` fills along one dimension and knows nothing of group-by
+    fields, so on the output of `stats by _time, a, b` it silently inserts a
+    single valueless row per missing bucket instead of one row per series. This
+    command fills those gaps keyed on the whole tuple of group-by fields.
 
     ##Example
 

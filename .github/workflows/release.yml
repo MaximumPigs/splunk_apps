@@ -81,11 +81,13 @@ jobs:
           package="$(ls dist/*.spl | head -n 1)"
           echo "path=${package}" >> "$GITHUB_OUTPUT"
 
-      - name: AppInspect (cloud checks, local CLI)
+      - name: AppInspect (complete check set, local CLI)
+        # Unfiltered on purpose - see the note in ci.yml. The release is the
+        # last gate before a Splunkbase upload, so it must not run a narrower
+        # set of checks than Splunkbase itself applies.
         uses: splunk/appinspect-cli-action@799522990c6de011b56e4f58b20bdd293497aac2 # v2.15.0
         with:
           app_path: ${{ steps.build.outputs.path }}
-          included_tags: cloud
           result_file: appinspect_cli.json
 
       - name: Check for Splunk.com credentials
@@ -119,7 +121,7 @@ jobs:
           # needs the file. This one's entrypoint runs `ls $app_path` and appends
           # the result, so a file path would resolve to <file>/<file>.
           app_path: api-package
-          included_tags: "cloud"
+          # Unfiltered, matching the CLI step above.
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()

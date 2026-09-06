@@ -23,9 +23,13 @@ apps/<app>/            one directory per app, named for its app id
   README.md
   LICENSE
 scripts/               packaging and dependency vendoring
+splunkbase/<app>/      listing copy for the app's Splunkbase page
 tests/                 pytest suite covering every app's core logic
 .github/workflows/     CI and release automation
 ```
+
+[`splunkbase/`](splunkbase/) sits outside `apps/` on purpose: the packager walks
+`apps/<app>/` and nothing else, so listing copy cannot end up inside a `.spl`.
 
 `apps/<app>/default/app.conf` is what marks a directory as an app: CI discovers
 apps by looking for it, so a new app is picked up with no workflow changes.
@@ -111,8 +115,8 @@ It also refuses to build when `[launcher] version` and `[id] version` in
 1. **discover** — finds each app under `apps/`
 2. **test** — pytest on Python 3.9 and 3.13, plus a 3.9 byte-compile of all scripts
 3. **package** — builds each `.spl`
-4. **appinspect** — runs the AppInspect CLI with `--included-tags cloud` against
-   the built package
+4. **appinspect** — runs the AppInspect CLI against the built package, with **no
+   tag filter**, so all 252 checks run
 5. **appinspect-api** — submits the package to Splunk's hosted AppInspect API,
    the authoritative service behind Cloud vetting. Skips with a notice when the
    credentials are absent, so forks and outside contributors are unaffected.
@@ -152,13 +156,36 @@ job goes green — nothing gets waived by accident.
 failures, and should stay empty — a Cloud submission must have none. Waivers
 there require a comment carrying an `ADDON-<n>` or `APPCERT-<n>` ticket id.
 
+### `check_for_updates` depends on how the app is distributed
+
+The two destinations want opposite settings, and only one of them is checked by
+the `cloud` tag:
+
+| Destination | `[package] check_for_updates` |
+| --- | --- |
+| **Splunkbase** | must **not** be `false`. Leave it absent, which defaults to enabled — Splunkbase serves the update notifications itself, and its uploader rejects the package outright with *"must not be disabled"*. |
+| Private app, not on Splunkbase | should be `false`. AppInspect's `check_for_updates_disabled` warns when it is missing. |
+
+Apps here target Splunkbase, so the setting is deliberately absent and the
+resulting warning is expected. Do not "fix" that warning by setting it to
+`false`; that trades a warning for a rejected upload.
+
+`check_for_updates_disabled` is tagged `private_app`, not `cloud`, so CI never
+sees it either way.
+
 ### Running AppInspect locally
 
 ```bash
 pip install splunk-appinspect
 python scripts/package_app.py fillcontinuous --outdir dist
-splunk-appinspect inspect dist/fillcontinuous-1.0.0.spl --mode test --included-tags cloud
+splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test --included-tags cloud
 ```
+
+Note the absence of `--included-tags`. CI runs the complete set for the same
+reason: filtering to `cloud` covers 246 of 252 checks, and one of the six it
+skips is what let a Splunkbase-rejecting package through. Splunkbase's own
+uploader is stricter still in places, so even a clean full run is necessary
+rather than sufficient.
 
 ## Releasing
 
