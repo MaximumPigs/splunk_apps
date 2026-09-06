@@ -113,10 +113,25 @@ It also refuses to build when `[launcher] version` and `[id] version` in
 3. **package** — builds each `.spl`
 4. **appinspect** — runs the AppInspect CLI with `--included-tags cloud` against
    the built package
+5. **appinspect-api** — submits the package to Splunk's hosted AppInspect API,
+   the authoritative service behind Cloud vetting. Skips with a notice when the
+   credentials are absent, so forks and outside contributors are unaffected.
 
-The AppInspect step is handed the packaged `.spl` **file**, not a source
-directory. Given a directory, the action's entrypoint globs it and scans only
-the first entry, which would quietly inspect the wrong thing.
+### The two AppInspect actions take `app_path` differently
+
+This is worth knowing before you touch either workflow, because both fail
+quietly rather than loudly:
+
+| Action | `app_path` must be | Why |
+| --- | --- | --- |
+| `appinspect-cli-action` | the package **file** | Given a directory it globs and scans only the first entry — pointed at an app source folder it would inspect `README.md` and report a clean pass. |
+| `appinspect-api-action` | a **directory** holding exactly one package | Its entrypoint runs `ls $app_path` and appends the result, so a file path resolves to `<file>/<file>` and the upload fails. |
+
+The API action also reads its own expect file,
+[`.appinspect_api.expect.yaml`](.appinspect_api.expect.yaml) — a *different*
+filename from the CLI action's `.appinspect.expect.yaml`. It is consulted only
+when the API reports failures, and at that point the file must exist or the job
+fails on the missing file rather than on the actual problem.
 
 ### Current status
 
@@ -158,10 +173,14 @@ git push origin fillcontinuous-v1.0.0
 package, runs the AppInspect CLI, and publishes a GitHub release with the
 `.spl` attached. `workflow_dispatch` does the same for a dry run without tagging.
 
-If the repository secrets `SPLUNK_COM_USERNAME` and `SPLUNK_COM_PASSWORD` are
-set, it additionally runs the **AppInspect API** — the authoritative Cloud
-vetting service that Splunk itself uses. Without them that step is skipped with
-a warning rather than failing the release.
+It also runs the **AppInspect API** vetting, using the repository secrets
+`SPLUNK_COM_USERNAME` and `SPLUNK_COM_PASSWORD`. Without them the step is
+skipped with a warning rather than failing the release.
+
+Since the API vetting also runs on every pull request, a release should hold no
+surprises. If the API's rate limits or runtime become a nuisance as the repo
+grows, drop the `appinspect-api` job from `ci.yml` and rely on the release
+workflow alone.
 
 ## Adding an app
 

@@ -86,13 +86,22 @@ jobs:
             echo "::warning::SPLUNK_COM_USERNAME is not set, so the authoritative AppInspect API vetting was skipped. Add SPLUNK_COM_USERNAME and SPLUNK_COM_PASSWORD as repository secrets to enable it."
           fi
 
+      - name: Stage the package for the API action
+        if: steps.creds.outputs.available == 'true'
+        run: |
+          mkdir -p api-package
+          cp "${{ steps.build.outputs.path }}" api-package/
+
       - name: AppInspect API (authoritative Cloud vetting)
         if: steps.creds.outputs.available == 'true'
         uses: splunk/appinspect-api-action@v3.0.5
         with:
           username: ${{ secrets.SPLUNK_COM_USERNAME }}
           password: ${{ secrets.SPLUNK_COM_PASSWORD }}
-          app_path: ${{ steps.build.outputs.path }}
+          # A DIRECTORY holding exactly one package, unlike the CLI action which
+          # needs the file. This one's entrypoint runs `ls $app_path` and appends
+          # the result, so a file path would resolve to <file>/<file>.
+          app_path: api-package
           included_tags: "cloud"
 
       - uses: actions/upload-artifact@v7

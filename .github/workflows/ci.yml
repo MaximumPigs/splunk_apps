@@ -134,3 +134,55 @@ jobs:
           name: ${{ matrix.app }}-appinspect-report
           path: appinspect_${{ matrix.app }}.json
           if-no-files-found: warn
+
+  appinspect-api:
+    name: AppInspect API ${{ matrix.app }}
+    needs: [discover, package]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check for Splunk.com credentials
+        id: creds
+        shell: bash
+        env:
+          # The secrets context is unavailable in an `if:` expression, so it is
+          # surfaced through env and tested here. Forks have no secrets, so the
+          # job skips rather than failing for outside contributors.
+          APPINSPECT_USER: ${{ secrets.SPLUNK_COM_USERNAME }}
+        run: |
+          if [ -n "${APPINSPECT_USER:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SPLUNK_COM_USERNAME is not set, so the AppInspect API vetting was skipped."
+          fi
+
+      - uses: actions/download-artifact@v8
+        if: steps.creds.outputs.available == 'true'
+        with:
+          name: ${{ matrix.app }}-package
+          path: api-package
+
+      - name: AppInspect API (authoritative Cloud vetting)
+        if: steps.creds.outputs.available == 'true'
+        uses: splunk/appinspect-api-action@v3.0.5
+        with:
+          username: ${{ secrets.SPLUNK_COM_USERNAME }}
+          password: ${{ secrets.SPLUNK_COM_PASSWORD }}
+          # A DIRECTORY holding exactly one package, unlike the CLI action above
+          # which needs the file itself. This entrypoint runs `ls $app_path` and
+          # appends the result, so a file path resolves to <file>/<file>.
+          app_path: api-package
+          included_tags: "cloud"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.creds.outputs.available == 'true'
+        with:
+          name: ${{ matrix.app }}-appinspect-api-report
+          path: AppInspect_response.html
+          if-no-files-found: warn

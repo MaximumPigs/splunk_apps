@@ -1,0 +1,14 @@
+# Expected failures for the AppInspect *API* vetting.
+#
+# Deliberately a separate file from .appinspect.expect.yaml: the CLI action and
+# the API action read different filenames, and the API action hardcodes this one.
+#
+# It is only consulted when the API reports failures or errors. At that point the
+# action requires this file to exist and the failure list to match its keys
+# exactly, otherwise it fails the build. Keep it empty: a Splunk Cloud submission
+# must have no failures.
+#
+# Format:
+#
+#   check_for_example_failure:
+#     comment: "APPCERT-1234: Splunk confirmed this does not apply to this app."
