@@ -117,9 +117,9 @@ Summary instead." Must stand alone beside the title.
 -------------------------------------------------------------------------------
 
 A custom search command that fills missing time buckets across any number of
-group-by fields. Where stats returns nothing for a quiet bucket, fillcontinuous
-adds a row with 0, so every series stays continuous and charts stop showing
-false drops to zero.
+group-by fields. Where stats alone returns nothing for a quiet bucket,
+fillcontinuous adds a row with 0, so every series stays continuous and charts
+stop showing false drops to zero.
 
 
 ===============================================================================
