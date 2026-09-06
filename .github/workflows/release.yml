@@ -21,13 +21,13 @@ jobs:
     name: Package and vet
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Full history and tags: needed to find the previous release of this
           # app and to scope the changelog to its directory.
           fetch-depth: 0
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
 
@@ -82,7 +82,7 @@ jobs:
           echo "path=${package}" >> "$GITHUB_OUTPUT"
 
       - name: AppInspect (cloud checks, local CLI)
-        uses: splunk/appinspect-cli-action@v2.15.0
+        uses: splunk/appinspect-cli-action@799522990c6de011b56e4f58b20bdd293497aac2 # v2.15.0
         with:
           app_path: ${{ steps.build.outputs.path }}
           included_tags: cloud
@@ -111,7 +111,7 @@ jobs:
 
       - name: AppInspect API (authoritative Cloud vetting)
         if: steps.creds.outputs.available == 'true'
-        uses: splunk/appinspect-api-action@v3.0.5
+        uses: splunk/appinspect-api-action@86013a62b0c773d1e9cd4623080b4495973936c3 # v3.0.5
         with:
           username: ${{ secrets.SPLUNK_COM_USERNAME }}
           password: ${{ secrets.SPLUNK_COM_PASSWORD }}
@@ -121,7 +121,7 @@ jobs:
           app_path: api-package
           included_tags: "cloud"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: ${{ steps.app.outputs.name }}-appinspect-reports
@@ -166,7 +166,7 @@ jobs:
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: ${{ steps.build.outputs.path }}
           body_path: release_notes.md

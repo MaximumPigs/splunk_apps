@@ -205,6 +205,34 @@ workflow alone.
 
 CI picks it up automatically.
 
+## Supply chain
+
+**Actions are pinned to commit SHAs**, with the version in a trailing comment.
+Tags are mutable, and `release.yml` runs with `contents: write` and the
+Splunk.com credentials, so a moved tag would be a direct path to both. To bump
+one, resolve the new SHA rather than editing the tag:
+
+```bash
+gh api repos/actions/checkout/commits/v7 --jq .sha
+```
+
+Two honest limits on how far that protects us:
+
+- **The Splunk AppInspect actions are Docker actions.** Pinning the action ref
+  fixes `action.yml`, but that file refers to its image by tag
+  (`ghcr.io/splunk/appinspect-cli-action/appinspect-cli-action:v2.15.0`), and an
+  image tag is mutable too. Pinning the ref is still worth doing; it just does
+  not pin the container.
+- **The AppInspect API action handles the credential loosely.** Its entrypoint
+  echoes it and passes it in `argv` to `python3 /main.py <user> <pass> …`.
+  GitHub masks registered secrets in logs and the runner is ephemeral, so
+  exposure is limited — but prefer a Splunk.com account used only for app
+  vetting, rather than one with wider access.
+
+**The vendored SDK is verified.** `vendor_splunklib.py` checks the SHA-256 that
+PyPI publishes alongside the download, because that code is committed and then
+ships inside every app.
+
 ## AI assistance
 
 Content in this repository — app code, tests, packaging scripts, CI workflows
