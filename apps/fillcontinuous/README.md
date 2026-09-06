@@ -1,4 +1,7 @@
-# fillcontinuous
+# MaximumPigs fillcontinuous Add-on
+
+App ID `fillcontinuous`. Provides the `fillcontinuous` search command, aliased
+as `fillgaps`.
 
 Fills the missing time buckets that `timechart` and `makecontinuous` cannot,
 across any number of group-by fields.

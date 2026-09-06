@@ -10,6 +10,29 @@ mojibake. Keep it that way: use "-" rather than an em dash, and straight quotes.
 Last reviewed against app version 1.1.1.
 
 ===============================================================================
+APP NAME
+===============================================================================
+
+MaximumPigs fillcontinuous Add-on
+
+This exact string must also appear as [ui] label in default/app.conf and as
+info.title in app.manifest. Splunkbase requires the listing name to correspond
+to the label shown in the Splunk user interface.
+
+It follows the required Splunkbase pattern:
+
+    (Company | Brand | Author) [solution name] (App | Add-on | Connector)
+
+so the author comes first, not the solution, and the Add-on suffix is
+mandatory. "Add-on" rather than "App" because this ships no views. There is no
+"for <technology>" suffix, since that form is only for interoperating with a
+third-party product.
+
+Note this is the display name, not the app ID. The ID and directory name stay
+"fillcontinuous".
+
+
+===============================================================================
 SUMMARY
 ===============================================================================
 
