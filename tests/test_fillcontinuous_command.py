@@ -54,8 +54,28 @@ def test_module_declares_an_eventing_command(command):
 def test_option_defaults_are_applied(command):
     assert command.fillvalue == "0"
     assert command.maxbuckets == fillcontinuous.DEFAULT_MAX_BUCKETS
+    assert command.maxrows == fillcontinuous.DEFAULT_MAX_ROWS
     assert command.marker is None
     assert command.span is None
+
+
+@pytest.mark.parametrize("option,ceiling", [
+    ("maxbuckets", "DEFAULT_MAX_BUCKETS"),
+    ("maxrows", "DEFAULT_MAX_ROWS"),
+])
+def test_resource_ceilings_cannot_be_raised(command, option, ceiling):
+    # A limit the search can switch off is not a limit. On a shared search head
+    # one user raising these would exhaust memory for everyone.
+    limit = getattr(fillcontinuous, ceiling)
+
+    with pytest.raises(ValueError):
+        setattr(command, option, limit + 1)
+    with pytest.raises(ValueError):
+        setattr(command, option, 10 ** 9)
+
+    setattr(command, option, limit)          # at the ceiling is fine
+    setattr(command, option, 10)             # lowering is fine
+    assert getattr(command, option) == 10
 
 
 def test_by_keyword_and_commas_are_stripped_from_the_field_list(command):

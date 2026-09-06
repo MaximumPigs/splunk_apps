@@ -356,3 +356,55 @@ def test_fill_treats_none_options_as_defaults():
 
 def test_build_grid_treats_none_max_buckets_as_the_default():
     assert build_grid([0, 300], 100, max_buckets=None) == [0, 100, 200, 300]
+
+
+# ---------------------------------------------------------------------------
+# resource limits
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "1e400", "Infinity"])
+def test_fill_rejects_non_finite_timestamps(value):
+    # An infinite timestamp makes the gap to the next bucket infinite, so the
+    # grid builder spins until the bucket guard trips; nan compares false
+    # against everything and would become a bucket of its own. Both are treated
+    # as unparseable, so the row passes through rather than being dropped.
+    records = [
+        _record(100, "A", "x", 1),
+        _record(200, "A", "x", 2),
+        {"_time": value, "host": "A", "sourcetype": "x", "count": "9"},
+    ]
+    result = fill(records, ["host"], span=100)
+
+    assert result.skipped_count == 1
+    assert result.bucket_count == 2
+
+
+def test_fill_caps_the_row_product_not_just_the_bucket_count():
+    # 400 series over 201 buckets is 80400 rows from 401 inputs. The grid alone
+    # is far inside its limit, so bounding buckets does not bound the output.
+    records = [
+        {"_time": "0", "host": "h%d" % index, "count": "1"} for index in range(400)
+    ]
+    records.append({"_time": str(200 * 3600), "host": "h0", "count": "1"})
+
+    with pytest.raises(FillContinuousError) as excinfo:
+        fill(records, ["host"], span=3600.0, max_rows=10000)
+
+    message = str(excinfo.value)
+    assert "80400 rows" in message
+    assert "400 series" in message
+
+
+def test_fill_allows_a_product_within_the_row_limit():
+    records = [
+        {"_time": "0", "host": "h%d" % index, "count": "1"} for index in range(4)
+    ]
+    records.append({"_time": "300", "host": "h0", "count": "1"})
+
+    result = fill(records, ["host"], span=100.0, max_rows=1000)
+    assert len(result.records) == 4 * 4      # 4 buckets x 4 series
+
+
+def test_fill_treats_none_max_rows_as_the_default():
+    records = [_record(100, "A", "x", 1), _record(300, "A", "x", 3)]
+    assert fill(records, ["host"], span=100, max_rows=None).bucket_count == 3

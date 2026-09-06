@@ -20,6 +20,7 @@ packaging step needs network access. Re-run this only to change versions.
 """
 
 import argparse
+import hashlib
 import io
 import os
 import re
@@ -44,15 +45,21 @@ EXCLUDED_SUBPACKAGES = ("ai",)
 _SPLUNKLIB_MEMBER = re.compile(r"^[^/]+/splunklib/")
 
 
-def resolve_sdist_url(version):
-    """Ask PyPI for the sdist URL for this version."""
+def resolve_sdist(version):
+    """Ask PyPI for the sdist URL and its published SHA-256."""
     import json
 
     with urllib.request.urlopen(PYPI_JSON.format(version=version), timeout=30) as response:
         payload = json.loads(response.read().decode("utf-8"))
     for entry in payload.get("urls", []):
         if entry.get("packagetype") == "sdist":
-            return entry["url"]
+            digest = (entry.get("digests") or {}).get("sha256")
+            if not digest:
+                raise SystemExit(
+                    "PyPI published no sha256 for splunk-sdk %s; refusing to "
+                    "vendor code that cannot be verified." % version
+                )
+            return entry["url"], digest
     raise SystemExit("PyPI lists no sdist for splunk-sdk %s" % version)
 
 
@@ -64,10 +71,24 @@ def _is_excluded(name):
 
 
 def download_splunklib(version, workdir):
-    url = resolve_sdist_url(version)
+    url, expected_digest = resolve_sdist(version)
     archive_path = os.path.join(workdir, "splunk-sdk.tar.gz")
     print("Downloading %s" % url)
     urllib.request.urlretrieve(url, archive_path)
+
+    # This code is committed and then ships inside every app, so verify it
+    # rather than trusting the transport alone.
+    digest = hashlib.sha256()
+    with open(archive_path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    actual = digest.hexdigest()
+    if actual != expected_digest:
+        raise SystemExit(
+            "SHA-256 mismatch for %s\n  expected %s\n  got      %s\n"
+            "Refusing to vendor it." % (url, expected_digest, actual)
+        )
+    print("SHA-256 verified: %s" % actual)
 
     with tarfile.open(archive_path, "r:gz") as archive:
         members = [

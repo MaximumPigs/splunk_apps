@@ -68,7 +68,19 @@ fillcontinuous [span=<span>] [fillvalue=<string>] [marker=<field>]
 | `marker` | none | Name of a field to add, set to `1` on synthesised rows and `0` on real ones. |
 | `start` | none | Epoch seconds. Extends the grid backwards, for leading buckets with no events at all. |
 | `end` | none | Epoch seconds. Extends the grid forwards. |
-| `maxbuckets` | `100000` | Ceiling on grid size. Guards against a mistaken span generating an unbounded result. |
+| `maxbuckets` | `100000` | Ceiling on grid size, guarding against a mistaken span. Can be lowered, not raised. |
+| `maxrows` | `1000000` | Ceiling on rows produced, which is buckets × series. Can be lowered, not raised. |
+
+### Resource limits
+
+Output is `buckets × series`, and the series count comes from your data, so
+bounding the grid alone does not bound the result: a few hundred rows spread
+over a few hundred high-cardinality values amplifies into millions. The command
+therefore checks the product before materialising anything, and refuses with a
+message naming both factors.
+
+Both ceilings are capped at their defaults and can only be lowered. On a shared
+search head a limit one search can switch off is not a limit.
 
 The `by` keyword is optional — `fillcontinuous span=1h host, sourcetype` is
 equivalent — and field lists may be separated by commas or spaces.
