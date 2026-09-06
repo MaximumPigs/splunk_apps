@@ -214,7 +214,6 @@ shared search head.
 - Runs on Python 3.9 and Python 3.13.
 - Search head only. No indexer or forwarder installation, and no configuration.
 - Collects no data, opens no network connections, reads and writes no files.
-- Licensed under Apache 2.0.
 
 
 ===============================================================================
