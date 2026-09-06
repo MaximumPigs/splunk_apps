@@ -33,10 +33,12 @@ install or the vendored SDK on sys.path.
 """
 
 import collections
+import math
 import re
 
 __all__ = [
     "DEFAULT_MAX_BUCKETS",
+    "DEFAULT_MAX_ROWS",
     "FillContinuousError",
     "FillResult",
     "build_grid",
@@ -46,8 +48,18 @@ __all__ = [
 ]
 
 # A grid this large is nearly always a mistaken span rather than an intended
-# search, and the row count is this multiplied by the number of series.
+# search.
 DEFAULT_MAX_BUCKETS = 100000
+
+# Bounding the grid alone is not enough: output is buckets multiplied by series,
+# and the series count comes from the data, so a high-cardinality group-by can
+# amplify a few hundred input rows into millions. Everything is held in memory
+# on the search head at once, so cap the product as well.
+#
+# Both limits are exposed as options that can be *lowered* but not raised - see
+# the validators in fillcontinuous.py. A ceiling the caller can switch off is
+# not a ceiling.
+DEFAULT_MAX_ROWS = 1000000
 
 _SPAN_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([a-zA-Z]*)\s*$")
 
@@ -212,7 +224,8 @@ def build_grid(times, span, range_start=None, range_end=None,
 
 
 def fill(records, group_fields, span=None, fillvalue="0", range_start=None,
-         range_end=None, marker_field=None, max_buckets=DEFAULT_MAX_BUCKETS):
+         range_end=None, marker_field=None, max_buckets=DEFAULT_MAX_BUCKETS,
+         max_rows=DEFAULT_MAX_ROWS):
     """Densify ``records`` so every series has a row in every time bucket.
 
     ``records`` is any iterable of mappings, as delivered by a search command.
@@ -229,6 +242,8 @@ def fill(records, group_fields, span=None, fillvalue="0", range_start=None,
         fillvalue = "0"
     if max_buckets is None:
         max_buckets = DEFAULT_MAX_BUCKETS
+    if max_rows is None:
+        max_rows = DEFAULT_MAX_ROWS
 
     originals = []
     passthrough = []
@@ -287,6 +302,18 @@ def fill(records, group_fields, span=None, fillvalue="0", range_start=None,
         max_buckets=max_buckets,
     )
 
+    # Checked before anything is materialised. The grid on its own may be well
+    # inside its limit while the product is not: a few hundred rows spread over
+    # a few hundred series is enough to amplify into millions.
+    projected = len(grid) * len(series_order)
+    if projected > max_rows:
+        raise FillContinuousError(
+            "Filling %d bucket(s) across %d series would produce %d rows, over "
+            "the %d row limit. Widen the span, narrow the time range, or group "
+            "by fewer or lower-cardinality fields."
+            % (len(grid), len(series_order), projected, max_rows)
+        )
+
     span_text = _format_number(span)
     output = []
 
@@ -334,20 +361,30 @@ def fill(records, group_fields, span=None, fillvalue="0", range_start=None,
 
 
 def _to_epoch(value):
-    """Return ``value`` as a float epoch, or None when it is not numeric."""
-    if value is None:
+    """Return ``value`` as a finite float epoch, or None if it is not one."""
+    if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, bool):
-        return None
+
     if isinstance(value, (int, float)):
-        return float(value)
-    text = str(value).strip()
-    if not text:
+        moment = float(value)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            moment = float(text)
+        except ValueError:
+            return None
+
+    # Reject inf and nan, including the silent overflow of something like
+    # "1e400". An infinite timestamp makes the gap between two buckets
+    # infinite, so the grid builder iterates until the bucket guard trips; nan
+    # compares false against everything and would become a bucket of its own.
+    # Non-finite values are treated as unparseable, so the row passes through
+    # untouched rather than being dropped.
+    if not math.isfinite(moment):
         return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
+    return moment
 
 
 def _quantise(moment):

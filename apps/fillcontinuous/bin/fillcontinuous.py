@@ -43,6 +43,7 @@ from splunklib.searchcommands import (  # noqa: E402  (must follow the sys.path 
 
 from fillcontinuous_core import (  # noqa: E402
     DEFAULT_MAX_BUCKETS,
+    DEFAULT_MAX_ROWS,
     FillContinuousError,
     fill,
     parse_span,
@@ -113,13 +114,29 @@ class FillContinuousCommand(EventingCommand):
         validate=validators.Float(),
     )
 
+    # Both ceilings are capped at their default, so a search can lower them but
+    # never raise them. Without a maximum, maxbuckets=1000000000 would switch
+    # the protection off entirely, which on a shared search head lets one search
+    # exhaust memory for everyone.
     maxbuckets = Option(
         doc="""**Syntax:** **maxbuckets=***<int>*
         **Description:** Ceiling on the number of time buckets, guarding against
-        a mistaken span producing an unbounded result. Defaults to 100000.""",
+        a mistaken span producing an unbounded grid. Defaults to, and cannot
+        exceed, 100000.""",
         require=False,
         default=DEFAULT_MAX_BUCKETS,
-        validate=validators.Integer(minimum=1),
+        validate=validators.Integer(minimum=1, maximum=DEFAULT_MAX_BUCKETS),
+    )
+
+    maxrows = Option(
+        doc="""**Syntax:** **maxrows=***<int>*
+        **Description:** Ceiling on the rows produced, which is buckets
+        multiplied by series. Guards against a high-cardinality group-by
+        amplifying a small result set. Defaults to, and cannot exceed,
+        1000000.""",
+        require=False,
+        default=DEFAULT_MAX_ROWS,
+        validate=validators.Integer(minimum=1, maximum=DEFAULT_MAX_ROWS),
     )
 
     by = Option(
@@ -187,6 +204,7 @@ class FillContinuousCommand(EventingCommand):
                 range_end=self.end,
                 marker_field=self.marker,
                 max_buckets=self.maxbuckets,
+                max_rows=self.maxrows,
             )
         except FillContinuousError as error:
             self.write_error("{}", str(error))
