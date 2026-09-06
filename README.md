@@ -23,9 +23,13 @@ apps/<app>/            one directory per app, named for its app id
   README.md
   LICENSE
 scripts/               packaging and dependency vendoring
+splunkbase/<app>/      listing copy for the app's Splunkbase page
 tests/                 pytest suite covering every app's core logic
 .github/workflows/     CI and release automation
 ```
+
+[`splunkbase/`](splunkbase/) sits outside `apps/` on purpose: the packager walks
+`apps/<app>/` and nothing else, so listing copy cannot end up inside a `.spl`.
 
 `apps/<app>/default/app.conf` is what marks a directory as an app: CI discovers
 apps by looking for it, so a new app is picked up with no workflow changes.
