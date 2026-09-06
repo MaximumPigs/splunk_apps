@@ -17,6 +17,11 @@ take Markdown.
 Keep angle brackets inside fenced code blocks, where they are literal. In
 prose, wrap them in backticks so no renderer mistakes them for a tag.
 
+Tag search examples as ```spl - the listing page highlights it. The two shell
+snippets in INSTALLATION are deliberately left untagged, since only spl is
+confirmed supported and an unrecognised tag is a risk for no benefit. If bash
+turns out to render, tag them too.
+
 Last reviewed against app version 1.1.1.
 
 
@@ -79,7 +84,7 @@ series has a value in every bucket.
 Add a second dimension and you fall back to `stats`, which returns nothing at
 all for buckets where nothing happened:
 
-```
+```spl
 index=web
 | bin _time span=1h
 | stats count by _time, host, sourcetype
@@ -96,7 +101,7 @@ over only the buckets that happen to exist.
 
 ### The solution
 
-```
+```spl
 index=web
 | bin _time span=1h
 | stats count by _time, host, sourcetype
@@ -109,7 +114,7 @@ an alias if you prefer the shorter name.
 
 ### Syntax
 
-```
+```spl
 fillcontinuous [span=<span>] [fillvalue=<string>] [marker=<field>]
                [start=<epoch>] [end=<epoch>]
                [maxbuckets=<int>] [maxrows=<int>]
@@ -132,7 +137,7 @@ spaces.
 
 **Flag which rows were added, letting the span be inferred**
 
-```
+```spl
 index=web
 | bin _time span=5m
 | stats sum(bytes) as bytes by _time, host, status
@@ -141,13 +146,13 @@ index=web
 
 **Fill with something other than zero, where zero would be a lie**
 
-```
+```spl
 ... | fillcontinuous span=1m fillvalue="" by host, metric_name
 ```
 
 **Cover the whole window, including buckets with no events at all**
 
-```
+```spl
 index=web
 | bin _time span=1h
 | stats count by _time, host, sourcetype
@@ -246,7 +251,7 @@ $SPLUNK_HOME/bin/splunk apply shcluster-bundle -target <member-uri>
 This search needs no indexed data. It should return exactly six rows - three
 time buckets across two series - with `count=0` in the three that were filled.
 
-```
+```spl
 | makeresults count=3
 | streamstats count as row
 | eval _time=case(row=1,1767225600, row=2,1767225600, row=3,1767232800),
@@ -287,7 +292,7 @@ there is nothing to add.
 The command was run without a by clause. It fills per series, so it needs to
 know which fields identify a series:
 
-```
+```spl
 | fillcontinuous span=1h by host, sourcetype
 ```
 
