@@ -83,11 +83,13 @@ need a second dimension - host and sourcetype, service and status, index and
 source - you fall back to bin plus stats, and stats simply returns nothing for a
 bucket in which nothing happened.
 
-Those absent rows are not harmless. On a chart, a series that stopped reporting
-looks identical to a series reporting zero. An average taken across the result
-is an average over only the buckets that happened to contain data, which is not
-the average you asked for. A threshold alert quietly skips the intervals with no
-events, which are frequently the intervals worth knowing about.
+Those absent rows are not harmless. An average taken across the result is an
+average over only the buckets that happened to contain data, which is not the
+average you asked for. A threshold alert quietly skips the intervals with no
+events, which are frequently the intervals worth knowing about. And how a chart
+renders the hole is decided by the panel's null handling rather than by your
+data, so the same result can read as a gap in one place and a drop to zero in
+another.
 
 makecontinuous, the built-in command for densifying a series, does not solve
 this. It fills along a single dimension and has no concept of group-by fields,
@@ -118,8 +120,8 @@ Summary instead." Must stand alone beside the title.
 
 A custom search command that fills missing time buckets across any number of
 group-by fields. Where stats alone returns nothing for a quiet bucket,
-fillcontinuous adds a row with 0, so every series stays continuous and charts
-stop showing false drops to zero.
+fillcontinuous adds a row with 0, so every series stays continuous across the
+whole time range.
 
 
 ===============================================================================
@@ -142,8 +144,9 @@ index=web
 | stats count by _time, host, sourcetype
 ```
 
-Those absent rows become false drops to zero on a chart, and averages computed
-over only the buckets that happen to exist.
+Those absent rows distort whatever comes next: an average is taken over only the
+buckets that happened to contain data, and a chart's appearance depends on how
+the panel handles missing points rather than on your data.
 
 > **makecontinuous does not solve this.** It fills along one dimension and has
 > no concept of group-by fields, so it inserts a single valueless row per
