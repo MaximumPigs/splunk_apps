@@ -149,9 +149,19 @@ Fill with something other than zero, for a gauge where zero would be a lie:
   Python 3.13 (the opt-in runtime from 10.2). `commands.conf` declares both
   `python.version = python3` for 10.0/10.1 and `python.required = 3.9, 3.13` for
   10.2 and later.
-- Bundles splunklib from splunk-sdk 2.1.1 in `lib/`. **Do not upgrade to
-  splunk-sdk 3.x** without dropping 3.9 support: 3.0.0 declares
-  `requires_python >= 3.13` and breaks the moment Splunk falls back to 3.9.
+- Bundles splunklib from splunk-sdk 3.0.0 in `lib/`, with the `ai/` subpackage
+  removed. That subpackage is the only reason the SDK declares
+  `requires_python >= 3.13` — it is the sole part using `match` statements — and
+  a search command never imports it. Dropping it keeps the app working on the
+  3.9 LTS runtime while still shipping a current SDK.
+
+## AppInspect
+
+Passes `splunk-appinspect inspect --included-tags cloud` with **0 failures and
+0 errors**. Three warnings remain, none actionable: a generic Splunk 8.0
+Python 2/3 migration notice, and two checks that only run on Linux or macOS
+(`check_idx_binary_compatibility`, `check_symlink_outside_app`) — CI covers
+those.
 
 ## Installation
 

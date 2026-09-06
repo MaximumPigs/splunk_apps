@@ -1,1 +1,3 @@
-splunk-sdk 2.1.1
+splunk-sdk 3.0.0
+excluded subpackages: ai
+vendored by scripts/vendor_splunklib.py

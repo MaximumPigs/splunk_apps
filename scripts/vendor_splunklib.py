@@ -3,15 +3,17 @@
 
 Usage:
     python scripts/vendor_splunklib.py fillcontinuous
-    python scripts/vendor_splunklib.py --all --version 2.1.1
+    python scripts/vendor_splunklib.py --all --version 3.0.0
 
 Splunk does not make splunklib available to apps, so every app that uses the
 Python SDK must bundle its own copy under <app>/lib/.
 
-The pinned default is 2.1.1 on purpose. splunk-sdk 3.0.0 declares
-requires_python >= 3.13, which breaks the moment Splunk falls back to its 3.9
-LTS runtime; 2.1.1 supports 3.7 through 3.13. Do not bump this to 3.x without
-also dropping 3.9 from python.required in commands.conf.
+The ai/ subpackage is excluded. splunk-sdk 3.0.0 declares
+requires_python >= 3.13, but the only 3.13-only syntax in it (match statements)
+lives in splunklib/ai/, the LLM integration a search command has no use for.
+Nothing outside ai/ imports it, and the remainder parses cleanly on Python 3.9.
+Dropping it therefore satisfies AppInspect's check_python_sdk_version, which
+wants 3.0.0 or later, while keeping the app working on Splunk's 3.9 LTS runtime.
 
 The vendored result is committed to the repository, so neither CI nor the
 packaging step needs network access. Re-run this only to change versions.
@@ -20,6 +22,7 @@ packaging step needs network access. Re-run this only to change versions.
 import argparse
 import io
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -29,24 +32,35 @@ import urllib.request
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPS_DIR = os.path.join(REPO_ROOT, "apps")
 
-DEFAULT_VERSION = "2.1.1"
-SDIST_URL = "https://files.pythonhosted.org/packages/source/s/splunk-sdk/splunk-sdk-{version}.tar.gz"
+DEFAULT_VERSION = "3.0.0"
 PYPI_JSON = "https://pypi.org/pypi/splunk-sdk/{version}/json"
+
+# Subpackages left out of the vendored copy. See the module docstring: keeping
+# ai/ would drag Python 3.10+ syntax into an app that must run on 3.9.
+EXCLUDED_SUBPACKAGES = ("ai",)
+
+# The sdist top-level directory has been both "splunk-sdk-2.1.1" and
+# "splunk_sdk-3.0.0", so match on the splunklib directory instead of assuming.
+_SPLUNKLIB_MEMBER = re.compile(r"^[^/]+/splunklib/")
 
 
 def resolve_sdist_url(version):
-    """Ask PyPI for the sdist URL, falling back to the conventional path."""
+    """Ask PyPI for the sdist URL for this version."""
     import json
 
-    try:
-        with urllib.request.urlopen(PYPI_JSON.format(version=version), timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        for entry in payload.get("urls", []):
-            if entry.get("packagetype") == "sdist":
-                return entry["url"]
-    except Exception as error:  # noqa: BLE001 - fall back rather than fail hard
-        print("Could not query PyPI (%s); using the conventional URL." % error)
-    return SDIST_URL.format(version=version)
+    with urllib.request.urlopen(PYPI_JSON.format(version=version), timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    for entry in payload.get("urls", []):
+        if entry.get("packagetype") == "sdist":
+            return entry["url"]
+    raise SystemExit("PyPI lists no sdist for splunk-sdk %s" % version)
+
+
+def _is_excluded(name):
+    """True when a member belongs to a subpackage we do not ship."""
+    remainder = _SPLUNKLIB_MEMBER.sub("", name)
+    top = remainder.split("/", 1)[0]
+    return top in EXCLUDED_SUBPACKAGES
 
 
 def download_splunklib(version, workdir):
@@ -56,15 +70,19 @@ def download_splunklib(version, workdir):
     urllib.request.urlretrieve(url, archive_path)
 
     with tarfile.open(archive_path, "r:gz") as archive:
-        prefix = "splunk-sdk-%s/splunklib/" % version
-        members = [m for m in archive.getmembers() if m.name.startswith(prefix)]
+        members = [
+            member for member in archive.getmembers()
+            if _SPLUNKLIB_MEMBER.match(member.name) and not _is_excluded(member.name)
+        ]
         if not members:
             raise SystemExit("No splunklib/ inside %s" % url)
+
         for member in members:
             # Guard against path traversal in the archive.
             target = os.path.normpath(os.path.join(workdir, member.name))
             if not target.startswith(os.path.normpath(workdir) + os.sep):
                 raise SystemExit("Refusing unsafe path in archive: %s" % member.name)
+
         # Python 3.12+ (and later 3.9-3.11 patches) can sanitise members on
         # extraction; 3.14 makes it the default and warns until then.
         extract_kwargs = {}
@@ -72,7 +90,11 @@ def download_splunklib(version, workdir):
             extract_kwargs["filter"] = "data"
         archive.extractall(workdir, members=members, **extract_kwargs)
 
-    return os.path.join(workdir, "splunk-sdk-%s" % version, "splunklib")
+        root = members[0].name.split("/", 1)[0]
+
+    skipped = ", ".join(EXCLUDED_SUBPACKAGES)
+    print("Extracted splunklib from %s (excluding: %s)" % (root, skipped))
+    return os.path.join(workdir, root, "splunklib")
 
 
 def install_into(app_name, source, version):
@@ -89,7 +111,7 @@ def install_into(app_name, source, version):
 
     shutil.copytree(source, target)
 
-    # Tests and caches have no business in a shipped app.
+    # Caches have no business in a shipped app.
     for root, dirs, files in os.walk(target):
         for name in list(dirs):
             if name == "__pycache__":
@@ -102,6 +124,8 @@ def install_into(app_name, source, version):
     stamp = os.path.join(lib_dir, "SPLUNKLIB_VERSION")
     with io.open(stamp, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("splunk-sdk %s\n" % version)
+        handle.write("excluded subpackages: %s\n" % ", ".join(EXCLUDED_SUBPACKAGES))
+        handle.write("vendored by scripts/vendor_splunklib.py\n")
 
     print("Vendored splunklib %s into %s" % (version, target))
 

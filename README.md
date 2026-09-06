@@ -75,9 +75,13 @@ Splunk does not provide `splunklib` to apps, so each app bundles its own copy in
 python scripts/vendor_splunklib.py fillcontinuous
 ```
 
-**Pinned to splunk-sdk 2.1.1 deliberately.** splunk-sdk 3.0.0 declares
-`requires_python >= 3.13`, which breaks the moment Splunk falls back to its 3.9
-LTS runtime. Do not bump it without also dropping 3.9 from `python.required`.
+**The `ai/` subpackage is excluded deliberately.** splunk-sdk 3.0.0 declares
+`requires_python >= 3.13`, which would break the moment Splunk falls back to its
+3.9 LTS runtime. But the only 3.13-only syntax in the SDK — `match` statements —
+is confined to `splunklib/ai/`, the LLM integration. Nothing outside it imports
+it, and everything else parses cleanly on 3.9. Omitting it satisfies
+AppInspect's `check_python_sdk_version`, which wants 3.0.0 or later, without
+giving up the 3.9 runtime.
 
 > `lib/` is deliberately **not** in `.gitignore`. The stock GitHub Python
 > template ignores it, which would silently ship apps that cannot import
@@ -114,18 +118,32 @@ The AppInspect step is handed the packaged `.spl` **file**, not a source
 directory. Given a directory, the action's entrypoint globs it and scans only
 the first entry, which would quietly inspect the wrong thing.
 
-### First run: manual checks
+### Current status
 
-AppInspect returns some checks a human has to decide, and the action fails if
-any of them is not recorded in [`.appinspect.manualcheck.yaml`](.appinspect.manualcheck.yaml).
-That file starts empty, so **the first CI run is expected to fail**. It prints
-the exact YAML to paste in, under `You can initialize it with below yaml
-content`. Copy it in, replace each empty comment with what you actually
-verified, and the job goes green. Nothing is waived by accident this way.
+`fillcontinuous` passes the cloud checks with **0 failures and 0 errors**, and
+AppInspect returns no manual checks for it. Three warnings remain, none
+actionable: a generic Splunk 8.0 Python 2/3 migration notice, and two checks
+that only run on Linux or macOS.
+
+### Manual checks and waivers
+
+If a future app does produce checks a human must decide, the CI action fails
+unless each is recorded in [`.appinspect.manualcheck.yaml`](.appinspect.manualcheck.yaml)
+with a comment. It prints the exact YAML to paste in, under `You can initialize
+it with below yaml content`. Copy it in, say what you actually verified, and the
+job goes green — nothing gets waived by accident.
 
 [`.appinspect.expect.yaml`](.appinspect.expect.yaml) does the same for accepted
 failures, and should stay empty — a Cloud submission must have none. Waivers
 there require a comment carrying an `ADDON-<n>` or `APPCERT-<n>` ticket id.
+
+### Running AppInspect locally
+
+```bash
+pip install splunk-appinspect
+python scripts/package_app.py fillcontinuous --outdir dist
+splunk-appinspect inspect dist/fillcontinuous-1.0.0.spl --mode test --included-tags cloud
+```
 
 ## Releasing
 
