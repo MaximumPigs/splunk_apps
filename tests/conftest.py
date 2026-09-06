@@ -12,6 +12,10 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPS_DIR = os.path.join(REPO_ROOT, "apps")
+SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
+
+if os.path.isdir(SCRIPTS_DIR) and SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
 
 
 def _register_app_bin_directories():

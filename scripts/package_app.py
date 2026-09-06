@@ -161,13 +161,33 @@ def main(argv=None):
         "--source-date-epoch", type=int, default=None,
         help="fixed mtime for reproducible archives",
     )
+    parser.add_argument(
+        "--expect-version", default=None,
+        help=(
+            "fail unless the app declares exactly this version. The release "
+            "workflow passes the version from the git tag, so a tag that has "
+            "run ahead of app.conf cannot publish a mislabelled package."
+        ),
+    )
     args = parser.parse_args(argv)
 
     apps = discover_apps() if args.all else args.app
     if not apps:
         parser.error("name at least one app, or pass --all")
 
+    if args.expect_version is not None and len(apps) != 1:
+        parser.error("--expect-version applies to exactly one app")
+
     for app_name in apps:
+        if args.expect_version is not None:
+            declared = read_app_version(os.path.join(APPS_DIR, app_name))
+            if declared != args.expect_version:
+                raise SystemExit(
+                    "Version mismatch for %s: expected %s but default/app.conf "
+                    "declares %s. Bump app.conf to match the tag, or delete the "
+                    "tag and cut it again."
+                    % (app_name, args.expect_version, declared)
+                )
         path = build_package(app_name, args.outdir, args.source_date_epoch)
         print(path)
 

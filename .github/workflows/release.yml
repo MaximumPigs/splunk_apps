@@ -22,12 +22,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history and tags: needed to find the previous release of this
+          # app and to scope the changelog to its directory.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
-      - name: Resolve app name
+      - name: Resolve app name and version
         id: app
         shell: bash
         env:
@@ -36,16 +40,19 @@ jobs:
           set -euo pipefail
           if [ -n "${MANUAL_APP:-}" ]; then
             app="${MANUAL_APP}"
+            tag_version=""
           else
-            # fillcontinuous-v1.0.0 -> fillcontinuous
+            # fillcontinuous-v1.0.0 -> app=fillcontinuous, version=1.0.0
             app="${GITHUB_REF_NAME%-v*}"
+            tag_version="${GITHUB_REF_NAME#${app}-v}"
           fi
           if [ ! -f "apps/${app}/default/app.conf" ]; then
             echo "::error::No app at apps/${app} (resolved from '${GITHUB_REF_NAME:-$MANUAL_APP}')"
             exit 1
           fi
           echo "name=${app}" >> "$GITHUB_OUTPUT"
-          echo "Releasing ${app}"
+          echo "tag_version=${tag_version}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${app} (tag version: ${tag_version:-n/a})"
 
       - name: Install dev dependencies
         run: |
@@ -58,9 +65,19 @@ jobs:
       - name: Build package
         id: build
         shell: bash
+        env:
+          APP: ${{ steps.app.outputs.name }}
+          TAG_VERSION: ${{ steps.app.outputs.tag_version }}
         run: |
           set -euo pipefail
-          python scripts/package_app.py "${{ steps.app.outputs.name }}" --outdir dist
+          # Passing the tag's version makes the packager refuse to build when
+          # app.conf disagrees. Without it, tagging v1.0.1 while app.conf still
+          # says 1.0.0 publishes a 1.0.0 package under a 1.0.1 release.
+          if [ -n "${TAG_VERSION}" ]; then
+            python scripts/package_app.py "${APP}" --outdir dist --expect-version "${TAG_VERSION}"
+          else
+            python scripts/package_app.py "${APP}" --outdir dist
+          fi
           package="$(ls dist/*.spl | head -n 1)"
           echo "path=${package}" >> "$GITHUB_OUTPUT"
 
@@ -113,9 +130,45 @@ jobs:
             *.json
           if-no-files-found: warn
 
+      - name: Build release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          APP: ${{ steps.app.outputs.name }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          # The previous release OF THIS APP, not whichever tag happened to be
+          # cut last. GitHub's generate_release_notes uses the latter, so in a
+          # monorepo it lists another app's commits.
+          prev="$(git describe --tags --abbrev=0 --match "${APP}-v*" "${tag}^" 2>/dev/null || true)"
+          {
+            if [ -n "${prev}" ]; then
+              changes="$(git log --no-merges --pretty='- %s' "${prev}..${tag}" -- "apps/${APP}/")"
+              echo "Changes to \`${APP}\` since ${prev}:"
+              echo
+              if [ -n "${changes}" ]; then
+                echo "${changes}"
+              else
+                echo "- No changes under \`apps/${APP}/\`; repackaged only."
+              fi
+              echo
+              echo "[Full diff](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${prev}...${tag})"
+            else
+              echo "First release of \`${APP}\`."
+            fi
+            echo
+            echo "Validated against Splunk AppInspect cloud checks before publishing."
+          } > release_notes.md
+          echo "----- notes -----"
+          cat release_notes.md
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3.0.3
         with:
           files: ${{ steps.build.outputs.path }}
-          generate_release_notes: true
+          body_path: release_notes.md
+          # Deliberately off: it diffs against the previous release of ANY app.
+          generate_release_notes: false
