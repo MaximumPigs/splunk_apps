@@ -152,12 +152,38 @@ job goes green — nothing gets waived by accident.
 failures, and should stay empty — a Cloud submission must have none. Waivers
 there require a comment carrying an `ADDON-<n>` or `APPCERT-<n>` ticket id.
 
+### `check_for_updates` depends on how the app is distributed
+
+The two destinations want opposite settings, and only one of them is checked by
+the `cloud` tag:
+
+| Destination | `[package] check_for_updates` |
+| --- | --- |
+| **Splunkbase** | must **not** be `false`. Leave it absent, which defaults to enabled — Splunkbase serves the update notifications itself, and its uploader rejects the package outright with *"must not be disabled"*. |
+| Private app, not on Splunkbase | should be `false`. AppInspect's `check_for_updates_disabled` warns when it is missing. |
+
+Apps here target Splunkbase, so the setting is deliberately absent and the
+resulting warning is expected. Do not "fix" that warning by setting it to
+`false`; that trades a warning for a rejected upload.
+
+`check_for_updates_disabled` is tagged `private_app`, not `cloud`, so CI never
+sees it either way.
+
 ### Running AppInspect locally
 
 ```bash
 pip install splunk-appinspect
 python scripts/package_app.py fillcontinuous --outdir dist
-splunk-appinspect inspect dist/fillcontinuous-1.0.0.spl --mode test --included-tags cloud
+splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test --included-tags cloud
+```
+
+**Before submitting to Splunkbase, run the full set as well.** The `cloud` tag
+covers 246 checks; dropping `--included-tags` runs 252. The extra six include
+the packaging and private-app rules, and Splunkbase's own uploader is stricter
+still in places, so a clean `cloud` run is necessary but not sufficient:
+
+```bash
+splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test
 ```
 
 ## Releasing
