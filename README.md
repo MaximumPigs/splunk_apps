@@ -173,6 +173,18 @@ git push origin fillcontinuous-v1.0.0
 package, runs the AppInspect CLI, and publishes a GitHub release with the
 `.spl` attached. `workflow_dispatch` does the same for a dry run without tagging.
 
+Two details exist because a monorepo breaks the usual assumptions:
+
+- **The tag version must match `app.conf`.** The workflow passes the version
+  from the tag to the packager as `--expect-version`, which refuses to build on
+  a mismatch. Otherwise tagging `v1.0.1` while `app.conf` still said `1.0.0`
+  would publish a `1.0.0` package under a `1.0.1` release, with nothing to
+  flag it.
+- **Release notes are scoped to the app.** GitHub's `generate_release_notes`
+  diffs against the previous release of *any* app, so releasing app B after app
+  A would list app A's commits. The workflow instead resolves the previous
+  `<app>-v*` tag and logs only commits touching `apps/<app>/`.
+
 It also runs the **AppInspect API** vetting, using the repository secrets
 `SPLUNK_COM_USERNAME` and `SPLUNK_COM_PASSWORD`. Without them the step is
 skipped with a warning rather than failing the release.
