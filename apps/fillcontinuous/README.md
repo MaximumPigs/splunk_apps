@@ -182,7 +182,12 @@ want the field genuinely empty.
 
 ## Compatibility
 
-- Splunk Enterprise and Splunk Cloud Platform 9.x and 10.x.
+- Splunk Enterprise 9.3 or later, including 10.x, and Splunk Cloud Platform.
+  9.3 is the floor because it is where Python 3.9 became the default
+  interpreter. Splunk 9.0 to 9.2 default to Python 3.7, and `python.required`
+  is only read from 10.2 onward, so those versions would run this on an
+  interpreter it has never been tested against. The shipped code and the
+  vendored splunklib do *parse* on 3.7, but parsing is not running.
 - Runs on Python 3.9 (Splunk's LTS runtime, and the fallback on 10.2+) and on
   Python 3.13 (the opt-in runtime from 10.2). `commands.conf` declares both
   `python.version = python3` for 10.0/10.1 and `python.required = 3.9, 3.13` for

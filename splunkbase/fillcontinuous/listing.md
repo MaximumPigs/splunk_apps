@@ -266,8 +266,10 @@ shared search head.
 
 ### Compatibility
 
-- Splunk Enterprise 9.x and 10.x, and Splunk Cloud Platform.
-- Runs on Python 3.9 and Python 3.13.
+- Splunk Enterprise 9.3 or later, including 10.x, and Splunk Cloud Platform.
+- Runs on Python 3.9 and Python 3.13. Splunk 9.3 is the floor because that is
+  where Python 3.9 became the default interpreter; 9.0 to 9.2 default to Python
+  3.7, which this add-on is not tested against.
 - Search head only. No indexer or forwarder installation, and no configuration.
 - Collects no data, opens no network connections, reads and writes no files.
 
