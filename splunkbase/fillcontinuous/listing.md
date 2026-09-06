@@ -17,10 +17,9 @@ take Markdown.
 Keep angle brackets inside fenced code blocks, where they are literal. In
 prose, wrap them in backticks so no renderer mistakes them for a tag.
 
-Tag search examples as ```spl - the listing page highlights it. The two shell
-snippets in INSTALLATION are deliberately left untagged, since only spl is
-confirmed supported and an unrecognised tag is a risk for no benefit. If bash
-turns out to render, tag them too.
+Tag search examples as ```spl - the listing page highlights it. Every code
+block here is SPL; if you add a shell snippet, leave it untagged, since only
+spl is confirmed supported and an unrecognised tag is a risk for no benefit.
 
 Last reviewed against app version 1.1.1.
 
@@ -222,37 +221,13 @@ shared search head.
 INSTALLATION  (Markdown)
 ===============================================================================
 
-Install on **search heads only**. No indexer or forwarder installation is
-needed, and there is nothing to configure afterwards.
+Install the app on your search heads, using whichever method you normally use.
+No indexer or forwarder installation is needed, and there is nothing to
+configure afterwards.
 
-### Splunk Cloud
-
-Install from Splunkbase through the Splunk Cloud UI, or request installation
-through Splunk Support if self-service install is not enabled for your stack.
-
-### Splunk Enterprise, single search head
-
-1. Go to **Apps > Manage Apps > Install app from file**.
-2. Upload the .spl file and click **Upload**.
-3. Restart Splunk when prompted. A restart is required before a new custom
-   search command is registered.
-
-Or unpack it and restart:
-
-```
-tar -xvzf fillcontinuous-<version>.spl -C $SPLUNK_HOME/etc/apps/
-$SPLUNK_HOME/bin/splunk restart
-```
-
-### Search head cluster
-
-1. Place the unpacked app in `$SPLUNK_HOME/etc/shcluster/apps/` on the
-   deployer.
-2. Apply the bundle:
-
-```
-$SPLUNK_HOME/bin/splunk apply shcluster-bundle -target <member-uri>
-```
+**Restart Splunk once it is in place.** A custom search command is not
+registered until the restart completes, so the command will not be found before
+then.
 
 ### Verifying the install
 
