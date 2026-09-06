@@ -147,8 +147,16 @@ index=web
 **Fill with something other than zero, where zero would be a lie**
 
 ```spl
-... | fillcontinuous span=1m fillvalue="" by host, metric_name
+index=web
+| bin _time span=1h
+| stats avg(cpu_percent) as cpu by _time, host
+| fillcontinuous span=1h fillvalue="N/A" by host
 ```
+
+A gap in a CPU reading means "not measured", not "zero", so the filled rows say
+so. `fillvalue` writes the literal text you give it, so `fillvalue="null"`
+produces the four characters `null` rather than an actual null - use `""` if you
+want the field genuinely empty.
 
 **Cover the whole window, including buckets with no events at all**
 
