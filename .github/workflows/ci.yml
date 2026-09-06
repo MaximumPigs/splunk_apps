@@ -20,7 +20,7 @@ jobs:
     outputs:
       apps: ${{ steps.find.outputs.apps }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Find every app under apps/
         id: find
@@ -50,9 +50,9 @@ jobs:
         # opt-in runtime. commands.conf declares both, so both must pass.
         python: ["3.9", "3.13"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ matrix.python }}
 
@@ -79,16 +79,16 @@ jobs:
       matrix:
         app: ${{ fromJson(needs.discover.outputs.apps) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.13"
 
       - name: Build ${{ matrix.app }}.spl
         run: python scripts/package_app.py "${{ matrix.app }}" --outdir dist
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.app }}-package
           path: dist/*.spl
@@ -103,9 +103,9 @@ jobs:
       matrix:
         app: ${{ fromJson(needs.discover.outputs.apps) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ${{ matrix.app }}-package
           path: dist
@@ -122,13 +122,13 @@ jobs:
       - name: AppInspect (cloud checks)
         # app_path must be the package FILE. Given a directory, the action's
         # entrypoint globs it and scans only the first entry.
-        uses: splunk/appinspect-cli-action@v2.15.0
+        uses: splunk/appinspect-cli-action@799522990c6de011b56e4f58b20bdd293497aac2 # v2.15.0
         with:
           app_path: ${{ steps.pkg.outputs.path }}
           included_tags: cloud
           result_file: appinspect_${{ matrix.app }}.json
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: ${{ matrix.app }}-appinspect-report
@@ -144,7 +144,7 @@ jobs:
       matrix:
         app: ${{ fromJson(needs.discover.outputs.apps) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check for Splunk.com credentials
         id: creds
@@ -162,7 +162,7 @@ jobs:
             echo "::notice::SPLUNK_COM_USERNAME is not set, so the AppInspect API vetting was skipped."
           fi
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         if: steps.creds.outputs.available == 'true'
         with:
           name: ${{ matrix.app }}-package
@@ -170,7 +170,7 @@ jobs:
 
       - name: AppInspect API (authoritative Cloud vetting)
         if: steps.creds.outputs.available == 'true'
-        uses: splunk/appinspect-api-action@v3.0.5
+        uses: splunk/appinspect-api-action@86013a62b0c773d1e9cd4623080b4495973936c3 # v3.0.5
         with:
           username: ${{ secrets.SPLUNK_COM_USERNAME }}
           password: ${{ secrets.SPLUNK_COM_PASSWORD }}
@@ -180,7 +180,7 @@ jobs:
           app_path: api-package
           included_tags: "cloud"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always() && steps.creds.outputs.available == 'true'
         with:
           name: ${{ matrix.app }}-appinspect-api-report
