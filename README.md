@@ -111,8 +111,8 @@ It also refuses to build when `[launcher] version` and `[id] version` in
 1. **discover** — finds each app under `apps/`
 2. **test** — pytest on Python 3.9 and 3.13, plus a 3.9 byte-compile of all scripts
 3. **package** — builds each `.spl`
-4. **appinspect** — runs the AppInspect CLI with `--included-tags cloud` against
-   the built package
+4. **appinspect** — runs the AppInspect CLI against the built package, with **no
+   tag filter**, so all 252 checks run
 5. **appinspect-api** — submits the package to Splunk's hosted AppInspect API,
    the authoritative service behind Cloud vetting. Skips with a notice when the
    credentials are absent, so forks and outside contributors are unaffected.
@@ -177,14 +177,11 @@ python scripts/package_app.py fillcontinuous --outdir dist
 splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test --included-tags cloud
 ```
 
-**Before submitting to Splunkbase, run the full set as well.** The `cloud` tag
-covers 246 checks; dropping `--included-tags` runs 252. The extra six include
-the packaging and private-app rules, and Splunkbase's own uploader is stricter
-still in places, so a clean `cloud` run is necessary but not sufficient:
-
-```bash
-splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test
-```
+Note the absence of `--included-tags`. CI runs the complete set for the same
+reason: filtering to `cloud` covers 246 of 252 checks, and one of the six it
+skips is what let a Splunkbase-rejecting package through. Splunkbase's own
+uploader is stricter still in places, so even a clean full run is necessary
+rather than sufficient.
 
 ## Releasing
 

@@ -119,13 +119,17 @@ jobs:
           echo "path=${package}" >> "$GITHUB_OUTPUT"
           echo "Scanning ${package}"
 
-      - name: AppInspect (cloud checks)
+      - name: AppInspect (complete check set)
+        # No included_tags, so every check runs. Filtering to `cloud` covers 246
+        # of 252, and the six it skips are where a Splunkbase-rejecting bug hid:
+        # check_for_updates_disabled is tagged private_app, not cloud, so a
+        # clean cloud run let a package through that Splunkbase refused.
+        #
         # app_path must be the package FILE. Given a directory, the action's
         # entrypoint globs it and scans only the first entry.
         uses: splunk/appinspect-cli-action@799522990c6de011b56e4f58b20bdd293497aac2 # v2.15.0
         with:
           app_path: ${{ steps.pkg.outputs.path }}
-          included_tags: cloud
           result_file: appinspect_${{ matrix.app }}.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -178,7 +182,7 @@ jobs:
           # which needs the file itself. This entrypoint runs `ls $app_path` and
           # appends the result, so a file path resolves to <file>/<file>.
           app_path: api-package
-          included_tags: "cloud"
+          # Unfiltered, matching the CLI step above.
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always() && steps.creds.outputs.available == 'true'
