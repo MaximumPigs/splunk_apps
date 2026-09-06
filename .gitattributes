@@ -1,0 +1,30 @@
+# Splunk runs on Linux, and apps are developed here on Windows. Without this,
+# Git for Windows' core.autocrlf checks files out with CRLF, so a package built
+# locally would not byte-match one built by CI on Linux, and .conf files would
+# ship with Windows line endings.
+#
+# Normalise everything to LF in the repository and in the working tree.
+* text=auto eol=lf
+
+# Explicit for the file types that make up a Splunk app.
+*.py    text eol=lf
+*.conf  text eol=lf
+*.meta  text eol=lf
+*.spec  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.xml   text eol=lf
+*.csv   text eol=lf
+*.manifest text eol=lf
+
+# Never touch these.
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
+*.spl   binary
+*.tgz   binary
+*.tar.gz binary
+*.gz    binary

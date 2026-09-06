@@ -1,0 +1,14 @@
+#
+# fillcontinuous - default object permissions
+#
+# The command is exported system-wide so it can be used from any app, and is
+# readable by everyone but writable only by admins.
+#
+
+[]
+access = read : [ * ], write : [ admin, power ]
+export = system
+
+[commands]
+access = read : [ * ], write : [ admin, power ]
+export = system
