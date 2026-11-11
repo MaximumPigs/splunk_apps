@@ -9,4 +9,5 @@ One line per lesson, most hits first. Details in `lessons/`. Maintained by the
 | 1 | lesson | [relpath fails across Windows drives](lessons/splk-windows-cross-drive-relpath.md): repo on D:, temp on C:; use `splk.paths.display()` for display paths. |
 | 1 | lesson | [Persist REST handlers keep old code after deploy](lessons/splk-persist-handler-stale-code.md): `scripttype=persist` ignores reinstall/_reload; restart or wait. |
 | 1 | lesson | [simpleRequest postargs must be a dict](lessons/python-simplerequest-postargs-dict.md): list of pairs fails on `.items()`; use `{k: [v1, v2]}`, `""` clears. |
+| 1 | lesson | [Splunk Web caches static files by app build](lessons/conf-app-build-static-cache.md): bump `[install] build` with any `appserver/static` change, or the old JS/CSS is served. |
 | 1 | lesson | [splunkd sorts role index lists](lessons/splunkd-role-index-lists-sorted.md): compare `srchIndexes*` as sets in live tests. |
