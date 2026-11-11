@@ -17,3 +17,18 @@ paths:
   without Splunk (`<app>_core.py` pattern).
 - Prefix helper modules with the app id; `bin/` directories share one namespace.
 - No new runtime dependencies inside an app without vendoring them into `lib/`.
+- Without a 3.9 interpreter, check grammar with
+  `ast.parse(source, filename=path, feature_version=(3, 9))`. The edit hook does
+  this for app, script, tool and hook code. It cannot catch a stdlib call added
+  after 3.9: only running on 3.9 (CI) proves that.
+
+## Vendored splunklib
+
+- Change it only with `python scripts/vendor_splunklib.py <app>`, which verifies
+  PyPI's SHA-256 and should reproduce the committed tree byte for byte.
+- `splunklib/ai/` is excluded on purpose: its `match` statements are the only
+  3.10+ syntax in splunk-sdk 3.0.0, and nothing else imports it. Do not
+  downgrade the SDK to "fix" 3.9; `check_python_sdk_version` wants 3.0.0+.
+- On any SDK bump, re-run the 3.9 grammar check over the vendored tree and diff
+  `search_command.py`, `eventing_command.py` and `internals.py` for changes to
+  chunk handling and record writing.

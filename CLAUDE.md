@@ -35,14 +35,43 @@ config is `config/targets.toml`; the token is in `.env` (never read or print it)
   App code keeps pure logic in `<app>_core.py` with no splunklib import.
 - Conf: only `default/`, never `local/`. LF line endings.
 - Module names are shared across apps: prefix helpers with the app id.
-- Commits: concise but meaningful. Work on a branch; never push to main.
+- Supported floor: Splunk 9.3. Author `MaximumPigs`, URL `https://github.com/maximumpigs`.
+- British spelling in prose. Listing files are ASCII only.
+
+## Owner's rules (non-negotiable)
+
+- **No AI tool or model names** in app files, commit messages or PR
+  descriptions, and **no `Co-Authored-By` trailers**. The README's single
+  "AI assistance" section is the only such reference. (Agent config paths such
+  as this file and `.claude/` are the exception, because the tool requires them.)
+  Commits must be authored as the owner, not an AI identity: GitHub's squash
+  merge turns any other author into a `Co-authored-by` trailer. The bash guard
+  denies such commits.
+- Commit messages concise but meaningful.
+- Feature branch, PR, green CI, **squash merge** with an explicit subject and
+  body file. Never push to `main`. **Ask before pushing.**
+- Never write repository files with PowerShell (see the Windows rule).
+
+## How to work here
+
+- **Verify against source, not documentation or metadata.** Read the SDK, the
+  action's entrypoint, the actual file. Docs and PyPI metadata have been wrong.
+- **Never assert behaviour you have not observed.** A one-line `splk search`
+  settles most questions in seconds; three past defects were confident,
+  untested claims.
+- **Prove a fix closes the original reproduction**, before and after, not just
+  that a new test passes.
+- Report what was verified versus inferred, volunteer the gap ("passes
+  AppInspect but has never run in Splunk"), state failures with their output,
+  and own a wrong diagnosis explicitly.
 
 Path-scoped rules in `.claude/rules/` load when you touch matching files.
 
 ## Skills
 
 `dev-loop` (iterate on an app), `new-app` (scaffold), `write-live-test`,
-`appinspect-fix`, `retro` (record a lesson after fixing a failure).
+`appinspect-fix`, `release-app` (person-invoked), `retro` (record a lesson after
+fixing a failure).
 
 ## Learning loop
 

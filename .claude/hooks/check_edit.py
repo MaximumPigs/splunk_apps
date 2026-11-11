@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """PostToolUse hook for Edit/Write: fast checks on the file just changed.
 
-* .py   must compile, and code in apps/, tools/ or hooks should use logging
+* any text file  no UTF-8 byte-order mark, no PowerShell-style mojibake
+* splunkbase/<app>/**  ASCII only (the listing is pasted into a third-party form)
+* .py   must compile; app, script, tool and hook code must also parse under
+        Python 3.9 grammar, and should use logging
 * .conf / .meta  basic lint: LF endings, valid stanza headers, key = value
                lines, no duplicate keys within a stanza
 
@@ -9,6 +12,7 @@ Problems are fed straight back to Claude (decision: block), so they get fixed
 in the same turn instead of surfacing later in AppInspect or a failed search.
 """
 
+import ast
 import os
 import re
 
@@ -20,6 +24,37 @@ STANZA_RE = re.compile(r"^\[[^\[\]]*\]$")
 KEY_RE = re.compile(r"^[^=\s][^=]*?\s*=")
 # Paths where new Python must log (the repo standard), not just print.
 LOGGING_REQUIRED = re.compile(r"^(apps/[^/]+/bin|tools|\.claude/hooks)/")
+# Code that must run on Splunk's 3.9 runtime or the 3.9 CI leg.
+PY39_REQUIRED = re.compile(r"^(apps/[^/]+/bin|scripts|tools|\.claude/hooks)/")
+# Listing copy pasted into Splunkbase's form: ASCII only.
+ASCII_ONLY = re.compile(r"^splunkbase/[^/]+/")
+TEXT_SUFFIXES = (".py", ".conf", ".meta", ".md", ".json", ".manifest", ".xml",
+                 ".yml", ".yaml", ".txt", ".spec", ".csv", ".toml", ".spl.txt")
+# What UTF-8 punctuation looks like after a cp1252 round trip, e.g. an em dash
+# read by PowerShell's Get-Content and written back. Built from escapes so this
+# file itself stays ASCII.
+MOJIBAKE = ("\u00e2\u20ac", "\u00c3\u00a9", "\u00c2\u00a0")
+
+
+def lint_text(raw, relative):
+    """Encoding problems that look fine in a terminal but corrupt the repo."""
+    problems = []
+    if raw.startswith(b"\xef\xbb\xbf"):
+        problems.append("starts with a UTF-8 byte-order mark (PowerShell 5.1 -Encoding utf8 "
+                        "adds one); write files with the file tools or Python instead")
+    text = raw.decode("utf-8", "replace")
+    if any(marker in text for marker in MOJIBAKE):
+        problems.append("contains mojibake (e.g. an em dash turned into three characters): "
+                        "the file was round-tripped through a non-UTF-8 codepage")
+    if ASCII_ONLY.match(relative):
+        for number, line in enumerate(text.split("\n"), 1):
+            bad = sorted({ch for ch in line if ord(ch) > 127})
+            if bad:
+                problems.append("line %d: non-ASCII %s; listing files are ASCII only"
+                                % (number, " ".join("U+%04X" % ord(ch) for ch in bad)))
+                if len(problems) >= 10:
+                    break
+    return problems
 
 
 def lint_conf(path):
@@ -68,6 +103,13 @@ def check_python(path, relative):
         compile(source, path, "exec")
     except SyntaxError as exc:
         problems.append("does not compile: line %s: %s" % (exc.lineno, exc.msg))
+    if not problems and PY39_REQUIRED.match(relative):
+        try:
+            # Grammar-level check only: catches match statements and other
+            # 3.10+ syntax, not stdlib calls added later (CI's 3.9 leg does that).
+            ast.parse(source, filename=path, feature_version=(3, 9))
+        except SyntaxError as exc:
+            problems.append("not valid Python 3.9 syntax at line %s: %s" % (exc.lineno, exc.msg))
     if LOGGING_REQUIRED.match(relative):
         # splunklib search commands log via self.logger, which is fine too.
         if "logging" not in source and "self.logger" not in source and "get_logger" not in source:
@@ -83,11 +125,15 @@ def main():
         return
     relative = rel(path)
     problems, notes = [], []
+    if path.endswith(TEXT_SUFFIXES) or ASCII_ONLY.match(relative):
+        with open(path, "rb") as handle:
+            problems.extend(lint_text(handle.read(), relative))
     if path.endswith(".py"):
-        problems, notes = check_python(path, relative)
+        more, notes = check_python(path, relative)
+        problems.extend(more)
     elif path.endswith((".conf", ".meta")):
-        problems = lint_conf(path)
-    else:
+        problems.extend(lint_conf(path))
+    if not problems and not notes:
         return
 
     for note in notes:
