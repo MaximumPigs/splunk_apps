@@ -1,8 +1,8 @@
-"""Tests for the Claude Code hook scripts in .claude/hooks/.
+"""Tests for the coding agent's hook scripts in .claude/hooks/.
 
 Hooks are the environment's guaranteed safety layer, so their decisions are
 tested like any other code: the pure functions directly, and each script once
-end to end through stdin/stdout exactly as Claude Code calls it.
+end to end through stdin/stdout exactly as the agent runtime calls it.
 """
 
 import json
@@ -22,7 +22,7 @@ import guard_files  # noqa: E402
 
 
 def run_hook(name, event, project_dir):
-    """Invoke a hook script as Claude Code would; return (exit code, parsed stdout)."""
+    """Invoke a hook script as the agent runtime would; return (exit code, parsed stdout)."""
     env = dict(os.environ, CLAUDE_PROJECT_DIR=project_dir)
     proc = subprocess.run(
         [sys.executable, os.path.join(HOOKS_DIR, name)],
@@ -56,7 +56,7 @@ def test_bash_denies_bypasses(command):
     "splk search \"| makeresults\"",
     "pytest -q",
     "cat .env.example",
-    "git push -u origin claude/my-branch",
+    "git push -u origin feature/my-branch",
     "rm -rf build/reports",
 ])
 def test_bash_allows_paved_road(command):
@@ -179,3 +179,48 @@ def test_stop_hook_asks_for_retro_once(tmp_path):
 def test_stop_hook_respects_stop_hook_active(tmp_path):
     code, out = run_hook("stop_retro.py", {"session_id": "s1", "stop_hook_active": True}, str(tmp_path))
     assert (code, out) == (0, None)
+
+
+# ------------------------------------------------- encoding and 3.9 checks
+
+def test_text_lint_rejects_bom_and_mojibake():
+    assert any("byte-order mark" in p for p in check_edit.lint_text(b"\xef\xbb\xbfx = 1\n", "tools/a.py"))
+    # An em dash after a cp1252 round trip, as PowerShell's Get-Content leaves it.
+    corrupted = "a \u2014 b".encode("utf-8").decode("cp1252").encode("utf-8")
+    assert any("mojibake" in p for p in check_edit.lint_text(corrupted, "README.md"))
+
+
+def test_listing_files_must_be_ascii():
+    dashed = "Fills gaps \u2014 fast".encode("utf-8")
+    assert check_edit.lint_text(dashed, "splunkbase/fillcontinuous/listing.md") == [
+        "line 1: non-ASCII U+2014; listing files are ASCII only"]
+    # Ordinary docs, including the splunkbase/ README, may use UTF-8.
+    assert check_edit.lint_text(dashed, "splunkbase/README.md") == []
+    assert check_edit.lint_text(dashed, "README.md") == []
+
+
+def test_python_39_grammar_enforced_for_app_code(tmp_path):
+    script = tmp_path / "apps" / "x" / "bin" / "x_core.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("import logging\nmatch 1:\n    case 1:\n        pass\n")
+    _code, out = run_hook("check_edit.py", {"tool_input": {"file_path": str(script)}}, str(tmp_path))
+    assert out["decision"] == "block"
+    # On a 3.10+ interpreter the 3.9 grammar check catches it; on 3.9 itself
+    # plain compilation already fails. Either way the edit is blocked.
+    assert "Python 3.9" in out["reason"] or "does not compile" in out["reason"]
+
+
+def test_bash_denies_powershell_file_writes():
+    assert guard_bash.decide("Set-Content -Path README.md -Value $x")[0] == "deny"
+    assert guard_bash.decide("$text | Out-File apps/x/default/app.conf -Encoding utf8")[0] == "deny"
+
+
+def test_repo_text_files_are_clean():
+    """Every tracked text file passes the same encoding lint the hook applies."""
+    tracked = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True).stdout.split()
+    found = []
+    for relative in tracked:
+        if relative.endswith(check_edit.TEXT_SUFFIXES) or check_edit.ASCII_ONLY.match(relative):
+            with open(os.path.join(REPO_ROOT, relative), "rb") as handle:
+                found.extend("%s: %s" % (relative, p) for p in check_edit.lint_text(handle.read(), relative))
+    assert found == []

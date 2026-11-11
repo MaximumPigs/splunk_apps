@@ -32,6 +32,10 @@ RULES = [
      "deny", "No force pushes. Push a new commit instead."),
     (r"\bgit\s+push\b.*\b(origin\s+)?(main|master)\b",
      "deny", "Never push to main; push the branch and open a PR."),
+    # PowerShell file writes corrupt UTF-8 (ANSI codepage) or add a BOM (5.1).
+    (r"\b(set-content|out-file|add-content)\b",
+     "deny", "Do not write repository files with PowerShell: it corrupts UTF-8 or adds a BOM. "
+             "Use the file tools, or Python with encoding='utf-8'."),
     # Bulk deletes of things that matter.
     (r"\brm\s+-[a-z]*r[a-z]*f?\s+(/|~|\.|apps\b|\.git\b|tests\b|tools\b)(\s|$|/)",
      "deny", "Recursive delete of a top-level path. Delete specific files instead."),

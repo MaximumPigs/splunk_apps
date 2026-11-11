@@ -68,7 +68,7 @@ jobs:
         # Catches syntax that only parses on a newer interpreter. Without this,
         # a stray match statement or int | None annotation would sail through
         # review and fail at search time on the 3.9 runtime. tools/ and the
-        # Claude Code hooks run on developer machines with whatever Python
+        # agent hooks run on developer machines with whatever Python
         # they have, so they are held to the same floor.
         run: python -m compileall -q apps/*/bin tools .claude/hooks
 

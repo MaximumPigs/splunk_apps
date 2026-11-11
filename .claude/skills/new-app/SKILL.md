@@ -30,6 +30,21 @@ tests/live/<app>/test_<app>_live.py   at least one live test
 splunkbase/<app>/listing.md           if it will be published
 ```
 
+Conventions for the new files:
+
+- `app.conf`: `[id] name` = directory name; `[launcher] author = MaximumPigs`;
+  `is_configured = false`; no `check_for_updates` line; label = display name.
+- `app.manifest`: author `MaximumPigs`, URL `https://github.com/maximumpigs`,
+  `license.uri` and `releaseNotes.uri` on that URL, `privacyPolicy` null unless
+  the app collects data, `info.title` = label.
+- `default.meta`: every `write` list that has `admin` also has `sc_admin`.
+- `commands.conf` (if any): both `python.version = python3` and
+  `python.required = 3.9, 3.13`. Read `.claude/rules/search-commands.md` before
+  writing the command.
+- If it will be published: `splunkbase/<app>/listing.md`, ASCII only, following
+  `.claude/rules/splunkbase-listing.md`. Compatibility claim: Splunk 9.3+.
+- Nothing in the app may name an AI tool or model.
+
 Add the app to the table in the root `README.md`.
 
 ## Verify

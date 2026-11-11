@@ -35,7 +35,7 @@ tests/                 pytest suite covering every app's core logic
 tests/live/<app>/      live tests run against a Splunk target by splk
 tools/splk/            the splk CLI: build, inspect, deploy, live test
 config/targets.toml    Splunk targets for splk (no secrets)
-.claude/               Claude Code rules, skills, agents, hooks and lessons
+.claude/               coding-agent rules, skills, agents, hooks and lessons
 .github/workflows/     CI and release automation
 ```
 
@@ -102,10 +102,10 @@ giving up the 3.9 runtime.
 > template ignores it, which would silently ship apps that cannot import
 > `splunklib`. If you regenerate `.gitignore`, remove that line again.
 
-## Local development loop: `splk` and Claude Code
+## Local development loop: `splk` and the coding agent
 
 `splk` is the one entry point for building, vetting, deploying and testing an
-app against a live Splunk instance. Humans, Claude Code and CI run the same
+app against a live Splunk instance. Humans, the coding agent and CI run the same
 commands, so a result in one place reproduces in the others.
 
 ### Setup
@@ -146,24 +146,25 @@ rows. They are skipped by plain `pytest` and in CI, and run via `splk test
 [`tests/live/conftest.py`](tests/live/conftest.py): `search`, `seed` (index raw
 events into the test index under a unique `source`), `splunk`, `target`.
 
-### Claude Code
+### Coding agent configuration
 
-The repository is set up for [Claude Code](https://code.claude.com/docs):
+The repository carries configuration for the coding agent described under
+[AI assistance](#ai-assistance):
 
 | Path | Role |
 | --- | --- |
 | [`CLAUDE.md`](CLAUDE.md) | Always-loaded project instructions: the `splk` commands and the definition of done. |
-| `.claude/rules/` | Path-scoped rules (Python, conf files, inputs/props, searches/dashboards) that load only when matching files are touched. |
-| `.claude/skills/` | `dev-loop`, `write-live-test`, `appinspect-fix`, `new-app`, `retro`. |
+| `.claude/rules/` | Path-scoped rules (Python, conf files, search commands, inputs/props, searches/dashboards, Splunkbase listings, CI and release) that load only when matching files are touched, plus always-on Windows environment rules. |
+| `.claude/skills/` | `dev-loop`, `write-live-test`, `appinspect-fix`, `new-app`, `release-app`, `retro`. |
 | `.claude/agents/` | `splunk-reviewer` (read-only review) and `learner` (maintains lessons). |
-| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited `.py`/`.conf`, inject target status at session start, and ask for a retro when a failure was fixed. |
+| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited file (Python 3.9 grammar, conf syntax, BOMs and mojibake, ASCII-only listings), inject target status at session start, and ask for a retro when a failure was fixed. |
 | `.claude/agent-memory/learner/` | Lessons learned, committed and reviewed like code. |
 
 Hooks run `python`, so a Python 3.9+ interpreter must be on PATH under that
 name (true for the python.org installer on Windows).
 
 **How it improves itself:** every `splk` stage result is recorded. When a stage
-fails and is later fixed in the same session, the Stop hook asks Claude to run
+fails and is later fixed in the same session, the Stop hook asks the agent to run
 `retro`, and the `learner` agent writes a lesson (symptom, cause, fix, how to
 catch it earlier). A lesson seen twice is promoted into a rule or skill; one
 that must never recur becomes a test or hook check. Those promotions arrive as
