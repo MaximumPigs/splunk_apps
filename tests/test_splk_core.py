@@ -208,8 +208,15 @@ def test_missing_pytest_gives_install_hint(monkeypatch):
 def test_build_outside_repo_drive(tmp_path, monkeypatch):
     """On Windows, os.path.relpath raises when the package is on another drive
     (e.g. pytest's tmp on C: with the repo on D:). The summary must still render."""
+    from splk import paths
+    real_relpath = os.path.relpath
+
     def cross_drive(path, start=None):
-        raise ValueError("path is on mount 'C:', start on mount 'D:'")
+        # Only the package-vs-repo comparison crosses drives; the packager's
+        # own relpath calls stay inside apps/ and behave normally.
+        if start == paths.REPO_ROOT:
+            raise ValueError("path is on mount 'C:', start on mount 'D:'")
+        return real_relpath(path, start)
     monkeypatch.setattr(runlog, "record", lambda *a, **k: None)
     monkeypatch.setattr(os.path, "relpath", cross_drive)
     result = stages.build("fillcontinuous", outdir=str(tmp_path))
