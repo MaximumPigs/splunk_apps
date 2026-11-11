@@ -14,8 +14,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPS_DIR = os.path.join(REPO_ROOT, "apps")
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 
+TOOLS_DIR = os.path.join(REPO_ROOT, "tools")
+
 if os.path.isdir(SCRIPTS_DIR) and SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
+
+# Makes the splk package importable without `pip install -e .`, so the suite
+# runs from a bare checkout exactly as it did before splk existed.
+if os.path.isdir(TOOLS_DIR) and TOOLS_DIR not in sys.path:
+    sys.path.insert(0, TOOLS_DIR)
 
 
 def _register_app_bin_directories():

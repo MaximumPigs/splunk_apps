@@ -4,3 +4,6 @@
 # Must stay installable on Python 3.9, which is the oldest interpreter the
 # apps target and part of the CI matrix.
 pytest>=7.4,<9
+
+# splk reads config/targets.toml; tomllib is stdlib only from Python 3.11.
+tomli>=2.0; python_version < "3.11"

@@ -78,3 +78,14 @@ dmypy.json
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---------------------------------------------------------------------------
+# Agentic dev environment (splk + Claude Code)
+# ---------------------------------------------------------------------------
+# Machine-local run log, hook state and logs: evidence for the learning loop,
+# not source. Lessons distilled from it live in .claude/agent-memory/.
+.agent/
+# Personal Claude Code overrides and personal subagent memory.
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/agent-memory-local/

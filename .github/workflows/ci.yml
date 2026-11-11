@@ -42,7 +42,10 @@ jobs:
 
   test:
     name: Tests (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, for which actions/setup-python
+    # publishes no 3.9 build (the newest 3.9.x ships for 22.04 and 24.04 only).
+    # 3.9 is Splunk's LTS runtime, so the 3.9 leg must keep running.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -61,11 +64,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Byte-compile every app script
+      - name: Byte-compile every app script and the dev tooling
         # Catches syntax that only parses on a newer interpreter. Without this,
         # a stray match statement or int | None annotation would sail through
-        # review and fail at search time on the 3.9 runtime.
-        run: python -m compileall -q apps/*/bin
+        # review and fail at search time on the 3.9 runtime. tools/ and the
+        # Claude Code hooks run on developer machines with whatever Python
+        # they have, so they are held to the same floor.
+        run: python -m compileall -q apps/*/bin tools .claude/hooks
 
       - name: Run unit tests
         run: pytest -q

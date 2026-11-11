@@ -1,0 +1,25 @@
+# Splunk instances splk can deploy to and test against.
+#
+# No secrets here: each target names the environment variable that holds its
+# token (token_env), and .env supplies it locally. See .env.example.
+#
+# Keys per target:
+#   host, port, scheme  management endpoint (splunkd, normally 8089 over https)
+#   verify_tls          false only for a local instance with its self-signed cert
+#   token_env           env var holding a Splunk auth token
+#   allow_restart       whether `splk deploy --restart` may restart splunkd
+#   stage_dir           optional: copy packages here when splunkd cannot read dist/
+#   server_stage_dir    optional: the same folder as splunkd sees it (Docker/WSL)
+#   test_index          index live tests may write seed events to
+
+default_target = "local"
+
+[targets.local]
+host = "localhost"
+port = 8089
+scheme = "https"
+verify_tls = false
+token_env = "SPLUNK_TOKEN"
+# A dev instance: restarts are acceptable, but still only with --restart.
+allow_restart = true
+test_index = "splk_test"
