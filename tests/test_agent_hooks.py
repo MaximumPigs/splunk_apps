@@ -215,6 +215,74 @@ def test_bash_denies_powershell_file_writes():
     assert guard_bash.decide("$text | Out-File apps/x/default/app.conf -Encoding utf8")[0] == "deny"
 
 
+def _config(values):
+    """Fake git config lookup, so tests never depend on this machine's identity."""
+    return lambda key, cwd: values.get(key, "")
+
+
+AI_CONFIG = _config({"user.name": "Claude", "user.email": "noreply@anthropic.com"})
+OWNER_CONFIG = _config({"user.name": "MaximumPigs", "user.email": "1+maximumpigs@users.noreply.github.com"})
+
+
+@pytest.mark.parametrize("command", [
+    "git commit -m 'Fix chunking'",
+    "git -C /d/splunk_apps commit -F /tmp/msg.txt",
+    "git commit --amend --no-edit",
+])
+def test_bash_denies_commit_authored_by_ai_identity(command):
+    decision, reason = guard_bash.decide(command, environ={}, config=AI_CONFIG)
+    assert decision == "deny", command
+    assert "Co-authored-by" in reason
+
+
+@pytest.mark.parametrize("command", [
+    "git commit --author='Claude <noreply@anthropic.com>' -m x",
+    "GIT_AUTHOR_EMAIL=noreply@anthropic.com git commit -m x",
+    "git -c user.name=Claude commit -m x",
+    "git commit -m 'Fix' -m 'Co-Authored-By: Someone <a@b.c>'",
+])
+def test_bash_denies_ai_author_overrides_and_trailers(command):
+    assert guard_bash.decide(command, environ={}, config=OWNER_CONFIG)[0] == "deny", command
+
+
+@pytest.mark.parametrize("command", [
+    "git commit -m 'Fix chunking'",
+    "git -C /d/splunk_apps commit -F /tmp/msg.txt",
+    "git commit --author='MaximumPigs <1+maximumpigs@users.noreply.github.com>' -m x",
+    "git log --author=claude",
+    "git status",
+])
+def test_bash_allows_commit_by_owner_identity(command):
+    assert guard_bash.decide(command, environ={}, config=OWNER_CONFIG) == (None, None), command
+
+
+def test_bash_commit_author_env_beats_config():
+    environ = {"GIT_AUTHOR_NAME": "Claude", "GIT_AUTHOR_EMAIL": "noreply@anthropic.com"}
+    assert guard_bash.decide("git commit -m x", environ=environ, config=OWNER_CONFIG)[0] == "deny"
+
+
+def test_bash_commit_author_end_to_end(tmp_path):
+    """Real git config in a real repo, through the hook as the runtime calls it."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Claude"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "noreply@anthropic.com"], check=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_AUTHOR_")}
+    event = {"cwd": str(repo), "tool_input": {"command": "git commit -m x"}}
+    proc = subprocess.run([sys.executable, os.path.join(HOOKS_DIR, "guard_bash.py")],
+                          input=json.dumps(event), capture_output=True, text=True,
+                          env=dict(env, CLAUDE_PROJECT_DIR=str(tmp_path)), timeout=30)
+    assert json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "MaximumPigs"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "1+maximumpigs@users.noreply.github.com"],
+                   check=True)
+    proc = subprocess.run([sys.executable, os.path.join(HOOKS_DIR, "guard_bash.py")],
+                          input=json.dumps(event), capture_output=True, text=True,
+                          env=dict(env, CLAUDE_PROJECT_DIR=str(tmp_path)), timeout=30)
+    assert proc.stdout.strip() == ""
+
+
 def test_repo_text_files_are_clean():
     """Every tracked text file passes the same encoding lint the hook applies."""
     tracked = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True).stdout.split()

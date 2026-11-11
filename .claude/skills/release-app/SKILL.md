@@ -26,7 +26,9 @@ before every push**.
    gh pr merge <n> --squash --subject "<subject>" --body-file <short path>
    ```
 
-   No AI tool names and no `Co-Authored-By` trailers in either.
+   No AI tool names and no `Co-Authored-By` trailers in either. Before
+   merging, check every PR commit's author (`gh api repos/<o>/<r>/pulls/<n>/commits`):
+   GitHub adds a co-author trailer for each author other than the merger.
 
 ## Tag
 
