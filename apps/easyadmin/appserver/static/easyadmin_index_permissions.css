@@ -1,0 +1,162 @@
+/*
+ * Easy Admin - index permissions page.
+ *
+ * The grid carries its own fixed palette instead of inheriting the dashboard
+ * theme: sticky header cells must be opaque to hide the rows scrolling under
+ * them, and an opaque colour that suits the light theme is wrong on the dark
+ * one. A self-contained light grid is legible in both.
+ */
+
+#easyadmin-index-permissions {
+    color: #1a1c20;
+    background: #ffffff;
+    padding: 12px;
+}
+
+#easyadmin-index-permissions .ea-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+#easyadmin-index-permissions .ea-toolbar input[type="text"],
+#easyadmin-index-permissions .ea-toolbar select {
+    margin: 0;
+    height: 32px;
+    box-sizing: border-box;
+}
+
+#easyadmin-index-permissions .ea-label {
+    margin: 0;
+    display: inline;
+}
+
+#easyadmin-index-permissions .ea-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 8px;
+}
+
+#easyadmin-index-permissions .ea-message {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-left: 4px solid #6b7785;
+    background: #f2f4f5;
+}
+
+#easyadmin-index-permissions .ea-message.ea-error {
+    border-left-color: #c0392b;
+    background: #fdecea;
+}
+
+#easyadmin-index-permissions .ea-message.ea-success {
+    border-left-color: #2e7d32;
+    background: #e8f5e9;
+}
+
+#easyadmin-index-permissions .ea-legend {
+    font-size: 12px;
+    color: #55606e;
+    margin: 0 0 8px 0;
+}
+
+/* The grid scrolls inside this box so the header row and index column can stay put. */
+#easyadmin-index-permissions .ea-table-wrap {
+    max-height: 70vh;
+    overflow: auto;
+    border: 1px solid #c3cbd4;
+}
+
+#easyadmin-index-permissions .ea-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: auto;
+}
+
+#easyadmin-index-permissions .ea-table th,
+#easyadmin-index-permissions .ea-table td {
+    border-right: 1px solid #e1e6eb;
+    border-bottom: 1px solid #e1e6eb;
+    padding: 4px 8px;
+    background: #ffffff;
+    color: #1a1c20;
+}
+
+#easyadmin-index-permissions .ea-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f2f4f5;
+    vertical-align: bottom;
+    font-weight: 600;
+}
+
+/*
+ * Index names (and their badges) read bottom-to-top so each column is one
+ * checkbox wide; there are usually far more indexes than roles.
+ */
+#easyadmin-index-permissions .ea-table thead th.ea-index .ea-index-label {
+    display: inline-block;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    white-space: nowrap;
+    max-height: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#easyadmin-index-permissions .ea-table thead th.ea-index .ea-badge {
+    margin: 6px 0 0 0;
+    padding: 6px 0;
+}
+
+#easyadmin-index-permissions .ea-table th.ea-role,
+#easyadmin-index-permissions .ea-table th.ea-corner {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    text-align: left;
+    white-space: nowrap;
+    font-weight: normal;
+    background: #f2f4f5;
+}
+
+#easyadmin-index-permissions .ea-table th.ea-corner {
+    z-index: 3;
+    font-weight: 600;
+}
+
+#easyadmin-index-permissions .ea-badge {
+    margin-left: 8px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    background: #dfe4ea;
+    color: #3c444d;
+}
+
+#easyadmin-index-permissions .ea-cell {
+    text-align: center;
+}
+
+#easyadmin-index-permissions .ea-cell input[type="checkbox"] {
+    margin: 0;
+}
+
+#easyadmin-index-permissions .ea-table td.ea-effective {
+    background: #dcebf9;
+}
+
+#easyadmin-index-permissions .ea-table td.ea-changed {
+    box-shadow: inset 0 0 0 2px #e08a00;
+}
+
+#easyadmin-index-permissions .ea-table tbody tr:hover td {
+    background: #f7f9fa;
+}
+
+#easyadmin-index-permissions .ea-table tbody tr:hover td.ea-effective {
+    background: #cfe2f5;
+}
