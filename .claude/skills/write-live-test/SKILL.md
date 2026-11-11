@@ -29,14 +29,31 @@ skipped in plain `pytest` and in CI.
   with the app's sourcetype, then search `index=<test_index> source="<marker>"`.
   Index-time behaviour only applies to events indexed after the deploy.
 
+## Paths a small test cannot reach
+
+- **Multi-chunk**: commands see one protocol chunk per call. Generate tens of
+  thousands of rows (`| makeresults count=50000 | streamstats count as n | eval ...`),
+  punch a known hole, then assert `total_rows`, `dc()` of each dimension and a
+  summed measure. A three-row test passes a broken buffering implementation.
+- **Heterogeneous rows**: for commands that add different fields per record,
+  mix event shapes in one search and assert through a downstream `| table`,
+  not the command's own message. Same-shape data hides dropped columns.
+- **Messages**: assert on the text users see (`str.format` rendering), since a
+  `%`-style template passes silently in a stub.
+
 ## Rules
 
+- Never assert or document behaviour you have not observed on the target.
+  Check a claim (e.g. how a built-in command treats duplicates) with
+  `splk search` first, then encode the observed result as a test.
 - Fixed timestamps and literal expected values. No "greater than zero" asserts.
 - Convert `_time` with `| eval epoch=_time` before `table`; JSON results
   format `_time` as a string.
 - One behaviour per test; the docstring says what the README promises.
 - Each test must fail if the feature is removed. Check that by breaking it once.
 - Log nothing secret; the `search` fixture already logs the SPL.
+- Searches run as oneshot jobs, which return Splunk's error messages. Do not
+  switch to `search/jobs/export`: it returns 200 with an empty body on failure.
 
 ## Example (seeded extraction)
 

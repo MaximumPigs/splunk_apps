@@ -4,7 +4,7 @@ Each stage (build, unit, inspect, deploy, live) writes one JSON line to
 ``.agent/runs/YYYY-MM-DD.jsonl``. This is the raw evidence the self-improvement
 loop works from: the Stop hook reads it to spot a failure that was later fixed,
 and the learner agent reads it during a retro. It is never loaded into
-Claude's context wholesale.
+the agent's context wholesale.
 """
 
 import datetime
@@ -71,7 +71,7 @@ def read_since(epoch, runs_dir=None):
 def fixed_failures(entries):
     """(app, stage) pairs that failed and then passed later in ``entries``.
 
-    These are exactly the moments worth a retro: something broke, Claude
+    These are exactly the moments worth a retro: something broke, the agent
     changed something, and it stopped breaking.
     """
     failed_at = {}

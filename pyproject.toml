@@ -2,8 +2,8 @@
 #
 # Nothing in this file affects what ships to Splunk: apps are packaged by
 # scripts/package_app.py from apps/<app>/ alone. This exists so that
-# `pip install -e .` puts the `splk` command on PATH for humans, Claude Code
-# and CI alike.
+# `pip install -e .` puts the `splk` command on PATH for humans, the coding
+# agent and CI alike.
 
 [build-system]
 requires = ["setuptools>=61"]

@@ -21,5 +21,17 @@ argument-hint: "[app-id]"
 6. The run is deliberately untagged (full check set). Do not add
    `--included-tags cloud`: `check_for_updates_disabled` is tagged
    `private_app`, and a cloud-only run let a Splunkbase-rejected package through.
-7. Re-run `splk inspect <app>` until green, then `splk dev <app>`.
-8. Record anything non-obvious with the `retro` skill.
+7. Findings that recur, and their fixes:
+
+   | Check | Fix |
+   | --- | --- |
+   | `is_configured = true` | hard failure: set `false` unless there is a setup page |
+   | `check_kos_are_accessible` | add `sc_admin` beside `admin` in `default.meta` write lists |
+   | version mismatch | `[launcher]` and `[id]` versions equal; `[id] name` equals the directory |
+   | `check_python_sdk_version` | re-vendor with `scripts/vendor_splunklib.py`, never downgrade |
+   | `check_for_updates_disabled` (warning) | expected and permanent for Splunkbase apps: do **not** set `false` |
+
+   Expected warnings: the generic Splunk 8.0 Python 2/3 notice, and on Windows
+   `check_idx_binary_compatibility` / `check_symlink_outside_app` (Linux/macOS only).
+8. Re-run `splk inspect <app>` until green, then `splk dev <app>`.
+9. Record anything non-obvious with the `retro` skill.

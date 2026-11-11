@@ -80,12 +80,12 @@ Thumbs.db
 desktop.ini
 
 # ---------------------------------------------------------------------------
-# Agentic dev environment (splk + Claude Code)
+# Agentic dev environment (splk + coding agent)
 # ---------------------------------------------------------------------------
 # Machine-local run log, hook state and logs: evidence for the learning loop,
 # not source. Lessons distilled from it live in .claude/agent-memory/.
 .agent/
-# Personal Claude Code overrides and personal subagent memory.
+# Personal agent overrides and personal subagent memory.
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/agent-memory-local/

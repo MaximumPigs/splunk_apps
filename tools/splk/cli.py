@@ -1,6 +1,6 @@
 """Command-line interface for splk.
 
-Exit codes are part of the contract with Claude Code and CI:
+Exit codes are part of the contract with the coding agent and CI:
 
 * 0  every stage passed
 * 1  a stage failed (details on stderr, in the run log, and in --json output)
