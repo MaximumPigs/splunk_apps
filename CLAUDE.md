@@ -44,6 +44,9 @@ config is `config/targets.toml`; the token is in `.env` (never read or print it)
   descriptions, and **no `Co-Authored-By` trailers**. The README's single
   "AI assistance" section is the only such reference. (Agent config paths such
   as this file and `.claude/` are the exception, because the tool requires them.)
+  Commits must be authored as the owner, not an AI identity: GitHub's squash
+  merge turns any other author into a `Co-authored-by` trailer. The bash guard
+  denies such commits.
 - Commit messages concise but meaningful.
 - Feature branch, PR, green CI, **squash merge** with an explicit subject and
   body file. Never push to `main`. **Ask before pushing.**
