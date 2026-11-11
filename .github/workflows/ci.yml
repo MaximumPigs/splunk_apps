@@ -15,30 +15,41 @@ concurrency:
 
 jobs:
   discover:
-    name: Discover apps
+    name: Discover changed apps
     runs-on: ubuntu-latest
     outputs:
       apps: ${{ steps.find.outputs.apps }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Full history so the PR base / push "before" commit and their merge
+          # base exist locally. The default shallow clone has neither.
+          fetch-depth: 0
 
-      - name: Find every app under apps/
+      - name: Select apps changed by this PR or push
         id: find
         shell: bash
+        env:
+          # PR: diff against the base branch. Push: diff against the previous
+          # tip. workflow_dispatch has neither, so it vets every app.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          names=()
-          for dir in apps/*/; do
-            [ -f "${dir}default/app.conf" ] || continue
-            names+=("$(basename "$dir")")
-          done
-          if [ ${#names[@]} -eq 0 ]; then
-            echo "::error::No apps found under apps/ (expected apps/<name>/default/app.conf)"
-            exit 1
+          # Only packaging and AppInspect are scoped; tests always run in full.
+          # The script falls back to every app whenever the range is unusable
+          # and when a shared file (packager, this workflow, waivers) changed.
+          if [ "${EVENT}" = "workflow_dispatch" ]; then
+            apps="$(python3 scripts/changed_apps.py --all)"
+          else
+            apps="$(python3 scripts/changed_apps.py --base "${BASE_SHA}" --head "${HEAD_SHA}")"
           fi
-          printf '%s\n' "${names[@]}" | jq -R . | jq -s -c . > apps.json
-          echo "apps=$(cat apps.json)" >> "$GITHUB_OUTPUT"
-          echo "Discovered: $(cat apps.json)"
+          echo "apps=${apps}" >> "$GITHUB_OUTPUT"
+          echo "Selected: ${apps}"
+          if [ "${apps}" = "[]" ]; then
+            echo "::notice::No app changed, so packaging and AppInspect were skipped."
+          fi
 
   test:
     name: Tests (Python ${{ matrix.python }})
@@ -78,6 +89,8 @@ jobs:
   package:
     name: Package ${{ matrix.app }}
     needs: [discover, test]
+    # An empty matrix fails the run, so skip when no app changed.
+    if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -102,6 +115,8 @@ jobs:
   appinspect:
     name: AppInspect ${{ matrix.app }}
     needs: [discover, package]
+    # An empty matrix fails the run, so skip when no app changed.
+    if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -147,6 +162,8 @@ jobs:
   appinspect-api:
     name: AppInspect API ${{ matrix.app }}
     needs: [discover, package]
+    # An empty matrix fails the run, so skip when no app changed.
+    if: needs.discover.outputs.apps != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -21,6 +21,9 @@ paths:
 - Actions are pinned to commit SHAs. To bump, resolve the SHA
   (`gh api repos/<owner>/<action>/commits/<tag> --jq .sha`), never edit a tag.
   Splunk's actions are Docker actions whose image tag is still mutable.
+- CI packages and vets only apps changed in the PR/push
+  (`scripts/changed_apps.py`). Any doubt must select every app, never none. A
+  new file that affects every package or verdict belongs in its `SHARED_PATHS`.
 - `ubuntu-latest` can drop old Pythons: the test job is pinned to
   `ubuntu-24.04` to keep 3.9. Re-check before unpinning.
 - `scripts/package_app.py` normalises modes to 0644/0755 (load-bearing on
