@@ -1,0 +1,15 @@
+#
+# easyadmin - default object permissions
+#
+# The app is an administration tool, so its views are readable and writable by
+# administrators only, and nothing is exported to other apps. An administrator
+# can widen read access in Splunk Web for other roles that are allowed to edit
+# roles; splunkd still checks each user's own capabilities on every change.
+#
+# sc_admin is listed alongside admin because the admin role does not exist for
+# Splunk Cloud customers; without it, Cloud administrators cannot open the app.
+# AppInspect's check_kos_are_accessible flags its absence.
+#
+
+[]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
