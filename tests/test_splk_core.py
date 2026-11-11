@@ -192,3 +192,14 @@ def test_build_unknown_app_fails_cleanly(tmp_path, monkeypatch):
     result = stages.build("no_such_app", outdir=str(tmp_path))
     assert not result.ok
     assert "No such app" in result.summary
+
+
+def test_missing_pytest_gives_install_hint(monkeypatch):
+    """The unit and live stages run pytest; without it, say what to install."""
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: None if name == "pytest" else real(name, *a))
+    monkeypatch.setattr(runlog, "record", lambda *a, **k: None)
+    result = stages.unit_tests()
+    assert not result.ok
+    assert '.[dev]' in result.summary

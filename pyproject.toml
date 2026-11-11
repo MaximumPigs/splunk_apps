@@ -23,6 +23,9 @@ dependencies = [
 [project.optional-dependencies]
 # AppInspect is large and only needed for `splk inspect` / `splk dev`.
 inspect = ["splunk-appinspect"]
+# Everything the local dev loop needs: `pip install -e ".[dev]"`.
+# splk runs pytest for the unit and live stages, so it must be installed.
+dev = ["pytest>=7.4,<9", "splunk-appinspect"]
 
 [project.scripts]
 splk = "splk.cli:main"

@@ -111,7 +111,7 @@ commands, so a result in one place reproduces in the others.
 ### Setup
 
 ```bash
-pip install -e ".[inspect]"     # puts `splk` on PATH, with AppInspect
+pip install -e ".[dev]"         # puts `splk` on PATH, with pytest and AppInspect
 cp .env.example .env            # then paste a Splunk auth token into SPLUNK_TOKEN
 splk doctor                     # reachable? token valid? which version?
 ```

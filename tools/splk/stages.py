@@ -6,6 +6,7 @@ same behaviour and the same evidence trail.
 """
 
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -101,6 +102,12 @@ def junit_failures(junit_path):
 
 def _pytest(stage, app, args, command, env=None):
     """Run pytest in a subprocess and turn its JUnit report into a result."""
+    # Without this check a missing pytest surfaces as "No module named pytest"
+    # buried in stderr; say what to install instead.
+    if importlib.util.find_spec("pytest") is None:
+        return _finish(command, StageResult(
+            stage, app, False, 'pytest is not installed in this environment: pip install -e ".[dev]"',
+        ))
     junit = os.path.join(paths.BUILD_DIR, "reports", "%s-%s.xml" % (stage, app or "all"))
     os.makedirs(os.path.dirname(junit), exist_ok=True)
     cmd = [sys.executable, "-m", "pytest", "-q", "--junitxml", junit] + args
@@ -200,7 +207,7 @@ def inspect(app, package, command="inspect"):
     exe = shutil.which("splunk-appinspect")
     if not exe:
         return _finish(command, StageResult(
-            "inspect", app, False, "splunk-appinspect not installed (pip install -e .[inspect])",
+            "inspect", app, False, 'splunk-appinspect is not installed: pip install -e ".[dev]"',
         ))
     report_path = os.path.join(paths.BUILD_DIR, "reports", "appinspect-%s.json" % app)
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
