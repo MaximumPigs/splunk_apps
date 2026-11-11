@@ -61,11 +61,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Byte-compile every app script
+      - name: Byte-compile every app script and the dev tooling
         # Catches syntax that only parses on a newer interpreter. Without this,
         # a stray match statement or int | None annotation would sail through
-        # review and fail at search time on the 3.9 runtime.
-        run: python -m compileall -q apps/*/bin
+        # review and fail at search time on the 3.9 runtime. tools/ and the
+        # Claude Code hooks run on developer machines with whatever Python
+        # they have, so they are held to the same floor.
+        run: python -m compileall -q apps/*/bin tools .claude/hooks
 
       - name: Run unit tests
         run: pytest -q

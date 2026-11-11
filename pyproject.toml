@@ -1,0 +1,31 @@
+# Packaging for the repo's developer tooling only.
+#
+# Nothing in this file affects what ships to Splunk: apps are packaged by
+# scripts/package_app.py from apps/<app>/ alone. This exists so that
+# `pip install -e .` puts the `splk` command on PATH for humans, Claude Code
+# and CI alike.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "splk"
+version = "0.1.0"
+description = "Build, vet, deploy and live-test the Splunk apps in this repository."
+# 3.9 matches the oldest interpreter in the CI matrix and Splunk's LTS runtime.
+requires-python = ">=3.9"
+dependencies = [
+    # tomllib is stdlib from 3.11; tomli is the same parser for older versions.
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+# AppInspect is large and only needed for `splk inspect` / `splk dev`.
+inspect = ["splunk-appinspect"]
+
+[project.scripts]
+splk = "splk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["tools"]

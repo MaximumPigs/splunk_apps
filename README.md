@@ -32,6 +32,10 @@ apps/<app>/            one directory per app, named for its app id
 scripts/               packaging and dependency vendoring
 splunkbase/<app>/      listing copy for the app's Splunkbase page
 tests/                 pytest suite covering every app's core logic
+tests/live/<app>/      live tests run against a Splunk target by splk
+tools/splk/            the splk CLI: build, inspect, deploy, live test
+config/targets.toml    Splunk targets for splk (no secrets)
+.claude/               Claude Code rules, skills, agents, hooks and lessons
 .github/workflows/     CI and release automation
 ```
 
@@ -97,6 +101,73 @@ giving up the 3.9 runtime.
 > `lib/` is deliberately **not** in `.gitignore`. The stock GitHub Python
 > template ignores it, which would silently ship apps that cannot import
 > `splunklib`. If you regenerate `.gitignore`, remove that line again.
+
+## Local development loop: `splk` and Claude Code
+
+`splk` is the one entry point for building, vetting, deploying and testing an
+app against a live Splunk instance. Humans, Claude Code and CI run the same
+commands, so a result in one place reproduces in the others.
+
+### Setup
+
+```bash
+pip install -e ".[inspect]"     # puts `splk` on PATH, with AppInspect
+cp .env.example .env            # then paste a Splunk auth token into SPLUNK_TOKEN
+splk doctor                     # reachable? token valid? which version?
+```
+
+Targets live in [`config/targets.toml`](config/targets.toml). The default,
+`local`, is `https://localhost:8089` with TLS verification off for the
+self-signed certificate of a fresh install. Live tests that seed events need a
+dev-only index called `splk_test` on the target (create it once in Splunk Web).
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `splk dev <app>` | Build, unit tests, AppInspect, install on the target, live tests. Stops at the first red stage. |
+| `splk dev <app> --skip-inspect` | The same without AppInspect, for a faster inner loop. |
+| `splk test [--live <app>]` | Unit tests; with `--live`, also `tests/live/<app>/` on the target. |
+| `splk inspect <app>` | Build and run the full AppInspect check set. |
+| `splk deploy <app> [--restart]` | Build and install via `POST /services/apps/local`, verify the installed version, reload. Restarts only with `--restart` on a target that allows it. |
+| `splk search "<spl>"` | Run one query on the target and print rows as JSON. |
+| `splk runs` | Recent stage results from the run log. |
+
+`--json` gives machine-readable results; `-v` gives debug output. Every run
+logs to `.agent/logs/splk.log` (JSON lines, tokens masked) and records each
+stage result in `.agent/runs/`. Exit codes: 0 green, 1 a stage failed, 2 usage
+or configuration error.
+
+### Live tests
+
+`tests/live/<app>/` holds tests that run SPL on the target and assert on the
+rows. They are skipped by plain `pytest` and in CI, and run via `splk test
+--live <app>` or as the last stage of `splk dev`. Fixtures in
+[`tests/live/conftest.py`](tests/live/conftest.py): `search`, `seed` (index raw
+events into the test index under a unique `source`), `splunk`, `target`.
+
+### Claude Code
+
+The repository is set up for [Claude Code](https://code.claude.com/docs):
+
+| Path | Role |
+| --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | Always-loaded project instructions: the `splk` commands and the definition of done. |
+| `.claude/rules/` | Path-scoped rules (Python, conf files, inputs/props, searches/dashboards) that load only when matching files are touched. |
+| `.claude/skills/` | `dev-loop`, `write-live-test`, `appinspect-fix`, `new-app`, `retro`. |
+| `.claude/agents/` | `splunk-reviewer` (read-only review) and `learner` (maintains lessons). |
+| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited `.py`/`.conf`, inject target status at session start, and ask for a retro when a failure was fixed. |
+| `.claude/agent-memory/learner/` | Lessons learned, committed and reviewed like code. |
+
+Hooks run `python`, so a Python 3.9+ interpreter must be on PATH under that
+name (true for the python.org installer on Windows).
+
+**How it improves itself:** every `splk` stage result is recorded. When a stage
+fails and is later fixed in the same session, the Stop hook asks Claude to run
+`retro`, and the `learner` agent writes a lesson (symptom, cause, fix, how to
+catch it earlier). A lesson seen twice is promoted into a rule or skill; one
+that must never recur becomes a test or hook check. Those promotions arrive as
+ordinary diffs in a pull request.
 
 ## Packaging
 
@@ -185,8 +256,11 @@ sees it either way.
 ```bash
 pip install splunk-appinspect
 python scripts/package_app.py fillcontinuous --outdir dist
-splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test --included-tags cloud
+splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test
 ```
+
+Or `splk inspect fillcontinuous`, which does both steps and also fails on any
+manual check not recorded in `.appinspect.manualcheck.yaml`, as CI does.
 
 Note the absence of `--included-tags`. CI runs the complete set for the same
 reason: filtering to `cloud` covers 246 of 252 checks, and one of the six it
