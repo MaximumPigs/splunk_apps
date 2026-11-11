@@ -27,3 +27,16 @@ TARGETS_FILE = os.path.join(CONFIG_DIR, "targets.toml")
 ENV_FILE = os.path.join(REPO_ROOT, ".env")
 MANUAL_CHECKS_FILE = os.path.join(REPO_ROOT, ".appinspect.manualcheck.yaml")
 EXPECTED_FAILURES_FILE = os.path.join(REPO_ROOT, ".appinspect.expect.yaml")
+
+
+def display(path):
+    """Repo-relative path for messages, or the absolute path if that fails.
+
+    os.path.relpath raises ValueError on Windows when the path and the repo are
+    on different drives (a temp dir on C: with the repo on D:), and a display
+    string must never be the thing that fails a stage.
+    """
+    try:
+        return os.path.relpath(path, REPO_ROOT)
+    except ValueError:
+        return os.path.abspath(path)

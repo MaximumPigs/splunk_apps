@@ -203,3 +203,15 @@ def test_missing_pytest_gives_install_hint(monkeypatch):
     result = stages.unit_tests()
     assert not result.ok
     assert '.[dev]' in result.summary
+
+
+def test_build_outside_repo_drive(tmp_path, monkeypatch):
+    """On Windows, os.path.relpath raises when the package is on another drive
+    (e.g. pytest's tmp on C: with the repo on D:). The summary must still render."""
+    def cross_drive(path, start=None):
+        raise ValueError("path is on mount 'C:', start on mount 'D:'")
+    monkeypatch.setattr(runlog, "record", lambda *a, **k: None)
+    monkeypatch.setattr(os.path, "relpath", cross_drive)
+    result = stages.build("fillcontinuous", outdir=str(tmp_path))
+    assert result.ok, result.summary
+    assert str(tmp_path) in result.summary

@@ -77,7 +77,7 @@ def build(app, command="build", outdir=None):
     except SystemExit as exc:  # The packager reports problems via SystemExit.
         return _finish(command, StageResult("build", app, False, str(exc)))
     return _finish(command, StageResult(
-        "build", app, True, "Built %s" % os.path.relpath(package, paths.REPO_ROOT), artifact=package,
+        "build", app, True, "Built %s" % paths.display(package), artifact=package,
     ))
 
 
