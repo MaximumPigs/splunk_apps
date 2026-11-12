@@ -12,6 +12,8 @@ One line per lesson, most hits first. Details in `lessons/`. Maintained by the
 | 1 | lesson | [Persist REST handlers keep old code after deploy](lessons/splk-persist-handler-stale-code.md): `scripttype=persist` ignores reinstall/_reload; restart or wait. |
 | 1 | lesson | [simpleRequest postargs must be a dict](lessons/python-simplerequest-postargs-dict.md): list of pairs fails on `.items()`; use `{k: [v1, v2]}`, `""` clears. |
 | 1 | lesson | [Splunk Web caches static files by app build](lessons/conf-app-build-static-cache.md): bump `[install] build` with any `appserver/static` change, or the old JS/CSS is served. |
+| 1 | lesson | [splunkd JSON numbers vs `\| rest` strings](lessons/splunkd-json-numbers-vs-rest-search.md): REST JSON gives quotas as numbers; `\| rest` gives strings. Normalise at the boundary. |
+| 1 | lesson | [splunkd hides imported capabilities from a role's own list](lessons/splunkd-role-capabilities-reporting.md): new roles start with 5; compare `capabilities` + `imported_capabilities`. |
 | 1 | lesson | [splunkd sorts role index lists](lessons/splunkd-role-index-lists-sorted.md): compare `srchIndexes*` as sets in live tests. |
 | 1 | rule | [Messages use str.format](lessons/search-command-message-format.md): a `%` stub hid a literal `%d` shown to users. |
 | 1 | rule | [transform() runs per chunk](lessons/search-command-chunking.md): buffer until `_finished`; test with tens of thousands of rows. |

@@ -14,7 +14,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-"""REST endpoint behind the Easy Admin index permissions page.
+"""REST endpoint behind the Easy Admin role management page.
 
 A thin wrapper: routing, validation and the matrix logic live in
 easyadmin_core, which imports nothing from Splunk so it can be unit tested.
@@ -134,9 +134,19 @@ class SplunkdGateway(object):
         return self._entries(self._request(
             "/services/data/indexes", getargs={"count": 0, "datatype": "all"}))
 
-    def capabilities(self):
-        entries = self._entries(self._request("/services/authentication/current-context"))
+    def list_capabilities(self):
+        # One entry whose content.capabilities lists every capability splunkd
+        # defines, including those added by installed apps (249 on 10.6.1).
+        entries = self._entries(self._request("/services/authorization/capabilities"))
         return core.as_list(entries[0]["content"].get("capabilities")) if entries else []
+
+    def current_context(self):
+        entries = self._entries(self._request("/services/authentication/current-context"))
+        if not entries:
+            return {}
+        content = entries[0]["content"]
+        return {"capabilities": core.as_list(content.get("capabilities")),
+                "roles": core.as_list(content.get("roles"))}
 
     def get_role(self, name):
         try:
@@ -154,17 +164,20 @@ class SplunkdGateway(object):
     def update_role(self, name, fields):
         # simpleRequest only accepts a dict (it calls .items() on it) and sends
         # a list value as one form value per item. An empty list is sent as a
-        # single empty value, which is how splunkd clears the attribute. The
-        # live tests assert both behaviours against the real endpoint.
+        # single empty value, which is how splunkd clears the attribute. A
+        # string is sent as is. The live tests assert these against splunkd.
         postargs = {}
-        for field, values in fields.items():
-            postargs[field] = list(values) if values else ""
+        for field, value in fields.items():
+            if isinstance(value, (list, tuple)):
+                postargs[field] = list(value) if value else ""
+            else:
+                postargs[field] = value
         self._request("/services/authorization/roles/%s" % quote(name, safe=""),
                       method="POST", postargs=postargs)
 
 
-class IndexPermissionsHandler(PersistentServerConnectionApplication):
-    """GET returns the role x index matrix; POST applies a list of cell changes."""
+class RolesHandler(PersistentServerConnectionApplication):
+    """GET returns every tab of the role model; POST applies a list of changes."""
 
     def __init__(self, command_line, command_arg):
         PersistentServerConnectionApplication.__init__(self)
@@ -184,7 +197,7 @@ class IndexPermissionsHandler(PersistentServerConnectionApplication):
             )
         except Exception:  # pylint: disable=broad-except
             # Never leak a traceback to the browser; the detail goes to the log.
-            logger.exception("Unhandled error in index permissions endpoint")
+            logger.exception("Unhandled error in role management endpoint")
             status, payload = 500, core.error_payload(
                 "Easy Admin hit an unexpected error. See easyadmin.log on the search head.")
         return {

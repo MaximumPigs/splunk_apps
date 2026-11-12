@@ -1,0 +1,19 @@
+<!--
+  Simple XML rather than Dashboard Studio on purpose: the page is an editable
+  form (checkbox grids and setting fields with one bulk submit), which Studio
+  cannot express. The dashboard is only a host for the script in
+  appserver/static; it runs no searches. version="1.1" selects the current
+  jQuery, which AppInspect requires of any dashboard that loads custom
+  JavaScript.
+-->
+<dashboard version="1.1" script="easyadmin_roles.js" stylesheet="easyadmin_roles.css" hideEdit="true">
+  <label>Role management</label>
+  <description>Every role's settings, one tab per area. Change any number of cells across any tabs, then save them all at once.</description>
+  <row>
+    <panel>
+      <html>
+        <div id="easyadmin-roles">Loading roles...</div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

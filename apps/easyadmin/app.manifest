@@ -15,7 +15,7 @@
             }
         ],
         "releaseDate": null,
-        "description": "An admin page for bulk-editing which indexes each role can search, in one table with one checkbox per role and index.",
+        "description": "An admin page for managing every role in one place: indexes, capabilities, inheritance and search limits, edited in bulk and saved at once.",
         "classification": {
             "intendedAudience": "IT Professionals",
             "categories": [
