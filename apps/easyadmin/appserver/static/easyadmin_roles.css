@@ -1,16 +1,100 @@
 /*
  * Easy Admin - role management page.
  *
- * The grid carries its own fixed palette instead of inheriting the dashboard
- * theme: sticky header cells must be opaque to hide the rows scrolling under
- * them, and an opaque colour that suits the light theme is wrong on the dark
- * one. A self-contained light grid is legible in both.
+ * Two palettes, light and dark, as custom properties on the page root. Every
+ * colour below refers to one of them; tests/test_easyadmin_assets.py fails if
+ * a literal colour appears outside the palette blocks, or if the two palettes
+ * stop defining the same names.
+ *
+ * Both palettes are explicit and opaque rather than inherited from the
+ * dashboard theme: sticky header cells must be opaque to hide the rows that
+ * scroll under them, and an inherited transparent background would not.
+ *
+ * The page script adds .ea-dark to the root in dark mode: either because the
+ * person chose Dark, or, on Auto, because the background Splunk drew behind
+ * the panel is dark.
  */
 
 #easyadmin-roles {
-    color: #1a1c20;
-    background: #ffffff;
+    --ea-fg: #1a1c20;
+    --ea-muted: #55606e;
+    --ea-bg: #ffffff;
+    --ea-head: #f2f4f5;
+    --ea-hover: #f7f9fa;
+    --ea-border: #c3cbd4;
+    --ea-grid: #e1e6eb;
+    --ea-badge-bg: #dfe4ea;
+    --ea-badge-fg: #3c444d;
+    --ea-effective: #dcebf9;
+    --ea-effective-hover: #cfe2f5;
+    --ea-changed: #b86e00;
+    --ea-count-bg: #f0a030;
+    --ea-count-fg: #1a1c20;
+    --ea-input-bg: #ffffff;
+    --ea-input-fg: #1a1c20;
+    --ea-input-border: #a9b3be;
+    --ea-info-bg: #f2f4f5;
+    --ea-info-edge: #6b7785;
+    --ea-error-bg: #fdecea;
+    --ea-error-edge: #c0392b;
+    --ea-success-bg: #e8f5e9;
+    --ea-success-edge: #2e7d32;
+    /* Lets the browser draw checkboxes and scrollbars to match the palette. */
+    color-scheme: light;
+}
+
+#easyadmin-roles.ea-dark {
+    --ea-fg: #e6e9ed;
+    --ea-muted: #a7b0bb;
+    --ea-bg: #1e2228;
+    --ea-head: #2a2f37;
+    --ea-hover: #262b33;
+    --ea-border: #4b5360;
+    --ea-grid: #333944;
+    --ea-badge-bg: #3a414c;
+    --ea-badge-fg: #dfe4ea;
+    --ea-effective: #1f3a57;
+    --ea-effective-hover: #26476a;
+    --ea-changed: #f0a030;
+    --ea-count-bg: #f0a030;
+    --ea-count-fg: #1a1c20;
+    --ea-input-bg: #15181d;
+    --ea-input-fg: #e6e9ed;
+    --ea-input-border: #4b5360;
+    --ea-info-bg: #262b33;
+    --ea-info-edge: #7b8794;
+    --ea-error-bg: #4a1f1c;
+    --ea-error-edge: #e5534b;
+    --ea-success-bg: #1e3a24;
+    --ea-success-edge: #4caf50;
+    color-scheme: dark;
+}
+
+#easyadmin-roles {
+    color: var(--ea-fg);
+    background: var(--ea-bg);
     padding: 12px;
+}
+
+/*
+ * Splunk Web's own form styles assume its light theme, so the page's fields
+ * and buttons take their colours from the palette explicitly.
+ */
+#easyadmin-roles input[type="text"],
+#easyadmin-roles select {
+    color: var(--ea-input-fg);
+    background: var(--ea-input-bg);
+    border: 1px solid var(--ea-input-border);
+}
+
+#easyadmin-roles input[type="text"]::placeholder {
+    color: var(--ea-muted);
+}
+
+#easyadmin-roles .btn:not(.btn-primary) {
+    color: var(--ea-fg);
+    background: var(--ea-head);
+    border: 1px solid var(--ea-border);
 }
 
 #easyadmin-roles .ea-toolbar {
@@ -31,6 +115,7 @@
 #easyadmin-roles .ea-label {
     margin: 0;
     display: inline;
+    color: var(--ea-fg);
 }
 
 #easyadmin-roles .ea-actions {
@@ -42,31 +127,34 @@
 #easyadmin-roles .ea-message {
     padding: 8px 12px;
     margin-bottom: 8px;
-    border-left: 4px solid #6b7785;
-    background: #f2f4f5;
+    color: var(--ea-fg);
+    border-left: 4px solid var(--ea-info-edge);
+    background: var(--ea-info-bg);
 }
 
 #easyadmin-roles .ea-message.ea-error {
-    border-left-color: #c0392b;
-    background: #fdecea;
+    border-left-color: var(--ea-error-edge);
+    background: var(--ea-error-bg);
 }
 
 #easyadmin-roles .ea-message.ea-success {
-    border-left-color: #2e7d32;
-    background: #e8f5e9;
+    border-left-color: var(--ea-success-edge);
+    background: var(--ea-success-bg);
 }
 
-#easyadmin-roles .ea-legend {
+#easyadmin-roles .ea-legend,
+#easyadmin-roles .ea-empty {
     font-size: 12px;
-    color: #55606e;
+    color: var(--ea-muted);
     margin: 0 0 8px 0;
 }
 
-/* The grid scrolls inside this box so the header row and index column can stay put. */
+/* The grid scrolls inside this box so the header row and role column can stay put. */
 #easyadmin-roles .ea-table-wrap {
     max-height: 70vh;
     overflow: auto;
-    border: 1px solid #c3cbd4;
+    border: 1px solid var(--ea-border);
+    background: var(--ea-bg);
 }
 
 #easyadmin-roles .ea-table {
@@ -77,18 +165,18 @@
 
 #easyadmin-roles .ea-table th,
 #easyadmin-roles .ea-table td {
-    border-right: 1px solid #e1e6eb;
-    border-bottom: 1px solid #e1e6eb;
+    border-right: 1px solid var(--ea-grid);
+    border-bottom: 1px solid var(--ea-grid);
     padding: 4px 8px;
-    background: #ffffff;
-    color: #1a1c20;
+    background: var(--ea-bg);
+    color: var(--ea-fg);
 }
 
 #easyadmin-roles .ea-table thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: #f2f4f5;
+    background: var(--ea-head);
     vertical-align: bottom;
     font-weight: 600;
 }
@@ -120,7 +208,7 @@
     text-align: left;
     white-space: nowrap;
     font-weight: normal;
-    background: #f2f4f5;
+    background: var(--ea-head);
 }
 
 #easyadmin-roles .ea-table th.ea-corner {
@@ -133,8 +221,8 @@
     padding: 0 6px;
     border-radius: 8px;
     font-size: 11px;
-    background: #dfe4ea;
-    color: #3c444d;
+    background: var(--ea-badge-bg);
+    color: var(--ea-badge-fg);
 }
 
 #easyadmin-roles .ea-cell {
@@ -146,19 +234,19 @@
 }
 
 #easyadmin-roles .ea-table td.ea-effective {
-    background: #dcebf9;
+    background: var(--ea-effective);
 }
 
 #easyadmin-roles .ea-table td.ea-changed {
-    box-shadow: inset 0 0 0 2px #e08a00;
+    box-shadow: inset 0 0 0 2px var(--ea-changed);
 }
 
 #easyadmin-roles .ea-table tbody tr:hover td {
-    background: #f7f9fa;
+    background: var(--ea-hover);
 }
 
 #easyadmin-roles .ea-table tbody tr:hover td.ea-effective {
-    background: #cfe2f5;
+    background: var(--ea-effective-hover);
 }
 
 /* Tabs: one per area of role configuration. */
@@ -166,22 +254,22 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-    border-bottom: 2px solid #c3cbd4;
+    border-bottom: 2px solid var(--ea-border);
     margin-bottom: 10px;
 }
 
 #easyadmin-roles .ea-tab {
-    border: 1px solid #c3cbd4;
+    border: 1px solid var(--ea-border);
     border-bottom: none;
-    background: #f2f4f5;
-    color: #1a1c20;
+    background: var(--ea-head);
+    color: var(--ea-fg);
     padding: 6px 14px;
     border-radius: 4px 4px 0 0;
     cursor: pointer;
 }
 
 #easyadmin-roles .ea-tab.ea-tab-active {
-    background: #ffffff;
+    background: var(--ea-bg);
     font-weight: 600;
     position: relative;
     top: 2px;
@@ -193,8 +281,8 @@
     padding: 0 6px;
     border-radius: 8px;
     font-size: 11px;
-    background: #e08a00;
-    color: #ffffff;
+    background: var(--ea-count-bg);
+    color: var(--ea-count-fg);
 }
 
 /* Settings tabs: headers read normally, cells hold a field each. */
@@ -209,7 +297,7 @@
     font-family: monospace;
     font-size: 11px;
     font-weight: normal;
-    color: #55606e;
+    color: var(--ea-muted);
 }
 
 #easyadmin-roles .ea-setting-cell {
@@ -226,7 +314,7 @@
 
 #easyadmin-roles .ea-imported {
     font-size: 11px;
-    color: #55606e;
+    color: var(--ea-muted);
     margin-top: 2px;
     white-space: nowrap;
     overflow: hidden;

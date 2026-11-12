@@ -148,6 +148,7 @@ Open **Easy Admin > Role management**.
 | **Save N change(s)** | Submits every pending change, on every tab, in one request, after a confirmation. |
 | **Discard changes** | Drops all pending changes. |
 | **Reload** | Fetches the current state again. Pending changes are kept. |
+| **Theme** | *Auto* (the default) matches Splunk's light or dark theme; *Light* and *Dark* override it. Remembered in this browser only. |
 
 The confirmation warns you when a save changes a role you hold yourself.
 
@@ -201,7 +202,6 @@ index=_internal source=*easyadmin.log
 - The index list is what the search head knows. Where indexes are defined only
   on indexers, add columns by name.
 - Roles cannot be created or deleted here.
-- The grid uses its own light colour scheme in both light and dark themes.
 
 ### Compatibility
 

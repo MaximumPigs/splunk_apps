@@ -33,7 +33,62 @@ require([
 
     var $root = $('#easyadmin-roles');
 
+    // ---------------------------------------------------------------- theme
+    //
+    // Auto matches whatever Splunk drew behind the panel, by measuring it,
+    // rather than depending on how a given Splunk version marks its dark
+    // theme in the DOM. Light and Dark override it. The choice is a per-browser
+    // convenience in localStorage: it can be unavailable (private windows,
+    // blocked storage), so every access is guarded and Auto is the fallback.
+
+    var THEME_KEY = 'easyadmin.theme';
+    var THEMES = { auto: 'Auto', light: 'Light', dark: 'Dark' };
+
+    function readTheme() {
+        try {
+            var saved = window.localStorage.getItem(THEME_KEY);
+            if (saved && THEMES[saved]) { return saved; }
+        } catch (ignore) { /* storage unavailable: fall back to Auto */ }
+        return 'auto';
+    }
+
+    function writeTheme(theme) {
+        try {
+            window.localStorage.setItem(THEME_KEY, theme);
+        } catch (ignore) { /* not remembered, but still applied for this visit */ }
+    }
+
+    // Relative luminance of an "rgb(...)"/"rgba(...)" colour, or null when it
+    // is transparent or unreadable.
+    function luminance(css) {
+        var parts = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?/.exec(css || '');
+        if (!parts) { return null; }
+        if (parts[4] !== undefined && parseFloat(parts[4]) === 0) { return null; }
+        var channel = function (value) {
+            var c = parseFloat(value) / 255;
+            return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(parts[1]) + 0.7152 * channel(parts[2]) + 0.0722 * channel(parts[3]);
+    }
+
+    // True when the first opaque background behind the panel is dark.
+    function splunkIsDark() {
+        var node = $root[0] && $root[0].parentNode;
+        while (node && node.nodeType === 1) {
+            var lum = luminance(window.getComputedStyle(node).backgroundColor);
+            if (lum !== null) { return lum < 0.2; }
+            node = node.parentNode;
+        }
+        return false;
+    }
+
+    function applyTheme() {
+        var dark = state.theme === 'dark' || (state.theme === 'auto' && splunkIsDark());
+        $root.toggleClass('ea-dark', dark);
+    }
+
     var state = {
+        theme: readTheme(),  // 'auto' | 'light' | 'dark'
         data: null,          // last model from the server
         tabId: null,         // the tab on show
         fieldByTab: {},      // matrix tab id -> the attribute it is showing
@@ -360,6 +415,16 @@ require([
         }
 
         var $actions = el('span', 'ea-actions');
+        var $theme = el('select', 'ea-theme').attr('aria-label', 'Theme');
+        $.each(THEMES, function (value, label) {
+            $theme.append(el('option', null, label).attr('value', value));
+        });
+        $theme.val(state.theme).on('change', function () {
+            state.theme = $(this).val();
+            writeTheme(state.theme);
+            applyTheme();
+        });
+        $actions.append(el('label', 'ea-label', 'Theme ')).append($theme);
         $actions.append(el('button', 'btn', 'Reload').prop('disabled', state.busy).on('click', function () {
             state.message = null;
             load();
@@ -570,6 +635,7 @@ require([
     }
 
     function render() {
+        applyTheme();
         $root.empty();
         if (!state.data) {
             $root.append(renderMessage());
