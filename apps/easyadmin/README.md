@@ -43,7 +43,9 @@ Open **Easy Admin > Role management**.
 | **Save N change(s)** | Submits every pending change, on every tab, in one request, after a confirmation. |
 | **Discard changes** | Drops all pending changes. |
 | **Reload** | Fetches the current state again. Pending changes are kept. |
-| **Theme** | *Auto* (the default) matches Splunk's light or dark theme; *Light* and *Dark* override it. The choice is remembered in this browser only. |
+
+The app follows the light or dark theme chosen in your Splunk account
+preferences, like Splunk's own pages.
 
 The confirmation warns you when the save changes a role you hold yourself,
 since removing capabilities from your own roles can lock you out of the page.

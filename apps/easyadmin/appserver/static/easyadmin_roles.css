@@ -10,9 +10,9 @@
  * dashboard theme: sticky header cells must be opaque to hide the rows that
  * scroll under them, and an inherited transparent background would not.
  *
- * The page script adds .ea-dark to the root in dark mode: either because the
- * person chose Dark, or, on Auto, because the background Splunk drew behind
- * the panel is dark.
+ * Splunk Web draws the app in the user's theme (app.conf supported_themes),
+ * and the page script adds .ea-dark to the root when the background Splunk
+ * drew behind the panel is dark, so the panel always matches.
  */
 
 #easyadmin-roles {

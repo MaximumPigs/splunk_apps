@@ -109,6 +109,13 @@ def test_role_management_page_is_installed(splunk):
     assert '<view name="role_management" default="true"' in nav["entry"][0]["content"]["eai:data"]
 
 
+def test_app_declares_light_and_dark_themes(splunk):
+    """Splunk Web applies a user's dark theme only to apps that declare it."""
+    data = splunk.request("GET", "/servicesNS/nobody/%s/configs/conf-app/ui" % APP)
+    themes = data["entry"][0]["content"]["supported_themes"]
+    assert {t.strip() for t in themes.split(",")} == {"light", "dark"}
+
+
 def test_model_has_every_tab(splunk):
     """GET returns the five tabs, and the caller (an admin) can edit."""
     model = splunk.request("GET", ENDPOINT)
