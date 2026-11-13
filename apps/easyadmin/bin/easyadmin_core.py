@@ -364,6 +364,17 @@ def _settings_tab(tab, roles):
     }
 
 
+def theme_preference(value):
+    """Normalise user-prefs.conf [general] theme to "light", "dark" or None.
+
+    The spec allows default_system_theme, light and dark. Anything other than
+    an explicit light or dark (including the default and an unset value)
+    returns None, meaning the page leaves Splunk's own choice alone.
+    """
+    text = as_text(value).strip().lower()
+    return text if text in ("light", "dark") else None
+
+
 def build_model(role_entries, index_entries, capability_names, context):
     """Shape roles, indexes and capabilities into the payload the page renders."""
     roles = []
@@ -396,6 +407,7 @@ def build_model(role_entries, index_entries, capability_names, context):
     return {
         "can_edit": any(cap in EDIT_CAPABILITIES for cap in as_list(context.get("capabilities"))),
         "user_roles": as_list(context.get("roles")),
+        "theme": theme_preference(context.get("theme")),
         "roles": [{"name": role["name"],
                    "imported_roles": as_list(role["content"].get("imported_roles"))}
                   for role in roles],

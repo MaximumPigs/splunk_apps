@@ -217,6 +217,26 @@ def test_model_reports_whether_user_can_edit(capabilities, expected):
     assert model({}, user_capabilities=capabilities)["can_edit"] is expected
 
 
+@pytest.mark.parametrize("value, expected", [
+    ("dark", "dark"),
+    ("light", "light"),
+    (" Dark ", "dark"),
+    ("default_system_theme", None),  # leave Splunk's own choice alone
+    ("", None),
+    (None, None),
+    ("purple", None),
+])
+def test_theme_preference(value, expected):
+    assert core.theme_preference(value) == expected
+
+
+def test_model_carries_the_users_theme_preference():
+    gateway = FakeGateway({})
+    gateway.context["theme"] = "dark"
+    assert core.read_model(gateway)["theme"] == "dark"
+    assert model({})["theme"] is None
+
+
 def test_model_reports_the_users_own_roles_and_sorts_roles():
     m = model({"zeta": {}, "Alpha": {}, "beta": {}}, user_roles=["beta"])
     assert [r["name"] for r in m["roles"]] == ["Alpha", "beta", "zeta"]

@@ -146,7 +146,25 @@ class SplunkdGateway(object):
             return {}
         content = entries[0]["content"]
         return {"capabilities": core.as_list(content.get("capabilities")),
-                "roles": core.as_list(content.get("roles"))}
+                "roles": core.as_list(content.get("roles")),
+                "theme": self._user_theme(content.get("username"))}
+
+    def _user_theme(self, username):
+        """The user's theme preference (user-prefs.conf [general] theme), or None.
+
+        The page only needs this to match Splunk's theme, so any failure to
+        read it (no user-prefs for this user, no permission) is not an error:
+        the page simply stays in whatever theme Splunk drew.
+        """
+        if not username:
+            return None
+        try:
+            entries = self._entries(self._request(
+                "/servicesNS/%s/user-prefs/data/user-prefs/general" % quote(username, safe="")))
+        except core.GatewayError as error:
+            logger.info("Could not read theme preference for %s: %s", username, error)
+            return None
+        return entries[0]["content"].get("theme") if entries else None
 
     def get_role(self, name):
         try:

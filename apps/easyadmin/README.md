@@ -45,7 +45,9 @@ Open **Easy Admin > Role management**.
 | **Reload** | Fetches the current state again. Pending changes are kept. |
 
 The app follows the light or dark theme chosen in your Splunk account
-preferences, like Splunk's own pages.
+preferences. Classic dashboards do not pick that preference up on their own,
+so when Splunk draws the page in the other theme, the page reloads itself
+once with `?theme=light` or `?theme=dark` in the address.
 
 The confirmation warns you when the save changes a role you hold yourself,
 since removing capabilities from your own roles can lock you out of the page.

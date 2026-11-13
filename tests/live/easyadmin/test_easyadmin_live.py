@@ -116,6 +116,18 @@ def test_app_declares_light_and_dark_themes(splunk):
     assert {t.strip() for t in themes.split(",")} == {"light", "dark"}
 
 
+def test_model_reports_the_callers_theme_preference(splunk):
+    """The page reloads into the user's theme, so the endpoint must report it."""
+    context = splunk.request("GET", "/services/authentication/current-context")
+    username = context["entry"][0]["content"]["username"]
+    prefs = splunk.request("GET", "/servicesNS/%s/user-prefs/data/user-prefs/general"
+                           % urllib.parse.quote(username))
+    stored = str(prefs["entry"][0]["content"].get("theme") or "").strip().lower()
+    expected = stored if stored in ("light", "dark") else None
+
+    assert splunk.request("GET", ENDPOINT)["theme"] == expected
+
+
 def test_model_has_every_tab(splunk):
     """GET returns the five tabs, and the caller (an admin) can edit."""
     model = splunk.request("GET", ENDPOINT)

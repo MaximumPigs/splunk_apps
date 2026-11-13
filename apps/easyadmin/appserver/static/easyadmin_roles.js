@@ -35,10 +35,12 @@ require([
 
     // ---------------------------------------------------------------- theme
     //
-    // Splunk Web draws the app in the user's chosen theme, because app.conf
-    // declares supported_themes. The panel matches it by measuring the
-    // background Splunk drew behind it, rather than depending on how a given
-    // Splunk version marks its dark theme in the DOM.
+    // The page follows the user's theme preference. Classic dashboards do
+    // not pick it up on their own, so the page reloads with ?theme= when
+    // Splunk drew the other theme (matchSplunkTheme). The panel's palette
+    // then matches whatever Splunk drew, by measuring the background behind
+    // it rather than depending on how a given Splunk version marks its dark
+    // theme in the DOM.
 
     // Relative luminance of an "rgb(...)"/"rgba(...)" colour, or null when it
     // is transparent or unreadable.
@@ -62,6 +64,30 @@ require([
             node = node.parentNode;
         }
         return false;
+    }
+
+    // Value of a query-string parameter in the page URL, or null.
+    function urlParam(name) {
+        var match = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.search);
+        return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : null;
+    }
+
+    // Classic dashboards take their theme from the dashboard itself or the
+    // ?theme= URL parameter, not from the user's theme preference. When the
+    // preference (from the app's endpoint) is light or dark and Splunk drew
+    // the other one, reload once with ?theme=<preference>. Returns true when
+    // a reload is under way.
+    //
+    // Loop guard: if the URL already asks for the preferred theme, never
+    // reload again, even if the page still looks wrong.
+    function matchSplunkTheme(preference) {
+        if (preference !== 'light' && preference !== 'dark') { return false; }
+        if (urlParam('theme') === preference) { return false; }
+        if (splunkIsDark() === (preference === 'dark')) { return false; }
+        var search = window.location.search.replace(/([?&])theme=[^&#]*&?/, '$1').replace(/[?&]$/, '');
+        search += (search ? '&' : '?') + 'theme=' + encodeURIComponent(preference);
+        window.location.replace(window.location.pathname + search + window.location.hash);
+        return true;
     }
 
     function applyTheme() {
@@ -188,6 +214,9 @@ require([
             data: { output_mode: 'json' },
             cache: false
         }).done(function (data) {
+            if (matchSplunkTheme(data.theme)) {
+                return;  // reloading in the right theme; nothing to render
+            }
             state.data = data;
             state.explicit = indexExplicit(data);
             if (!state.tabId && data.tabs.length) {
