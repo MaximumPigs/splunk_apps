@@ -41,7 +41,7 @@ For each (app, stage) that failed then passed above:
    ---
    hits: 1
    seen: [YYYY-MM-DD]
-   area: <app id, or conf | spl | appinspect | python | splk | splunkd>
+   area: <app id, or conf | spl | appinspect | python | splk | splunkd | splunkweb>
    level: lesson
    ---
    **Symptom:** what failed, quoting the check name or test id. Name the app

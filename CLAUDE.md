@@ -59,6 +59,8 @@ config is `config/targets.toml`; the token is in `.env` (never read or print it)
 - **Never assert behaviour you have not observed.** A one-line `splk search`
   settles most questions in seconds; three past defects were confident,
   untested claims.
+- **For UI behaviour `splk` cannot observe** (themes, layout, scrolling), ask
+  the person to check it in a browser before documenting it as working.
 - **Prove a fix closes the original reproduction**, before and after, not just
   that a new test passes.
 - Report what was verified versus inferred, volunteer the gap ("passes
