@@ -192,14 +192,30 @@ It also refuses to build when `[launcher] version` and `[id] version` in
 [`ci.yml`](.github/workflows/ci.yml) runs on every pull request and push to
 `main`:
 
-1. **discover** — finds each app under `apps/`
+1. **discover** — picks the apps this PR or push changed, using
+   [`scripts/changed_apps.py`](scripts/changed_apps.py)
 2. **test** — pytest on Python 3.9 and 3.13, plus a 3.9 byte-compile of all scripts
-3. **package** — builds each `.spl`
+3. **package** — builds each selected `.spl`
 4. **appinspect** — runs the AppInspect CLI against the built package, with **no
    tag filter**, so all 252 checks run
 5. **appinspect-api** — submits the package to Splunk's hosted AppInspect API,
    the authoritative service behind Cloud vetting. Skips with a notice when the
    credentials are absent, so forks and outside contributors are unaffected.
+
+### Which apps get vetted
+
+Steps 3 to 5 run only for apps with a changed file under `apps/<app>/`, so one
+app's PR does not resubmit every other app to AppInspect. Every app is vetted
+instead when:
+
+- the run was started by hand (**Run workflow**, `workflow_dispatch`);
+- a shared file changed: `scripts/package_app.py`, `scripts/changed_apps.py`,
+  `.github/workflows/ci.yml` or any `.appinspect*.yaml` waiver file;
+- there is no usable commit to compare against, such as the first push of a new
+  branch or a force push that orphaned the old tip.
+
+When nothing under `apps/` changed (a docs or tooling PR), those steps are
+skipped and only the tests run.
 
 ### The two AppInspect actions take `app_path` differently
 
