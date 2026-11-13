@@ -153,6 +153,14 @@
 #easyadmin-roles .ea-table-wrap {
     max-height: 70vh;
     overflow: auto;
+    /*
+     * Room for overlay scrollbars (Windows 11, macOS), which appear on hover
+     * and are drawn over the content instead of beside it. Without this the
+     * horizontal bar covers part of the last row, and the vertical one the
+     * last column. Classic scrollbars take their own space, so this is just
+     * a small margin there.
+     */
+    padding: 0 16px 16px 0;
     border: 1px solid var(--ea-border);
     background: var(--ea-bg);
 }
