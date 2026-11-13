@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Record a lesson after a splk stage failed and was then fixed, so the same mistake is caught earlier next time. Use when the Stop hook asks for it, after any fix of a red stage, or when the person says "retro" or "review lessons".
+description: Debrief after app work, recording what went wrong as lessons and what worked as playbook patterns, so later sessions build Splunk apps better, not only avoid repeat errors. Use when the Stop hook asks, after fixing a red stage, after a feature took several attempts or person corrections, or when the person says "retro" or "review lessons".
 argument-hint: "[--review]"
 context: fork
 agent: learner
@@ -8,7 +8,7 @@ agent: learner
 
 # Retro
 
-Mode: `$ARGUMENTS` (empty = record lessons for this session; `--review` = prune).
+Mode: `$ARGUMENTS` (empty = debrief this session; `--review` = prune).
 
 Recent stage results (newest last):
 
@@ -18,9 +18,25 @@ Current diff against main:
 
 !`git diff --stat origin/main...HEAD`
 
-## Record (default)
+## Debrief (default)
 
-For each (app, stage) that failed then passed above:
+Answer three questions from the run log, the diff and the conversation. Each
+answer that holds evidence becomes a file change; "nothing new" is a valid
+answer, but say which question it answers.
+
+1. **What failed and was fixed?** Every (app, stage) that went red then green
+   above, plus any fixed `splunk-security-review` finding, and every time the
+   person reported something did not work. Record a **lesson** (below).
+2. **What took more than one attempt, or worked better than expected?**
+   Several deploys of the same app, a feature redone after the person looked,
+   a technique found after reading SDK or Splunk source. Record or update a
+   **pattern** in the playbook (below). This is how agents get better, not
+   just safer: the next session starts from the approach that worked.
+3. **Did an existing pattern, rule or skill hold?** If you followed a
+   pattern and it worked, add 1 to its `confirmed` count and the date. If it
+   was wrong or incomplete, correct it now, citing the evidence.
+
+### Lessons (what went wrong)
 
 1. Find the cause in the diff and the failure details. One cause per lesson.
 2. **Scope it by what it impacts, not by what exposed it.** Ask whether the
@@ -30,43 +46,57 @@ For each (app, stage) that failed then passed above:
    (`python-simplerequest-postargs-dict`, not `easyadmin-role-update-fails`),
    and the app that exposed it appears only in **Symptom** as the evidence.
    Use the app id as the area only when the cause is specific to that app's
-   own code or design and could not recur elsewhere. A cause filed under the
-   wrong scope is missed by the next search and never accumulates hits.
-3. If `.claude/agent-memory/learner/lessons/` already has the same cause, increment its `hits`, add the
-   date, and stop. Match on the cause, not the app: the same cause seen
-   from a different app is the same lesson. Otherwise create
-   `.claude/agent-memory/learner/lessons/<area>-<short-slug>.md`:
+   own code or design and could not recur elsewhere.
+3. If `.claude/agent-memory/learner/lessons/` already has the same cause,
+   increment its `hits`, add the date, and stop. Match on the cause, not the
+   app. Otherwise create `lessons/<area>-<short-slug>.md`:
 
    ```markdown
    ---
    hits: 1
    seen: [YYYY-MM-DD]
-   area: <app id, or conf | spl | appinspect | python | splk | splunkd | splunkweb>
+   area: <app id, or conf | spl | appinspect | python | splk | splunkd | splunkweb | security>
    level: lesson
    ---
-   **Symptom:** what failed, quoting the check name or test id. Name the app
-   here; this is the evidence.
+   **Symptom:** what failed, quoting the check name, test id or the person's
+   report. Name the app here; this is the evidence.
    **Cause:** the actual mistake, stated as broadly as it really applies.
    **Fix:** what changed.
-   **Catch earlier:** the rule, test or hook that would have prevented it.
+   **Catch earlier:** the rule, test, hook or pattern that would have prevented it.
    ```
 
-4. Update `.claude/agent-memory/learner/MEMORY.md`: one line per lesson, sorted
-   by hits, most first. The line's title names the impact, like the file name.
-5. **Promote** when `hits >= 2` (or the person asks): propose the exact edit
-   to a `.claude/rules/*.md` file or skill, or a new test or hook check. Write
-   the edit, set `level:` to `rule`, `skill`, `test` or `hook`, and say in your
-   final answer which files changed so the person reviews them in the PR.
+4. Update `.claude/agent-memory/learner/MEMORY.md`: one line per lesson,
+   sorted by hits, most first.
+5. **Promote** when `hits >= 2` (or the person asks): edit a
+   `.claude/rules/*.md` file or skill, or add a test or hook check. Set
+   `level:` to `rule`, `skill`, `test` or `hook`.
+
+### Patterns (what works)
+
+Patterns live in `.claude/skills/splunk-playbook/patterns/`, indexed in that
+skill's `SKILL.md`. Follow the format there.
+
+- A pattern names a feature (`follow-user-theme`), not an app. Its
+  **Why this way** lists the approaches that failed, linking their lessons;
+  that is what stops the next agent from trying them again.
+- Write only what was observed working in this repo: by a green stage, a
+  UI test, a screenshot you looked at, or the person confirming it.
+- When the same pattern is confirmed in a second app, consider promoting
+  it: a scaffold step in `new-app`, a template file, or a hook check.
+- Update the table in `splunk-playbook/SKILL.md` (pattern, use when, confirmed count).
 
 ## Review (`--review`)
 
-Merge duplicate lessons (including the same cause filed under different apps),
-rename any lesson scoped to an app whose cause applies more broadly, delete lessons with `level: lesson` not seen in 60
-days, confirm each promoted lesson's rule still exists, and keep `MEMORY.md`
-under 100 lines and root `CLAUDE.md` under 200.
+Merge duplicate lessons and patterns, rename any scoped to an app whose cause
+applies more broadly, delete lessons with `level: lesson` not seen in 60 days,
+confirm each promoted lesson's rule still exists, check each pattern's
+reference paths still exist, and keep `MEMORY.md` under 100 lines and root
+`CLAUDE.md` under 200.
 
 ## Constraints
 
 - Never edit `.claude/settings.json` or the hook scripts' deny lists without
   saying so explicitly in the final answer: those are the safety layer.
-- Lessons describe this repo's reality, with evidence. No generic advice.
+- Lessons and patterns describe this repo's reality, with evidence. No
+  generic advice.
+- Finish with the list of files changed and, for each, which question it answers.

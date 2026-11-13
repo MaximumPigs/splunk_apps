@@ -12,22 +12,30 @@ deny it, and results outside `splk` are not recorded in the run log.
 | Command | What it does |
 | --- | --- |
 | `splk doctor` | Target reachable? Token valid? Splunk version. Run first if anything fails. |
-| `splk dev <app>` | Full loop: build, unit tests, AppInspect, deploy, live tests. Stops at the first red stage. |
+| `splk dev <app>` | Full loop: build, unit tests, AppInspect, deploy, live tests, UI tests (if `tests/ui/<app>/` exists). Stops at the first red stage. |
 | `splk dev <app> --skip-inspect` | Faster inner loop while iterating on SPL or conf. |
 | `splk test` / `splk test --live <app>` | Unit tests only / plus live tests on the target. |
 | `splk inspect <app>` | Build and run AppInspect alone. |
 | `splk deploy <app> [--restart]` | Build and install on the target. `--restart` always asks the person. |
 | `splk search "<spl>"` | Exploratory search. Assertions belong in `tests/live/`, not here. |
+| `splk shot <app>/<view> [--theme dark]` | Screenshot a Splunk Web page and list its JS errors. Open the PNG to look. Assertions belong in `tests/ui/`. |
+| `splk test --ui <app> [--headed]` | Browser tests in `tests/ui/<app>/` (also the last stage of `splk dev`). |
+| `splk review security <scope> pass\|fail` | Record a security review's outcome in the run log (the reviewer runs it). |
 
 Add `--json` for machine-readable results and `-v` for debug logs. Target
-config is `config/targets.toml`; the token is in `.env` (never read or print it).
+config is `config/targets.toml`; the token and the Splunk Web sign-in are in
+`.env` (never read or print it).
 
 ## Definition of done for an app change
 
 1. `splk dev <app>` is green, including AppInspect with no unreviewed manual checks.
-2. New behaviour has a unit test (pure logic) and a live test (real SPL result).
+2. New behaviour has a unit test (pure logic) and a live test (real SPL result);
+   anything visible in Splunk Web also has a UI test (`write-ui-test`).
 3. `[launcher]` and `[id]` versions in `app.conf` match and were bumped if the package changed.
 4. README of the app reflects the change.
+5. `splunk-security-review` recorded `pass` for the change, or the person was
+   told which findings remain and why.
+6. `retro` ran: lessons for what went wrong, playbook patterns for what worked.
 
 ## Conventions
 
@@ -59,8 +67,10 @@ config is `config/targets.toml`; the token is in `.env` (never read or print it)
 - **Never assert behaviour you have not observed.** A one-line `splk search`
   settles most questions in seconds; three past defects were confident,
   untested claims.
-- **For UI behaviour `splk` cannot observe** (themes, layout, scrolling), ask
-  the person to check it in a browser before documenting it as working.
+- **For UI behaviour, look before you claim.** `splk shot` and UI tests let you
+  see the page yourself: open the screenshot and check it. Ask the person only
+  for judgement (does it look right) or what the browser cannot reach, and
+  say what you already checked.
 - **Prove a fix closes the original reproduction**, before and after, not just
   that a new test passes.
 - Report what was verified versus inferred, volunteer the gap ("passes
@@ -71,16 +81,28 @@ Path-scoped rules in `.claude/rules/` load when you touch matching files.
 
 ## Skills
 
-`dev-loop` (iterate on an app), `new-app` (scaffold), `write-live-test`,
-`appinspect-fix`, `release-app` (person-invoked), `retro` (record a lesson after
-fixing a failure).
+`dev-loop` (iterate on an app), `splunk-playbook` (proven recipes: read before
+building), `new-app` (scaffold), `write-live-test`, `write-ui-test`,
+`appinspect-fix`, `splunk-security-review` (forked `security-reviewer` agent),
+`release-app` (person-invoked), `retro` (debrief: lessons and patterns).
 
 ## Learning loop
 
-`splk` records every stage result in `.agent/runs/`. When a failure you fixed
-this session is unrecorded, the Stop hook asks for `retro`. Lessons live in
-`.claude/agent-memory/learner/`. A lesson hit twice is promoted into a rule or
-skill; one that must never recur becomes a hook or a test. Promotions are
-ordinary diffs in a PR, reviewed by the person.
+Three stores, each with one job:
 
-Before working on an app, check the lesson index for that app or area.
+| Store | Holds | Read |
+| --- | --- | --- |
+| `.claude/skills/splunk-playbook/` | What works: recipes per feature, with what was tried and failed | Before building a feature |
+| `.claude/agent-memory/learner/` | What went wrong: lessons with evidence and hit counts | Before working on an app or area |
+| `.claude/rules/`, hooks, tests | What must always hold: promoted from the two above | Automatically |
+
+`splk` records every stage and review result in `.agent/runs/`. The Stop hook
+asks for `retro` when a failure was fixed, **and after any session that
+deployed an app** (naming apps that took 3+ deploys), and asks for
+`splunk-security-review` when code changed after the last review. A lesson hit
+twice becomes a rule or skill; a pattern confirmed in two apps becomes a
+scaffold step or check. Promotions are ordinary diffs in a PR, reviewed by the
+person.
+
+When something took several attempts or the person had to correct you, run
+`retro` even if no stage went red: that is the knowledge worth keeping.

@@ -13,6 +13,8 @@ APPS_DIR = os.path.join(REPO_ROOT, "apps")
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 TESTS_DIR = os.path.join(REPO_ROOT, "tests")
 LIVE_TESTS_DIR = os.path.join(TESTS_DIR, "live")
+# Browser tests against Splunk Web; like live tests, never run in plain pytest or CI.
+UI_TESTS_DIR = os.path.join(TESTS_DIR, "ui")
 CONFIG_DIR = os.path.join(REPO_ROOT, "config")
 DIST_DIR = os.path.join(REPO_ROOT, "dist")
 BUILD_DIR = os.path.join(REPO_ROOT, "build")

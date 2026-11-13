@@ -11,6 +11,10 @@
 #   stage_dir           optional: copy packages here when splunkd cannot read dist/
 #   server_stage_dir    optional: the same folder as splunkd sees it (Docker/WSL)
 #   test_index          index live tests may write seed events to
+#   web_url             optional: Splunk Web base URL, for browser tests and `splk shot`
+#   web_locale          locale segment in Splunk Web URLs (default en-US)
+#   web_user_env        env var holding the Splunk Web username (default SPLUNK_WEB_USERNAME)
+#   web_password_env    env var holding its password (default SPLUNK_WEB_PASSWORD)
 
 default_target = "local"
 
@@ -23,3 +27,6 @@ token_env = "SPLUNK_TOKEN"
 # A dev instance: restarts are acceptable, but still only with --restart.
 allow_restart = true
 test_index = "splk_test"
+# Splunk Web, not splunkd. localhost rather than a host alias: see the
+# Windows environment rule.
+web_url = "http://localhost:8000"

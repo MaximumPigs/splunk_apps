@@ -112,26 +112,32 @@ commands, so a result in one place reproduces in the others.
 ### Setup
 
 ```bash
-pip install -e ".[dev]"         # puts `splk` on PATH, with pytest and AppInspect
-cp .env.example .env            # then paste a Splunk auth token into SPLUNK_TOKEN
+pip install -e ".[dev]"         # puts `splk` on PATH, with pytest, AppInspect and Playwright
+python -m playwright install chromium   # the browser for UI tests and `splk shot`
+cp .env.example .env            # then paste a Splunk auth token into SPLUNK_TOKEN,
+                                # and a Splunk Web username and password for UI tests
 splk doctor                     # reachable? token valid? which version?
 ```
 
 Targets live in [`config/targets.toml`](config/targets.toml). The default,
 `local`, is `https://localhost:8089` with TLS verification off for the
-self-signed certificate of a fresh install. Live tests that seed events need a
-dev-only index called `splk_test` on the target (create it once in Splunk Web).
+self-signed certificate of a fresh install, and Splunk Web at
+`http://localhost:8000` (`web_url`) for browser tests. Live tests that seed
+events need a dev-only index called `splk_test` on the target (create it once
+in Splunk Web).
 
 ### Commands
 
 | Command | What it does |
 | --- | --- |
-| `splk dev <app>` | Build, unit tests, AppInspect, install on the target, live tests. Stops at the first red stage. |
+| `splk dev <app>` | Build, unit tests, AppInspect, install on the target, live tests, then UI tests for apps that have them. Stops at the first red stage. |
 | `splk dev <app> --skip-inspect` | The same without AppInspect, for a faster inner loop. |
-| `splk test [--live <app>]` | Unit tests; with `--live`, also `tests/live/<app>/` on the target. |
+| `splk test [--live] [--ui] <app>` | Unit tests; with `--live`, also `tests/live/<app>/` on the target; with `--ui`, also `tests/ui/<app>/` in a browser (`--headed` to watch). |
 | `splk inspect <app>` | Build and run the full AppInspect check set. |
 | `splk deploy <app> [--restart]` | Build and install via `POST /services/apps/local`, verify the installed version, reload. Restarts only with `--restart` on a target that allows it. |
 | `splk search "<spl>"` | Run one query on the target and print rows as JSON. |
+| `splk shot <app>[/<view>] [--theme dark]` | Open a Splunk Web page in a browser, save a screenshot to `build/reports/ui/shots/`, and print the final URL and any JavaScript errors as JSON. |
+| `splk review security <scope> pass\|fail --summary ...` | Record the outcome of a security review in the run log. |
 | `splk runs` | Recent stage results from the run log. |
 
 `--json` gives machine-readable results; `-v` gives debug output. Every run
@@ -147,6 +153,21 @@ rows. They are skipped by plain `pytest` and in CI, and run via `splk test
 [`tests/live/conftest.py`](tests/live/conftest.py): `search`, `seed` (index raw
 events into the test index under a unique `source`), `splunk`, `target`.
 
+### UI tests
+
+`tests/ui/<app>/` holds tests that drive Splunk Web in a real browser
+(Playwright, headless Chromium) and assert on what the page renders: a view
+loads, its controls work, it follows the user's theme. They sign in with
+`SPLUNK_WEB_USERNAME` and `SPLUNK_WEB_PASSWORD` from `.env`, once per run (the
+session is cached in `.agent/ui/`), because Splunk Web does not accept auth
+tokens. Use a dev instance: those credentials sit in `.env` in plain text.
+
+Like live tests they never run in plain `pytest` or CI. Each run leaves
+screenshots in `build/reports/ui/<app>/`, and for a failure a screenshot and a
+trace you can replay with `python -m playwright show-trace <file>.zip`.
+Fixtures in [`tests/ui/conftest.py`](tests/ui/conftest.py): `open_view`,
+`shot`, `page_log`, `page`, `web`.
+
 ### Coding agent configuration
 
 The repository carries configuration for the coding agent described under
@@ -156,20 +177,30 @@ The repository carries configuration for the coding agent described under
 | --- | --- |
 | [`CLAUDE.md`](CLAUDE.md) | Always-loaded project instructions: the `splk` commands and the definition of done. |
 | `.claude/rules/` | Path-scoped rules (Python, conf files, search commands, inputs/props, searches/dashboards, Splunkbase listings, CI and release) that load only when matching files are touched, plus always-on Windows environment rules. |
-| `.claude/skills/` | `dev-loop`, `write-live-test`, `appinspect-fix`, `new-app`, `release-app`, `retro`. |
-| `.claude/agents/` | `splunk-reviewer` (read-only review) and `learner` (maintains lessons). |
-| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited file (Python 3.9 grammar, conf syntax, BOMs and mojibake, ASCII-only listings), inject target status at session start, and ask for a retro when a failure was fixed. |
+| `.claude/skills/` | `dev-loop`, `splunk-playbook`, `write-live-test`, `write-ui-test`, `appinspect-fix`, `splunk-security-review`, `new-app`, `release-app`, `retro`. |
+| `.claude/skills/splunk-playbook/` | What works: proven recipes per feature (custom pages, REST endpoints behind a page, theme support, search commands, checking UI in a browser), with the approaches that failed. |
+| `.claude/agents/` | `splunk-reviewer` (read-only review), `security-reviewer` (read-only security review) and `learner` (maintains lessons and the playbook). |
+| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited file (Python 3.9 grammar, conf syntax, BOMs and mojibake, ASCII-only listings), inject target status at session start, and before a session ends ask for a retro (after a fix, or after any app deploy) and a security review (after code changes). |
 | `.claude/agent-memory/learner/` | Lessons learned, committed and reviewed like code. |
 
 Hooks run `python`, so a Python 3.9+ interpreter must be on PATH under that
 name (true for the python.org installer on Windows).
 
-**How it improves itself:** every `splk` stage result is recorded. When a stage
-fails and is later fixed in the same session, the Stop hook asks the agent to run
-`retro`, and the `learner` agent writes a lesson (symptom, cause, fix, how to
-catch it earlier). A lesson seen twice is promoted into a rule or skill; one
-that must never recur becomes a test or hook check. Those promotions arrive as
-ordinary diffs in a pull request.
+**How it improves itself:** it keeps two kinds of memory. *Lessons* record
+what went wrong (symptom, cause, fix, how to catch it earlier). *Playbook
+patterns* record what works: the recipe for a feature, why each step is there,
+and which approaches failed first. The second matters as much as the first:
+easyadmin's theme support took three attempts without any `splk` stage going
+red, so a failure-only loop would have learned nothing from it.
+
+Every `splk` stage result, and every security review outcome, is recorded.
+Before a session ends, the Stop hook asks the agent to run `retro` when a
+failure was fixed or an app was deployed (naming apps that needed three or
+more deploys), and to run `splunk-security-review` when code changed after the
+last review. The `learner` agent writes the lessons and patterns. A lesson seen
+twice is promoted into a rule or skill; a pattern confirmed in a second app
+becomes a scaffold step or check; anything that must never recur becomes a
+test or hook check. Those promotions arrive as ordinary diffs in a pull request.
 
 ## Packaging
 

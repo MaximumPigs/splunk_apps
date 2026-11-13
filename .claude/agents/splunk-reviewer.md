@@ -22,10 +22,15 @@ Check, in this order:
 - **Fails vetting**: AppInspect failures or unreviewed manual checks;
   `check_for_updates = false`; label / manifest / listing drift.
 - **Untested behaviour**: a changed search, macro, extraction or command with
-  no live test that would fail without the change.
+  no live test that would fail without the change; a changed view, page
+  script or stylesheet with no UI test in `tests/ui/<app>/`.
+- **Security**: whether `splk runs` shows a `security` review `pass` newer
+  than the code. If not, say so; the `splunk-security-review` skill does the
+  security review, not you.
 - **Repo standards**: logging instead of print, comments that explain why,
   README updated.
-- **Known lessons**: anything in the lesson index this change repeats.
+- **Known lessons and patterns**: anything in the lesson index this change
+  repeats, and any `splunk-playbook` pattern it departs from without saying why.
 
 Report findings most severe first, each with file:line, what is wrong, and the
 concrete fix. Say plainly when there is nothing to fix.

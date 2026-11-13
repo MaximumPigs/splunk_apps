@@ -4,6 +4,9 @@ One line per lesson, most hits first. Details in `lessons/`. Maintained by the
 `learner` agent through the `retro` skill; reviewed in PRs. Lessons dated
 2026-09 were imported from the owner's handoff notes on `fillcontinuous`.
 
+Lessons record what went wrong. What works (recipes for pages, REST
+endpoints, themes, search commands) lives in the `splunk-playbook` skill.
+
 | Hits | Level | Lesson |
 | --- | --- | --- |
 | 4 | rule | [Unobserved claims shipped wrong](lessons/docs-unobserved-claims.md): makecontinuous, "drops to zero", "9.x compatible", easyadmin dark mode. Check with `splk search`, or for UI have the person look, before writing it. |
@@ -14,7 +17,7 @@ One line per lesson, most hits first. Details in `lessons/`. Maintained by the
 | 1 | lesson | [Splunk Web caches static files by app build](lessons/conf-app-build-static-cache.md): bump `[install] build` with any `appserver/static` change, or the old JS/CSS is served. |
 | 1 | lesson | [splunkd JSON numbers vs `\| rest` strings](lessons/splunkd-json-numbers-vs-rest-search.md): REST JSON gives quotas as numbers; `\| rest` gives strings. Normalise at the boundary. |
 | 1 | lesson | [splunkd hides imported capabilities from a role's own list](lessons/splunkd-role-capabilities-reporting.md): new roles start with 5; compare `capabilities` + `imported_capabilities`. |
-| 1 | lesson | [Classic dashboards ignore the user's theme](lessons/splunkweb-classic-dashboard-theme.md): `supported_themes` is not enough; reload with `?theme=<user-prefs theme>`, loop-guarded. |
+| 1 | pattern | [Classic dashboards ignore the user's theme](lessons/splunkweb-classic-dashboard-theme.md): `supported_themes` is not enough; reload with `?theme=<user-prefs theme>`, loop-guarded. Recipe: playbook `follow-user-theme`. |
 | 1 | lesson | [splunkd sorts role index lists](lessons/splunkd-role-index-lists-sorted.md): compare `srchIndexes*` as sets in live tests. |
 | 1 | rule | [Messages use str.format](lessons/search-command-message-format.md): a `%` stub hid a literal `%d` shown to users. |
 | 1 | rule | [transform() runs per chunk](lessons/search-command-chunking.md): buffer until `_finished`; test with tens of thousands of rows. |
@@ -25,5 +28,4 @@ One line per lesson, most hits first. Details in `lessons/`. Maintained by the
 | 1 | rule | [SDK metadata overstated its Python floor](lessons/vendoring-sdk-python-metadata.md): vendor without `ai/`. |
 | 1 | hook | [AI commit author became a co-author trailer](lessons/git-ai-commit-author.md): squash merge credits every commit author; the bash guard checks the author. |
 | 1 | hook | [PowerShell corrupted UTF-8](lessons/windows-powershell-encoding.md): never write repo files with PowerShell. |
-| 1 | lesson | [relpath fails across Windows drives](lessons/splk-windows-cross-drive-relpath.md): repo on D:, temp on C:; use `splk.paths.display()`. |
 | 1 | lesson | [Stale secret, not rate limit](lessons/process-stale-secret-misdiagnosis.md): check mechanical causes and timestamps first. |

@@ -2,7 +2,7 @@
 hits: 1
 seen: [2026-11-14]
 area: splunkweb
-level: lesson
+level: pattern
 ---
 **Symptom:** easyadmin's Classic (Simple XML) dashboard stayed light while the
 owner's Splunk account was set to dark (`user-prefs` `[general] theme = dark`),

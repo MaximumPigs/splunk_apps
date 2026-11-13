@@ -129,8 +129,9 @@ def _pytest(stage, app, args, command, env=None):
 
 
 def unit_tests(app=None, command="test"):
-    """Run the offline suite (everything under tests/ except tests/live)."""
-    return _pytest("unit", app, ["tests", "--ignore", paths.LIVE_TESTS_DIR], command)
+    """Run the offline suite (everything under tests/ except tests/live and tests/ui)."""
+    return _pytest("unit", app, ["tests", "--ignore", paths.LIVE_TESTS_DIR,
+                                 "--ignore", paths.UI_TESTS_DIR], command)
 
 
 def live_tests(app, target, command="test"):
@@ -148,6 +149,35 @@ def live_tests(app, target, command="test"):
     env["SPLK_TARGET"] = target.name
     env["SPLK_LIVE"] = "1"
     return _pytest("live", app, [app_dir], command, env=env)
+
+
+def has_ui_tests(app):
+    """True when tests/ui/<app> exists; apps without pages have no UI stage."""
+    return os.path.isdir(os.path.join(paths.UI_TESTS_DIR, app))
+
+
+def ui_tests(app, target, headed=False, command="test"):
+    """Run tests/ui/<app> in a real browser against the target's Splunk Web.
+
+    These observe what only a browser can: rendered pages, themes, a
+    dashboard's JavaScript. Screenshots and, on failure, traces land in
+    build/reports/ui/<app>/ for the agent (or the person) to look at.
+    """
+    if not has_ui_tests(app):
+        return _finish(command, StageResult("ui", app, True, "no UI tests at tests/ui/%s" % app))
+    # Checked here so a missing install is one clear line, not a collection error.
+    if importlib.util.find_spec("playwright") is None:
+        from splk import ui
+        return _finish(command, StageResult("ui", app, False, ui.INSTALL_HINT))
+    if not target.web_url:
+        return _finish(command, StageResult(
+            "ui", app, False, "Target %s has no web_url in config/targets.toml" % target.name))
+    env = dict(os.environ)
+    env["SPLK_TARGET"] = target.name
+    env["SPLK_UI"] = "1"
+    if headed:
+        env["SPLK_UI_HEADED"] = "1"
+    return _pytest("ui", app, [os.path.join(paths.UI_TESTS_DIR, app)], command, env=env)
 
 
 # ---------------------------------------------------------------- AppInspect
