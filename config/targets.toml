@@ -19,7 +19,10 @@
 default_target = "local"
 
 [targets.local]
-host = "localhost"
+# 127.0.0.1, not localhost: on Windows "localhost" resolves to ::1 first and,
+# with splunkd listening on IPv4 only, every new connection waits about a
+# second for the IPv6 attempt to fail. Live tests make thousands of requests.
+host = "127.0.0.1"
 port = 8089
 scheme = "https"
 verify_tls = false

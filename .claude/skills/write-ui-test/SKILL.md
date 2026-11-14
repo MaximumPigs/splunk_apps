@@ -33,8 +33,9 @@ JavaScript problems the screenshot may not.
 | `open_view(app, view, theme=None, ready=None)` | Open a view in this test's tab and return the Playwright `Page`. Always pass `ready`, a selector the page's JS renders once it is usable: the load event fires long before that. |
 | `shot(page, name)` | Save `build/reports/ui/<app>/<name>.png` and return its path. Take one for every visual claim, then look at it. |
 | `page_log(page)` | `.console_errors` and `.page_errors` (uncaught exceptions) since the page was opened. |
-| `web` | The signed-in session: `web.url(path)` for Splunk Web URLs, `web.new_page()`. |
+| `web` | The signed-in session: `web.url(path)` for Splunk Web URLs, `web.new_page()`, `web.new_user_page(user, password)` (a tab signed in as another user, in its own browser context). |
 | `page` | This test's tab. A failure saves `<test>-FAILED.png` and `<test>-trace.zip`. |
+| `sandbox`, `sandbox_client` | Create and change users, roles and app permissions, undone after the test; an admin REST client to check what a save wrote. |
 
 Replay a failure step by step with `python -m playwright show-trace build/reports/ui/<app>/<test>-trace.zip`.
 
@@ -45,16 +46,32 @@ Replay a failure step by step with `python -m playwright show-trace build/report
 - One behaviour per test; the docstring says what the README promises.
 - Assert `page_log(page).page_errors == []` on the main page test. Do not
   assert on all `console_errors`: Splunk Web logs its own.
-- Read-only by default. A test that saves must create and delete its own
-  objects (like the live tests' throwaway roles), and never edits real roles,
-  users or preferences.
+- A test that saves works on objects from the `sandbox` fixture (the same as
+  live tests; see `write-live-test`), and calls `sandbox.remember` before
+  anything that could touch a real object. The environment guard fails any
+  test that leaves users, roles or app permissions changed. Never change the
+  signed-in user's preferences.
+- Answer `window.confirm` with `page.once("dialog", ...)` before the click,
+  and record its message to assert on. To sign in as another user, create it
+  with `sandbox.create_user`, then `page = web.new_user_page(name, password)`
+  and `web.open_view(page, ...)`. Never open a second `splk.ui.SplunkWeb` in a
+  test: Playwright refuses a second sync session ("Playwright Sync API inside
+  the asyncio loop"; `lessons/splk-ui-one-playwright-per-session.md`).
+- After a save, delete or refresh that reloads the page's model, wait for
+  the page's busy indicator to **detach**, not for the result message or the
+  ready selector: both exist while the old model is re-rendered
+  (`lessons/splk-ui-test-wait-for-busy-not-message.md`; see `_save()` in
+  `tests/ui/easyadmin/test_easyadmin_edit_ui.py`).
 - When a result depends on the signed-in user's settings (theme, timezone),
   read the setting in the test and `pytest.skip` if it does not apply. Do not
   change the user's preferences.
 - Each test must fail if the feature is removed. Check that by breaking it
   once (comment out the call, run, restore).
-- After a change under `appserver/static/`, bump `[install] build` or the
-  test sees the old JS.
+- After a change under `appserver/static/`, bump `[install] build` for that
+  deploy (again, if the current build was already served) or the test sees
+  the old JS.
+- A failure saves `<test>-FAILED.png`: open it before theorising about the
+  cause.
 
 ## Example
 

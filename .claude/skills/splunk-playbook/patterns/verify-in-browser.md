@@ -1,7 +1,7 @@
 ---
-confirmed: 0
+confirmed: 1
 seen: [2026-11-14]
-apps: []
+apps: [easyadmin]
 ---
 # See it in a browser before claiming it works
 
@@ -13,7 +13,9 @@ and four published claims were wrong because nobody looked
 **Recipe:**
 
 1. Deploy (`splk dev <app> --skip-inspect`). If static files changed, bump
-   `[install] build` first, or Splunk Web serves the old ones.
+   `[install] build` first (again if that number was already served), or
+   Splunk Web serves the old ones. If `bin/` changed behind a persist
+   handler, check a label only the new code shows before trusting the page.
 2. Look: `splk shot <app>/<view> [--theme dark] --wait-for "<selector>"`.
    It prints JSON with the screenshot path, the final URL, and any console
    and page errors. **Open the PNG with Read and check it shows what you
@@ -28,6 +30,10 @@ and four published claims were wrong because nobody looked
 
 **Why this way:** a screenshot the agent reads is an observation, which turns
 "should work" into "seen working", without waiting for the person.
+
+Seen working on easyadmin 1.1.0 (2026-11-14): a `shot` per settings tab in
+the UI test gave the UX review its evidence, and the probe's `-FAILED.png`
+showed the role editor's real layout at once.
 
 **Verify:** the UI stage of `splk dev <app>` is green, and the screenshot in
 `build/reports/ui/<app>/` shows the feature.

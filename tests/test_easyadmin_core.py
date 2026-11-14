@@ -108,28 +108,56 @@ def test_model_has_every_tab_in_order():
     m = model({"user": {}})
     assert [(t["id"], t["type"]) for t in m["tabs"]] == [
         ("indexes", "matrix"), ("capabilities", "matrix"), ("inheritance", "matrix"),
-        ("limits", "settings"), ("federated", "settings"),
+        ("providers", "settings"), ("restrictions", "settings"), ("resources", "settings"),
     ]
     assert [f["name"] for f in tab(m, "indexes")["fields"]] == [
-        "srchIndexesAllowed", "srchIndexesDefault", "srchIndexesDisallowed", "deleteIndexesAllowed"]
+        "srchIndexesAllowed", "srchIndexesDefault"]
 
 
 def test_every_edited_attribute_appears_once():
     names = list(core.MATRIX_FIELDS) + list(core.SETTING_KINDS)
     assert len(names) == len(set(names))
-    # The writable fields splunkd 10.6.1 lists for authorization/roles/_new,
-    # less the wildcard srchMinScheduleInterval.* family, which is not edited.
-    assert set(names) == {
-        "capabilities", "cumulativeRTSrchJobsQuota", "cumulativeSrchJobsQuota", "defaultApp",
-        "deleteIndexesAllowed", "federatedProviders", "fieldFilterExemption", "grantable_roles",
-        "imported_roles", "kvstore_create.deny_list", "kvstore_create.implicit_deny_list",
-        "kvstore_delete.deny_list", "kvstore_delete.implicit_deny_list",
-        "kvstore_update.deny_list", "kvstore_update.implicit_deny_list", "queuedSearchQuota",
-        "rtSrchJobsQuota", "srchAllowAdvancedCron", "srchDiskQuota",
-        "srchFederatedProvidersAllowed", "srchFederatedProvidersDefault", "srchFilter",
-        "srchIndexesAllowed", "srchIndexesDefault", "srchIndexesDisallowed", "srchJobsQuota",
-        "srchMinScheduleInterval", "srchTimeEarliest", "srchTimeWin",
-    }
+    # Exactly what Splunk Web's role editor can change on 10.6.1 (observed tab
+    # by tab; see the README). Anything else must be refused.
+    assert set(names) == EDITOR_ATTRIBUTES
+
+
+# What Settings > Roles > Edit Role exposes on 10.6.1, by editor tab.
+EDITOR_ATTRIBUTES = {
+    "imported_roles",                                                # Inheritance
+    "capabilities",                                                  # Capabilities
+    "srchIndexesAllowed", "srchIndexesDefault",                      # Indexes
+    "srchFederatedProvidersAllowed", "srchFederatedProvidersDefault",  # Providers
+    "srchFilter",                                                    # Restrictions
+    "defaultApp", "cumulativeSrchJobsQuota", "cumulativeRTSrchJobsQuota",  # Resources
+    "srchJobsQuota", "rtSrchJobsQuota", "srchTimeWin", "srchTimeEarliest", "srchDiskQuota",
+}
+
+# Writable through authorization/roles, but not offered by the role editor.
+NOT_IN_EDITOR = (
+    "srchIndexesDisallowed", "deleteIndexesAllowed", "grantable_roles", "queuedSearchQuota",
+    "srchMinScheduleInterval", "srchAllowAdvancedCron", "federatedProviders",
+    "fieldFilterExemption", "kvstore_create.deny_list", "kvstore_create.implicit_deny_list",
+    "kvstore_update.deny_list", "kvstore_update.implicit_deny_list",
+    "kvstore_delete.deny_list", "kvstore_delete.implicit_deny_list",
+)
+
+
+@pytest.mark.parametrize("field", NOT_IN_EDITOR)
+def test_attributes_the_role_editor_lacks_are_refused(field):
+    """The app never does more than Splunk Web's role editor, as a grant or a setting."""
+    for change in (grant("user", "x", field=field), setting("user", field, "1", "0"),
+                   setting("user", field, ["x"], [])):
+        with pytest.raises(core.EasyAdminError) as caught:
+            core.parse_changes([change])
+        assert "not a role attribute this app edits" in str(caught.value)
+        assert caught.value.status == 400
+
+
+def test_attributes_the_role_editor_lacks_are_not_shown():
+    m = model({"user": {field: "x" for field in NOT_IN_EDITOR}})
+    shown = [f["name"] for t in m["tabs"] for f in t["fields"]]
+    assert not set(shown) & set(NOT_IN_EDITOR)
 
 
 def test_index_tab_columns_include_wildcards_and_unknown_names():
@@ -194,17 +222,24 @@ def test_inheritance_chain_tolerates_a_cycle():
 
 def test_settings_tab_reports_value_and_imported_value():
     t = tab(model({"power": {"srchJobsQuota": "10", "imported_srchJobsQuota": "3",
-                             "srchFilter": ""}}), "limits")
+                             "srchFilter": ""}}), "resources")
     values = t["values"]["power"]
     assert values["srchJobsQuota"] == {"value": "10", "imported": "3"}
-    assert values["srchFilter"] == {"value": "", "imported": None}
     assert values["defaultApp"] == {"value": "", "imported": None}
-    assert {f["name"]: f["kind"] for f in t["fields"]}["srchAllowAdvancedCron"] == "flag"
+    assert {f["name"]: f["kind"] for f in t["fields"]}["defaultApp"] == "text"
+    restrictions = tab(model({"power": {"srchFilter": ""}}), "restrictions")
+    assert restrictions["values"]["power"]["srchFilter"] == {"value": "", "imported": None}
+
+
+def test_resources_tab_explains_its_sentinel_values():
+    m = model({"user": {}})
+    assert tab(m, "resources")["note"] ==         "A search job limit of 0 means no limit. A time limit of -1 is unset."
+    assert tab(m, "providers")["note"] is None
 
 
 def test_list_settings_are_lists():
     t = tab(model({"admin": {"srchFederatedProvidersAllowed": "*",
-                             "imported_srchFederatedProvidersAllowed": ["a", "b"]}}), "federated")
+                             "imported_srchFederatedProvidersAllowed": ["a", "b"]}}), "providers")
     assert t["values"]["admin"]["srchFederatedProvidersAllowed"] == {"value": ["*"], "imported": ["a", "b"]}
 
 
@@ -275,8 +310,7 @@ def test_parse_changes_groups_by_role():
     ([grant("user", "x" * 5000)], "longer than"),
     ([setting("user", "srchJobsQuota", "ten", "3")], "whole number"),
     ([setting("user", "srchJobsQuota", "", "3")], "must be non-empty"),
-    ([setting("user", "srchAllowAdvancedCron", "2", "1")], "0 or 1"),
-    ([setting("user", "federatedProviders", "a,b", [])], "takes a list"),
+    ([setting("user", "srchFederatedProvidersAllowed", "a,b", [])], "takes a list"),
     ([setting("user", "srchJobsQuota", "5", None)], "previous must be"),
     ([setting("user", "srchJobsQuota", "5", "3"), setting("user", "srchJobsQuota", "6", "3")], "twice"),
 ])
@@ -291,14 +325,12 @@ def test_parse_changes_accepts_valid_settings():
     plan = core.parse_changes([
         setting("r", "srchTimeWin", "-1", "0"),
         setting("r", "srchFilter", "", "host=a"),
-        setting("r", "srchAllowAdvancedCron", "0", "1"),
-        setting("r", "federatedProviders", ["a", "b", "a"], ["a"]),
+        setting("r", "srchFederatedProvidersAllowed", ["a", "b", "a"], ["a"]),
     ])
     assert plan["r"]["settings"] == {
         "srchTimeWin": ("-1", "0"),
         "srchFilter": ("", "host=a"),
-        "srchAllowAdvancedCron": ("0", "1"),
-        "federatedProviders": (["a", "b"], ["a"]),
+        "srchFederatedProvidersAllowed": (["a", "b"], ["a"]),
     }
 
 
@@ -358,10 +390,11 @@ def test_submit_refuses_a_setting_changed_since_the_page_loaded():
 
 def test_submit_compares_list_settings_as_sets():
     """splunkd stores lists sorted; a reordered previous value is not a conflict."""
-    gateway = FakeGateway({"user": {"federatedProviders": ["a", "b"]}})
-    summary = core.submit_changes(gateway, [setting("user", "federatedProviders", ["c"], ["b", "a"])])
+    gateway = FakeGateway({"user": {"srchFederatedProvidersAllowed": ["a", "b"]}})
+    summary = core.submit_changes(gateway, [
+        setting("user", "srchFederatedProvidersAllowed", ["c"], ["b", "a"])])
     assert summary["updated"] == 1
-    assert gateway.writes == [("user", {"federatedProviders": ["c"]})]
+    assert gateway.writes == [("user", {"srchFederatedProvidersAllowed": ["c"]})]
 
 
 def test_submit_skips_a_role_already_in_the_requested_state():

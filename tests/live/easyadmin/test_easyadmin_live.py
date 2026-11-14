@@ -5,13 +5,13 @@ prove the packaged app registers its endpoint, that the handler's real calls to
 splunkd read and write roles correctly, and that the page is installed.
 
 The app has no SPL surface, so these go through the ``splunk`` REST client
-rather than ``search``. Writes only ever touch throwaway roles created for the
-test and deleted afterwards.
+rather than ``search``. Writes only ever touch throwaway roles created through
+the ``sandbox`` fixture, which deletes them afterwards; the environment guard
+checks that every other role and user is exactly as it was.
 """
 
 import json
 import urllib.parse
-import uuid
 
 import pytest
 
@@ -67,22 +67,13 @@ def _tab(model, tab_id):
 
 
 @pytest.fixture
-def make_role(splunk):
-    """Create throwaway roles; every one is deleted after the test."""
-    created = []
-
+def make_role(sandbox):
+    """Create throwaway roles through the sandbox, which deletes them afterwards."""
     def make(**attributes):
-        name = "easyadmin_live_%s" % uuid.uuid4().hex[:8]
-        params = {"name": name, "srchIndexesAllowed": "main"}
+        params = {"srchIndexesAllowed": "main"}
         params.update(attributes)
-        splunk.request("POST", "/services/authorization/roles", params)
-        created.append(name)
-        return name
-
-    yield make
-    # Delete in reverse, so a role is gone before any role it imported.
-    for name in reversed(created):
-        splunk.request("DELETE", _role_path(name))
+        return sandbox.create_role(label="easyadmin", **params)
+    return make
 
 
 @pytest.fixture
@@ -129,11 +120,11 @@ def test_model_reports_the_callers_theme_preference(splunk):
 
 
 def test_model_has_every_tab(splunk):
-    """GET returns the five tabs, and the caller (an admin) can edit."""
+    """GET returns the six tabs, and the caller (an admin) can edit."""
     model = splunk.request("GET", ENDPOINT)
     assert [(t["id"], t["type"]) for t in model["tabs"]] == [
         ("indexes", "matrix"), ("capabilities", "matrix"), ("inheritance", "matrix"),
-        ("limits", "settings"), ("federated", "settings"),
+        ("providers", "settings"), ("restrictions", "settings"), ("resources", "settings"),
     ]
     assert model["can_edit"] is True
     assert "admin" in model["user_roles"]
@@ -210,8 +201,8 @@ def test_settings_tab_reads_back_what_was_written(splunk, scratch_role):
     previous = _text(splunk, scratch_role, "srchJobsQuota")
     _submit(splunk, [_setting(scratch_role, "srchJobsQuota", "9", previous),
                      _grant(scratch_role, "user", field="imported_roles")])
-    limits = _tab(splunk.request("GET", ENDPOINT), "limits")
-    value = limits["values"][scratch_role]["srchJobsQuota"]
+    resources = _tab(splunk.request("GET", ENDPOINT), "resources")
+    value = resources["values"][scratch_role]["srchJobsQuota"]
     assert value["value"] == "9"
     assert value["imported"] == _text(splunk, "user", "srchJobsQuota")
 

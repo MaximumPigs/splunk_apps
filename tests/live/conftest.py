@@ -5,6 +5,10 @@ and ``splk dev`` do for you. That keeps plain ``pytest`` and CI offline.
 
 Layout: one directory per app, ``tests/live/<app>/test_*.py``, so ``splk dev
 <app>`` runs only that app's live tests.
+
+Live tests may change anything on the dev target through the ``sandbox``
+fixture. Users, roles and app permissions are snapshotted around every test
+and put back afterwards, pass or fail; see ``splk.testing``.
 """
 
 import logging
@@ -14,6 +18,9 @@ import pytest
 
 from splk import config, paths, stages
 from splk.rest import SplunkClient, SplunkError
+# Every live test runs inside the environment guard, and may use ``sandbox`` to
+# create and change users, roles and app permissions: see splk.testing.
+from splk.testing import _environment_guard, _sandbox_session, sandbox, sandbox_client  # noqa: F401
 
 log = logging.getLogger("splk.live")
 

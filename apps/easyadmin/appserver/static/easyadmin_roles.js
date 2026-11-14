@@ -579,15 +579,10 @@ require([
                 var pending = state.settingsPending[cellKey];
                 var value = pending ? pending.value : loaded.value;
                 var $td = el('td', 'ea-cell ea-setting-cell');
-                var $input;
-                if (field.kind === 'flag') {
-                    $input = el('input').attr('type', 'checkbox').prop('checked', value === '1');
-                } else {
-                    $input = el('input').attr({ type: 'text', spellcheck: 'false' })
-                        .val(displayValue(field, value));
-                    if (field.kind === 'list') {
-                        $input.attr('placeholder', 'comma-separated');
-                    }
+                var $input = el('input').attr({ type: 'text', spellcheck: 'false' })
+                    .val(displayValue(field, value));
+                if (field.kind === 'list') {
+                    $input.attr('placeholder', 'comma-separated');
                 }
                 $input.attr({
                     'data-role': role.name,
@@ -629,8 +624,10 @@ require([
                 'effective through an imported role or a wildcard (hover for the reason). ' +
                 'An outlined cell is an unsaved change.';
         }
+        var hasList = $.grep(tab.fields, function (field) { return field.kind === 'list'; }).length;
         return 'Each field is the value set on the role itself; "imported" shows what its ' +
-            'imported roles provide. Lists are comma-separated. An outlined cell is an unsaved change.';
+            'imported roles provide. ' + (hasList ? 'Lists are comma-separated. ' : '') +
+            (tab.note ? tab.note + ' ' : '') + 'An outlined cell is an unsaved change.';
     }
 
     function render() {
@@ -682,10 +679,7 @@ require([
         var loaded = settingValue(role, fieldName);
         var value;
         var same;
-        if (kind === 'flag') {
-            value = this.checked ? '1' : '0';
-            same = value === loaded;
-        } else if (kind === 'list') {
+        if (kind === 'list') {
             value = parseList(this.value);
             same = sameList(value, loaded);
         } else {

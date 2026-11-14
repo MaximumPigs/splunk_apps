@@ -16,5 +16,8 @@ paths:
 - Open the screenshots in `build/reports/ux/<app>/` before saying a page
   looks right, then run `splunk-ux-review`. Ask the person only for
   judgement the standard does not settle, with the screenshots attached.
+- Bump `[install] build` in `app.conf` for **every deploy** that changes
+  `appserver/static/` after the current build was served, not once per
+  release: Splunk Web serves cached files for a build number it has seen.
 - A new or renamed view needs its `ux.toml` section updated: a section for a
   view that no longer exists fails the audit on purpose.

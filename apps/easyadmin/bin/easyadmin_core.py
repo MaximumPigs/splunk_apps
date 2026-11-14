@@ -56,10 +56,12 @@ logger = logging.getLogger("easyadmin")
 
 # ---------------------------------------------------------------- the tabs
 #
-# Attribute names are the writable fields splunkd 10.6 lists for
-# authorization/roles (its _new endpoint's optionalFields). The labels are the
-# page's wording; each column also shows the attribute name, so nothing is
-# hidden behind a paraphrase.
+# The app changes only what Splunk Web's own role editor (Settings > Roles >
+# Edit Role) can change: an administrator must never be able to do more here
+# than there. The list below was observed in that editor on 10.6.1, tab by tab
+# (see the README's "What the page edits" table). Attribute names are splunkd's
+# authorization/roles fields; each column also shows the name, so nothing is
+# hidden behind a paraphrase. The labels follow the editor's wording.
 
 MATRIX_TABS = (
     {
@@ -69,10 +71,10 @@ MATRIX_TABS = (
         # Index attributes accept * wildcards, which the page explains.
         "wildcards": True,
         "fields": (
-            ("srchIndexesAllowed", "Searchable indexes"),
-            ("srchIndexesDefault", "Indexes searched by default"),
-            ("srchIndexesDisallowed", "Indexes never searchable"),
-            ("deleteIndexesAllowed", "Indexes events can be deleted from"),
+            # The editor's "Included" and "Default" columns. Kept short: the
+            # Show selector also shows the attribute name and is not wide.
+            ("srchIndexesAllowed", "Included"),
+            ("srchIndexesDefault", "Default"),
         ),
     },
     {
@@ -87,48 +89,48 @@ MATRIX_TABS = (
         "label": "Inheritance",
         "columns": "roles",
         "wildcards": False,
-        "fields": (
-            ("imported_roles", "Inherits from roles"),
-            ("grantable_roles", "Roles it can grant"),
-        ),
+        "fields": (("imported_roles", "Inherits from roles"),),
     },
 )
 
-# kind: "int" (whole number, may be negative), "flag" (0 or 1), "text" (any
-# string, may be empty) or "list" (several values, edited comma-separated).
+# kind: "int" (whole number, may be negative), "text" (any string, may be
+# empty) or "list" (several values, edited comma-separated).
 SETTINGS_TABS = (
     {
-        "id": "limits",
-        "label": "Search limits",
+        "id": "providers",
+        "label": "Providers",
         "fields": (
-            ("srchJobsQuota", "Search jobs quota", "int"),
-            ("rtSrchJobsQuota", "Real-time search jobs quota", "int"),
-            ("cumulativeSrchJobsQuota", "Cumulative search jobs quota", "int"),
-            ("cumulativeRTSrchJobsQuota", "Cumulative real-time search jobs quota", "int"),
-            ("queuedSearchQuota", "Queued search quota", "int"),
-            ("srchDiskQuota", "Search disk quota", "int"),
-            ("srchTimeWin", "Search time window", "int"),
-            ("srchTimeEarliest", "Earliest search time", "int"),
-            ("srchMinScheduleInterval", "Minimum schedule interval", "int"),
-            ("srchAllowAdvancedCron", "Advanced cron allowed", "flag"),
-            ("srchFilter", "Search filter", "text"),
-            ("defaultApp", "Default app", "text"),
+            # The editor's "Included" and "Default" columns for federated
+            # providers; a new role gets * in both.
+            ("srchFederatedProvidersAllowed", "Included federated providers", "list"),
+            ("srchFederatedProvidersDefault", "Default federated providers", "list"),
         ),
     },
     {
-        "id": "federated",
-        "label": "Federated and KV store",
+        "id": "restrictions",
+        "label": "Restrictions",
         "fields": (
-            ("federatedProviders", "Federated providers", "list"),
-            ("srchFederatedProvidersAllowed", "Searchable federated providers", "list"),
-            ("srchFederatedProvidersDefault", "Federated providers searched by default", "list"),
-            ("fieldFilterExemption", "Field filter exemptions", "list"),
-            ("kvstore_create.deny_list", "KV store create deny list", "list"),
-            ("kvstore_create.implicit_deny_list", "KV store create implicit deny list", "list"),
-            ("kvstore_update.deny_list", "KV store update deny list", "list"),
-            ("kvstore_update.implicit_deny_list", "KV store update implicit deny list", "list"),
-            ("kvstore_delete.deny_list", "KV store delete deny list", "list"),
-            ("kvstore_delete.implicit_deny_list", "KV store delete implicit deny list", "list"),
+            ("srchFilter", "Search filter", "text"),
+        ),
+    },
+    {
+        "id": "resources",
+        "label": "Resources",
+        # Both observed in the 10.6.1 editor: its Resources tab says "Enter 0
+        # for no search job limits", and shows a time field holding -1 (what
+        # a new role gets) as "Unset".
+        "note": "A search job limit of 0 means no limit. A time limit of -1 is unset.",
+        "fields": (
+            ("defaultApp", "Default app", "text"),
+            ("cumulativeSrchJobsQuota", "Standard role search limit", "int"),
+            ("cumulativeRTSrchJobsQuota", "Real-time role search limit", "int"),
+            ("srchJobsQuota", "Standard user search limit", "int"),
+            ("rtSrchJobsQuota", "Real-time user search limit", "int"),
+            ("srchTimeWin", "Role search time window limit (seconds)", "int"),
+            ("srchTimeEarliest", "Earliest searchable event time (seconds)", "int"),
+            # The editor's section is "Disk space limit"; its field label
+            # ("Standard search limit") reads like a job count out of context.
+            ("srchDiskQuota", "Disk space limit (MB)", "int"),
         ),
     },
 )
@@ -358,6 +360,8 @@ def _settings_tab(tab, roles):
         "id": tab["id"],
         "label": tab["label"],
         "type": "settings",
+        # Optional: how to read the tab's values, shown in its legend.
+        "note": tab.get("note"),
         "fields": [{"name": name, "label": label, "kind": kind}
                    for name, label, kind in tab["fields"]],
         "values": values,
@@ -448,8 +452,6 @@ def _clean_setting(value, kind, field, position):
     text = _clean_string(value, field, position, allow_empty=(kind == "text"))
     if kind == "int" and not INT_RE.match(text):
         raise EasyAdminError("Change %d: %s must be a whole number." % (position, field))
-    if kind == "flag" and text not in ("0", "1"):
-        raise EasyAdminError("Change %d: %s must be 0 or 1." % (position, field))
     return text
 
 
@@ -513,6 +515,8 @@ def parse_changes(raw):
                 raise EasyAdminError("Change %d sets %s on role %s twice." % (position, field, role))
             per_role["settings"][field] = (value, previous)
         else:
+            # Includes attributes splunkd accepts but Splunk Web's role
+            # editor does not offer: the app never does more than the editor.
             raise EasyAdminError("Change %d: %r is not a role attribute this app edits."
                                  % (position, field))
 
@@ -536,10 +540,10 @@ def apply_delta(current, grant, revoke):
 
 
 def _plan_role_update(content, entry):
-    """Work out the fields to write for one role, or raise on a stale setting.
+    """Work out the fields to write for one role, or report stale settings.
 
     Returns (update, conflicts): ``update`` maps field -> new value for every
-    field that actually changes, ``conflicts`` lists settings changed by
+    field that actually changes, and ``conflicts`` lists settings changed by
     someone else since the page loaded.
     """
     update = OrderedDict()

@@ -112,6 +112,14 @@
     box-sizing: border-box;
 }
 
+/* Splunk Web's form styles give a select a fixed width, which cut the Show
+ * options ("Included (srchIndexesAllowed)") short; size it to its options. */
+#easyadmin-roles .ea-toolbar select.ea-field {
+    width: auto;
+    /* As a flex item it still shrank when the Save label grew. */
+    flex: none;
+}
+
 #easyadmin-roles .ea-label {
     margin: 0;
     display: inline;

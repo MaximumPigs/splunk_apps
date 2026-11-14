@@ -36,6 +36,19 @@ Current state of the target and recent runs:
 
 ## Reading failures
 
+Open the failure artefact (screenshot, report, log line) before forming a
+theory (`lessons/process-evidence-before-theory.md`).
+
+**Stale code** (a test fails as if your change were not there, after a green
+deploy) has two known causes. Check them before debugging the fix:
+
+- `appserver/static/` changed but `[install] build` was already served:
+  bump it again and redeploy. Bump once per such deploy, not per release.
+- `bin/` changed behind a `scripttype = persist` handler: the old process
+  keeps serving until it idles out (minutes). `--restart` does not help: it
+  restarts only when splunkd asks for one, which a Python change never does.
+  Prove the new code runs with something only it shows (a label, a message).
+
 | Stage | Where to look |
 | --- | --- |
 | build | Version mismatch between `[launcher]` and `[id]`, or a missing `default/app.conf`. |

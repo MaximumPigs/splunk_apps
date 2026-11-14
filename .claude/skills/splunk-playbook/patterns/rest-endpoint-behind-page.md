@@ -1,6 +1,6 @@
 ---
-confirmed: 1
-seen: [2026-11-12]
+confirmed: 2
+seen: [2026-11-12, 2026-11-14]
 apps: [easyadmin]
 ---
 # REST endpoint behind a page
@@ -31,10 +31,12 @@ conf) through the app's own Python, with the signed-in user's permissions.
 - The caller's own token (no `passSystemAuth`) means splunkd enforces the
   user's capabilities, so the app can never grant more than Settings would.
 - `persist` handlers keep their process alive. After changing `bin/`, a green
-  deploy can serve the old code for minutes: restart (ask the person) or
-  wait, and confirm which code is running from the app's log
-  (`lessons/splunkd-persist-handler-stale-code.md`). A new endpoint needs one
-  restart before it is registered at all.
+  deploy can serve the old code for 5 to 10 minutes (seen twice). `splk
+  deploy --restart` does **not** help: it restarts only when splunkd posts
+  "restart required", which a Python change never does. Wait, and prove the
+  new code runs with something only it shows (a label, a message) before
+  trusting a test run (`lessons/splunkd-persist-handler-stale-code.md`). A
+  new endpoint needs one restart before it is registered at all.
 - `simpleRequest` calls `.items()` on `postargs`
   (`lessons/python-simplerequest-postargs-dict.md`).
 - splunkd returns numbers in REST JSON where `| rest` gives strings, and stores
