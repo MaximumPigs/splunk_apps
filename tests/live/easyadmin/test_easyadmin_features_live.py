@@ -169,25 +169,61 @@ def test_delete_indexes_granted_on_a_role_with_delete_by_keyword(splunk, sandbox
 # report which, if any, works.
 def test_probe_how_field_filter_exemption_clears(splunk, sandbox):
     import urllib.parse
-    candidates = {
-        "empty string": ("roles", {"fieldFilterExemption": ""}),
-        "single space": ("roles", {"fieldFilterExemption": " "}),
-        "conf endpoint empty": ("conf", {"fieldFilterExemption": ""}),
-    }
+
+    # Round 1 (10.6.1): POSTing "" or " " to authorization/roles APPENDS it
+    # (['', 'splktest_field']); an empty value through configs/conf-authorize
+    # changed nothing visible. Round 2 below.
     outcome = {}
-    for label, (route, params) in candidates.items():
-        role = sandbox.create_role(label="easyadmin_ffe", srchIndexesAllowed="main",
+
+    def fresh():
+        return sandbox.create_role(label="easyadmin_ffe", srchIndexesAllowed="main",
                                    fieldFilterExemption="splktest_field")
-        if route == "roles":
-            path = "/services/authorization/roles/%s" % urllib.parse.quote(role, safe="")
-        else:
-            path = "/servicesNS/nobody/system/configs/conf-authorize/%s" % \
-                urllib.parse.quote("role_" + role, safe="")
+
+    def roles_path(role):
+        return "/services/authorization/roles/%s" % urllib.parse.quote(role, safe="")
+
+    def read(role):
+        return repr(ea.role_content(splunk, role).get("fieldFilterExemption"))
+
+    def attempt(label, action):
         try:
-            splunk.request("POST", path, params)
-            outcome[label] = repr(ea.role_content(splunk, role).get("fieldFilterExemption"))
+            outcome[label] = action()
         except SplunkError as exc:
             outcome[label] = "error: %s" % exc
+
+    def replace_with_other():
+        role = fresh()
+        splunk.request("POST", roles_path(role), {"fieldFilterExemption": "splktest_other"})
+        return read(role)
+
+    def conf_empty_then_reload():
+        role = fresh()
+        splunk.request("POST", "/servicesNS/nobody/system/configs/conf-authorize/%s"
+                       % urllib.parse.quote("role_" + role, safe=""), {"fieldFilterExemption": ""})
+        splunk.request("POST", "/services/authorization/roles/_reload")
+        return read(role)
+
+    def conf_stanza_value():
+        role = fresh()
+        data = splunk.request("GET", "/servicesNS/nobody/system/configs/conf-authorize/%s"
+                              % urllib.parse.quote("role_" + role, safe=""))
+        return repr(data["entry"][0]["content"].get("fieldFilterExemption"))
+
+    def fieldfilter_endpoints():
+        found = {}
+        for path in ("/services/authorization/fieldfilters", "/services/data/fieldfilters",
+                     "/services/authorization/field_filters"):
+            try:
+                data = splunk.request("GET", path)
+                found[path] = "ok, %d entries" % len(data.get("entry") or [])
+            except SplunkError as exc:
+                found[path] = "HTTP %s" % exc.status
+        return found
+
+    attempt("replace with another value", replace_with_other)
+    attempt("conf endpoint empty then roles _reload", conf_empty_then_reload)
+    attempt("stanza value as stored in conf", conf_stanza_value)
+    attempt("field filter endpoints", fieldfilter_endpoints)
     raise AssertionError("PROBE RESULTS (not a failure of the app): %r" % outcome)
 
 
