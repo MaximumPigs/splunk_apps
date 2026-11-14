@@ -37,6 +37,11 @@ showed the role editor's real layout at once. Again on 1.2.0: the drag
 test's `-FAILED.png` showed the hidden drop target in one look
 (`lessons/ux-filter-hides-drop-target.md`).
 
+`splk shot` cannot open a `#hash` state (`#` is encoded to `%23` and times
+out): for tab or hash states, `shot()` inside a UI test that clicks the tab
+or `page.goto(web.url(".../<view>#<hash>"))`
+(`lessons/splk-shot-hash-url.md`).
+
 **Verify:** the UI stage of `splk dev <app>` is green, and the screenshot in
 `build/reports/ui/<app>/` shows the feature.
 
