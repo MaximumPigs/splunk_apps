@@ -15,6 +15,14 @@ from _common import get_logger, pre_tool_decision, read_event, run_safely
 
 log = get_logger("guard_bash")
 
+# main (or master) as a whole ref: not part of a longer name like x-main or
+# a/main, but allowing heads/ and refs/heads/ before it. Python lookbehinds
+# must be fixed width, hence three of them.
+_MAIN_REF = r"(?:(?<![\w./-])|(?<=refs/heads/)|(?<=heads/))(main|master)(?![\w/.-])"
+_ORIGIN_MAIN = r"(refs/)?(remotes/)?origin/(main|master)(?![\w/.-])"
+_TRACK_REASON = ("This branch would track main, so an editor Sync could push it to main. "
+                 "Add --no-track: `git checkout --no-track -b <branch> origin/main`.")
+
 # (pattern, decision, reason). First match wins. Patterns are case-insensitive
 # and written to catch both POSIX and PowerShell spellings.
 RULES = [
@@ -33,20 +41,25 @@ RULES = [
     # History rewrites and direct pushes to main.
     (r"\bgit\s+push\b.*(--force\b|-f\b|--force-with-lease\b)",
      "deny", "No force pushes. Push a new commit instead."),
-    # Any spelling: `git push origin main`, `git -C . push origin main`, refspecs.
-    # main as a whole ref only (`main`, `HEAD:main`, `refs/heads/main`), so a
-    # branch named feature/x-main or a/main is not mistaken for it.
-    (r"\bgit\b[^|;&]*\bpush\b[^|;&]*(\s|:|\brefs/heads/)(main|master)(?=\s|$|[|;&])",
+    # Any spelling: `git -C . push origin main`, `+main`, `"HEAD:main"`,
+    # `heads/main`, `main~0`. main must be a whole ref name, so branches named
+    # feature/x-main, a/main or main-menu are not mistaken for it. Boundaries
+    # say what a ref name cannot contain rather than what may surround it.
+    (r"\bgit\b[^|;&]*\bpush\b[^|;&]*" + _MAIN_REF,
      "deny", "Never push to main; push the branch and open a PR."),
     # A branch that tracks origin/main is one editor Sync away from pushing to
     # main: VS Code ran `git push origin <branch>:main` for exactly that
     # (2026-11-15). Branching from origin/main is fine with --no-track.
-    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+-[bB]|switch\s+(-[cC]|--create|--force-create)|branch)"
-     r"\s+(?!-)\S+\s+origin/(main|master)\b",
-     "deny", "This branch would track main, so an editor Sync could push it to main. "
-             "Add --no-track: `git checkout --no-track -b <branch> origin/main`."),
-    (r"\bgit\b[^|;&]*\bbranch\b[^|;&]*(--set-upstream-to[=\s]|\s-u\s+)origin/(main|master)\b",
-     "deny", "A feature branch must not track main; it gets its own upstream on first push."),
+    # The server-side ruleset is the boundary; these stop accidents.
+    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+-[bB]|switch\s+(-[cC]|--create|--force-create))\b"
+     r"[^|;&]*\s" + _ORIGIN_MAIN,
+     "deny", _TRACK_REASON),
+    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\bbranch\s+((--track|-t)\s+)?(?!-)\S+\s+((--track|-t)\s+)?"
+     + _ORIGIN_MAIN, "deny", _TRACK_REASON),
+    (r"\bgit\b[^|;&]*\bbranch\b[^|;&]*(--set-upstream-to[=\s]*|\s-u\s*)" + _ORIGIN_MAIN,
+     "deny", _TRACK_REASON),
+    (r"\bgit\b[^|;&]*\bconfig\b[^|;&]*\bbranch\.\S+\.merge\s+(refs/heads/)?(main|master)(?![\w/.-])",
+     "deny", _TRACK_REASON),
     # PowerShell file writes corrupt UTF-8 (ANSI codepage) or add a BOM (5.1).
     (r"\b(set-content|out-file|add-content)\b",
      "deny", "Do not write repository files with PowerShell: it corrupts UTF-8 or adds a BOM. "
