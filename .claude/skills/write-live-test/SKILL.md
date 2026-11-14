@@ -40,8 +40,8 @@ Created objects are named `splktest_<label>_<hex8>`; nothing else is ever
 deleted. Around every test (autouse, `splk.testing`) the guard snapshots all
 users, roles and the repo's app permissions, and after cleanup compares
 again: anything still different is repaired where safe and the test errors in
-teardown, naming each difference. A killed run is repaired and swept at the
-next start. Changing an existing user's password is refused: it cannot be
+teardown, naming each difference. A killed run is swept at the next start,
+and repaired from its saved snapshot if that is under an hour old. Changing an existing user's password is refused: it cannot be
 read back.
 
 ## Choose the input
