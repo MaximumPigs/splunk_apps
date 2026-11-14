@@ -1,6 +1,6 @@
 ---
-confirmed: 3
-seen: [2026-11-12, 2026-11-14, 2026-11-14]
+confirmed: 4
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14]
 apps: [easyadmin]
 ---
 # REST endpoint behind a page
@@ -15,6 +15,9 @@ conf) through the app's own Python, with the signed-in user's permissions.
    `requireAuthentication = true`, `output_modes = json`, `passPayload = true`
    (for a JSON body), and both `python.version = python3` and
    `python.required = 3.9, 3.13`. Leave `passSystemAuth` at its default (false).
+   For an admin-only endpoint add `capability = <cap>` and re-check it in core
+   from `current-context`, so unit tests cover the refusal
+   (`[script:easyadmin_conf]`).
 2. `default/web.conf`, `[expose:<app>_<name>]`: `pattern = <app>/<name>` and
    only the methods used (`GET, POST`). Without it the browser gets a 404.
 3. `bin/<app>_rest.py`: a thin `PersistentServerConnectionApplication` that
@@ -64,5 +67,5 @@ surface.
 
 **Reference:** `apps/easyadmin/default/restmap.conf`, `default/web.conf`,
 `bin/easyadmin_rest.py`, `bin/easyadmin_core.py`, `bin/easyadmin_apps_rest.py`
-(second endpoint, own script),
+and `bin/easyadmin_conf_rest.py` (one script each),
 `tests/live/easyadmin/test_easyadmin_live.py`.
