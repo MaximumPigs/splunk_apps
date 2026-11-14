@@ -441,3 +441,54 @@ def test_copy_to_an_app_that_has_the_name_is_caught_when_staging(open_view, macr
     page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
     assert "already has an object of the same type and name" in page.locator(ROOT + " .ea-messages").inner_text()
     assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_each_staged_change_can_be_discarded_on_its_own(open_view, macro, shot):
+    """The x on a staged-change badge discards that change only; the object's other changes stay."""
+    name = macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    # Stage two changes on one object: a move and a permission change.
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="move-selected"]').click()
+    _object(page, "launcher", name).locator(".ea-object-name").click()
+    page.locator(ROOT + " .ea-panel #ea-sharing").select_option("global")
+    page.keyboard.press("Escape")
+    row = _object(page, "launcher", name)
+    assert "moving from search" in row.inner_text() and "permissions changed" in row.inner_text()
+    # With several badges the name keeps its width; the badges wrap instead.
+    assert row.locator(".ea-object-name").evaluate("n => n.getBoundingClientRect().width") >= 140
+    shot(page, "app_management_discard_one")
+
+    move_x = row.locator('.ea-discard-one[data-kind="move"]')
+    assert move_x.get_attribute("aria-label").startswith("Discard staged change: moving from search")
+    move_x.click()
+    back = _object(page, "search", name)
+    assert "moving from" not in back.inner_text()
+    assert "permissions changed" in back.inner_text()
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply 1 change"
+    assert "Its other staged change is kept." in page.locator(ROOT + " .ea-messages").inner_text()
+    # The keyboard stays on the object.
+    assert page.evaluate("document.activeElement.getAttribute('data-fid')").startswith("open:")
+
+    back.locator('.ea-discard-one[data-kind="acl"]').click()
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+    # That was its last change, so the message does not claim others are kept.
+    assert "other staged" not in page.locator(ROOT + " .ea-messages").inner_text()
+
+
+def test_a_staged_copy_can_be_discarded_from_its_dashed_row(open_view, macro):
+    """The x on a staged copy's row in the target app drops the copy and nothing else."""
+    name = macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
+    ghost = page.locator(ROOT + ' .ea-app[data-app="launcher"] .ea-ghost')
+    assert ghost.count() == 1
+    ghost.locator('.ea-discard-one[data-kind="copy"]').click()
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"] .ea-ghost').count() == 0
+    assert "copying to" not in _object(page, "search", name).inner_text()
+    assert page.locator(ROOT + " .ea-apply").is_disabled()

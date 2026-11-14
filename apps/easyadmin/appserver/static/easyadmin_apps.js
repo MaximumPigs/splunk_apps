@@ -892,15 +892,64 @@ require([
         return $legend;
     }
 
-    function changeBadges(obj) {
+    // Each staged change on an object, as {kind, text}. ``kind`` names the
+    // part of the pending edit that its discard button clears.
+    function changeParts(obj) {
         var pending = state.pending[obj.key];
-        var badges = [];
-        if (!pending) { return badges; }
-        if (pending.del) { badges.push('will be deleted'); }
-        if (pending.moveTo) { badges.push('moving from ' + obj.app); }
-        if (pending.copyTo) { badges.push('copying to ' + pending.copyTo); }
-        if (pending.acl) { badges.push('permissions changed'); }
-        return badges;
+        var parts = [];
+        if (!pending) { return parts; }
+        if (pending.del) { parts.push({ kind: 'del', text: 'will be deleted' }); }
+        if (pending.moveTo) { parts.push({ kind: 'move', text: 'moving from ' + obj.app }); }
+        if (pending.copyTo) { parts.push({ kind: 'copy', text: 'copying to ' + pending.copyTo }); }
+        if (pending.acl) { parts.push({ kind: 'acl', text: 'permissions changed' }); }
+        return parts;
+    }
+
+    function changeBadges(obj) {
+        return $.map(changeParts(obj), function (part) { return part.text; });
+    }
+
+    // Drop one staged change from one object, leaving its other changes.
+    // Prototype-free, so only these four kinds are ever accepted.
+    var DISCARD = newMap();
+    DISCARD.del = { del: false };
+    DISCARD.move = { moveTo: null };
+    DISCARD.copy = { copyTo: null };
+    DISCARD.acl = { acl: null };
+
+    function discardOne(objKey, kind) {
+        var obj = state.byKey[objKey];
+        // While Apply runs the change has already been sent: keep it, so a
+        // failure can still be retried.
+        if (!obj || !DISCARD[kind] || state.busy) { return; }
+        // Its words, taken before it is cleared, for the message.
+        var part = $.grep(changeParts(obj), function (p) { return p.kind === kind; })[0];
+        var edits = $.extend({}, DISCARD[kind]);
+        // setPending reads "back to its own app" as no move or copy.
+        if (kind === 'move') { edits.moveTo = obj.app; }
+        if (kind === 'copy') { edits.copyTo = obj.app; }
+        setPending(obj, edits);
+        var left = changeParts(obj).length;
+        state.message = { kind: 'info', lines: ['Discarded the staged change "' + (part ? part.text : kind) +
+            '" for ' + obj.name + '.' + (left ? ' Its other staged ' + (left === 1 ? 'change is' : 'changes are') +
+            ' kept.' : '')] };
+        render();
+        // Keep the keyboard where it was: on this object's name. A filter can
+        // hide its box once nothing is staged there; then go to Apply.
+        var fid = 'open:' + objKey;
+        var found = $root.find('[data-fid]').filter(function () { return this.getAttribute('data-fid') === fid; })[0] ||
+            $root.find('.ea-apply')[0];
+        if (found) { found.focus(); }
+    }
+
+    // The small x on a staged-change badge. Its name says what it discards.
+    function discardButton(obj, part) {
+        return el('button', 'ea-discard-one', '\u00d7').prop('disabled', state.busy).attr({
+            type: 'button', 'data-key': obj.key, 'data-kind': part.kind,
+            'data-fid': 'discard:' + part.kind + ':' + obj.key,
+            'aria-label': 'Discard staged change: ' + part.text + ' (' + obj.name + ')',
+            title: 'Discard this staged change'
+        });
     }
 
     // A staged copy, shown in the app it will be copied into. Its name opens
@@ -914,7 +963,9 @@ require([
             type: 'button', title: 'Staged copy of ' + typeLabel.toLowerCase() + ' ' + obj.name + ' from ' + obj.app,
             'data-fid': 'ghost:' + obj.key
         }));
-        $li.append(el('span', 'ea-tags').append(el('span', 'ea-badge ea-badge-changed', 'copy from ' + obj.app)));
+        $li.append(el('span', 'ea-tags').append(el('span', 'ea-badge ea-badge-changed', 'copy from ' + obj.app)
+            .append(discardButton(obj, { kind: 'copy', text: 'copy from ' + obj.app + ' to ' +
+                state.pending[obj.key].copyTo }))));
         return $li;
     }
 
@@ -944,8 +995,8 @@ require([
         // Colour-coded by sharing, and always labelled, so colour is never the only cue.
         $tags.append(el('span', 'ea-badge ea-share ea-share-' + acl.sharing, SHARING_LABELS[acl.sharing] || acl.sharing));
         if (obj.disabled) { $tags.append(el('span', 'ea-badge', 'disabled')); }
-        $.each(changeBadges(obj), function (i, text) {
-            $tags.append(el('span', 'ea-badge ea-badge-changed', text));
+        $.each(changeParts(obj), function (i, part) {
+            $tags.append(el('span', 'ea-badge ea-badge-changed', part.text).append(discardButton(obj, part)));
         });
         $li.append($tags);
         return $li;
@@ -1656,6 +1707,11 @@ require([
         var next = ($tabs.index(this) + (event.which === 39 ? 1 : $tabs.length - 1)) % $tabs.length;
         $tabs.eq(next).click();
         $root.find('.ea-tab').eq(next).focus();
+    });
+
+    $root.on('click', '.ea-discard-one', function (event) {
+        event.stopPropagation();
+        discardOne(this.getAttribute('data-key'), this.getAttribute('data-kind'));
     });
 
     $root.on('change', '.ea-select-app', function () {

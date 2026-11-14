@@ -166,7 +166,8 @@ added from the **Types** menu.
 | **Delete** | Stages the ticked objects for deletion. |
 | Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and every one of its settings (read-only). |
 | **Apply N changes** | Applies every staged change, after a confirmation that says how many objects are moved, re-permissioned and deleted. |
-| **Discard changes** | Drops every staged change. |
+| The × on a staged-change badge | Drops that one change (a move, a copy, a permission change or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
+| **Discard changes** | Drops every staged change, after asking. |
 
 A staged change is outlined and labelled on the object (`moving from search`,
 `copying to launcher`, `permissions changed`, `will be deleted`). A moved
