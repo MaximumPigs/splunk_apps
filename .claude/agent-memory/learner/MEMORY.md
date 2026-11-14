@@ -22,6 +22,8 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | skill | [Untested panel control shipped a Major](lessons/ux-every-control-needs-a-ui-test.md): every control gets its own UI test. `write-ui-test`. |
 | 1 | rule | [AppInspect must run untagged](lessons/appinspect-full-check-set.md): a cloud-only run missed `check_for_updates_disabled`; Splunkbase rejected the package. |
 | 1 | skill | [UI test raced a save's re-render](lessons/splk-ui-test-wait-for-busy-not-message.md): wait for the busy indicator to detach, not the message. `write-ui-test`. |
+| 1 | skill | [UI `has_text` is a substring match](lessons/splk-ui-has-text-is-substring.md): "default" matched every badged row; use `:text-is()` on the name. `write-ui-test`. |
+| 1 | skill | [Tri-state checkbox ignored uncheck()](lessons/splk-ui-tristate-checkbox-click.md): indeterminate is unchecked; use `click()`. `write-ui-test`. |
 | 1 | skill | [Second SplunkWeb in a UI test](lessons/splk-ui-one-playwright-per-session.md): Playwright sync refuses; use `web.new_user_page(user, pw)`. `write-ui-test`. |
 | 1 | lesson | [relpath fails across Windows drives](lessons/splk-windows-cross-drive-relpath.md): repo on D:, temp on C:; use `splk.paths.display()` for display paths. |
 | 1 | pattern | [simpleRequest postargs must be a dict](lessons/python-simplerequest-postargs-dict.md): list of pairs fails on `.items()`; use `{k: [v1, v2]}`, `""` clears. Playbook `rest-endpoint-behind-page`. |

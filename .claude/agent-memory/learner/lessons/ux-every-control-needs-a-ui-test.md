@@ -23,3 +23,8 @@ green with 30 tests at 18:22:02; re-review at 18:23:33 "previous major fixed".
 **Catch earlier:** `write-ui-test` rule: each control on a page, including
 secondary panels, gets a test that uses it alone; a button whose state
 depends on an input is tested with only that input changed.
+
+**Note (not a lesson):** a later UI run (19:04:33,
+`test_sharing_is_colour_coded_and_labelled`, `assert 4 == 3`) failed only
+because the test pinned the sharing key at three colours after a fourth
+(System) was added on purpose; the test was updated (green 19:07:55).

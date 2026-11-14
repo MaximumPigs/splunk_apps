@@ -69,6 +69,12 @@ Replay a failure step by step with `python -m playwright show-trace build/report
   panels included; a button enabled by an input is tested with only that
   input changed. An untested bulk owner field shipped a Major
   (`lessons/ux-every-control-needs-a-ui-test.md`).
+- Find an item by its name element with `:text-is("<name>")`, not
+  `has_text=` on the row: that is a substring match over all the row's text,
+  badges included (`lessons/splk-ui-has-text-is-substring.md`).
+- Drive a tri-state (indeterminate) checkbox with `click()`, as a person
+  does; `check()`/`uncheck()` see it as unchecked and may do nothing
+  (`lessons/splk-ui-tristate-checkbox-click.md`).
 - Each test must fail if the feature is removed. Check that by breaking it
   once (comment out the call, run, restore).
 - After a change under `appserver/static/`, bump `[install] build` for that
