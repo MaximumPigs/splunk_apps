@@ -28,6 +28,9 @@ require([
 
     // Splunk Web's proxy to splunkd; default/web.conf exposes this endpoint.
     var ENDPOINT = splunkUtil.make_url('/splunkd/__raw/services/easyadmin/apps');
+    var CONF_ENDPOINT = splunkUtil.make_url('/splunkd/__raw/services/easyadmin/conf');
+    // A long list of <details> is slow to draw; past this the view asks for a filter.
+    var MAX_STANZAS = 300;
     var SVG_NS = 'http://www.w3.org/2000/svg';
 
     var $root = $('#easyadmin-apps');
@@ -157,6 +160,21 @@ require([
         appFilter: '',         // app name or label filter
         types: null,           // type id -> true for the types on show (set on first load)
         typesOpen: false,      // the type menu is open
+        // The tab on show: 'apps' or 'conf'. #precedence in the URL opens the
+        // second, so the view can be linked to.
+        tab: window.location.hash === '#precedence' ? 'conf' : 'apps',
+        conf: {
+            list: null,        // conf file names, once loaded
+            name: 'props',     // the conf file on show
+            data: null,        // its precedence model
+            loading: false,
+            error: null,
+            filter: '',        // stanza name filter
+            app: '',           // only stanzas this app sets something in
+            all: false,        // include stanzas without conflicts
+            open: Object.create(null),     // stanza -> true when expanded
+            single: Object.create(null)    // stanza -> true to show settings set once
+        },
         showBuiltin: false,
         panel: null,           // {mode: 'object', key} or {mode: 'bulk'}
         busy: false,
@@ -340,6 +358,9 @@ require([
             state.data = data;
             index(data);
             if (!state.types) { state.types = commonTypes(); }
+            if (state.tab === 'conf' && !state.conf.data && !state.conf.loading) {
+                setTimeout(loadConf, 0);
+            }
             state.details = newMap();
             // Staged changes for objects that no longer exist where they were
             // (moved, renamed or deleted elsewhere) cannot be applied.
@@ -567,6 +588,16 @@ require([
     function announce() {
         var text = state.message ? state.message.lines.join(' ') : '';
         if (state.busy) { text = state.busyText || 'Loading apps and knowledge objects...'; }
+        if (state.tab === 'conf' && state.data) {
+            var conf = state.conf;
+            var alertText = conf.error && !conf.loading ? 'Could not read the configuration. ' + conf.error : '';
+            var statusText = conf.loading ? 'Reading ' + conf.name + '.conf from every app...' :
+                (conf.data && !alertText ? plural(conf.data.conflicting_stanzas, 'stanza') + ' with conflicts in ' +
+                    conf.data.conf + '.conf.' : '');
+            if ($liveAlert.text() !== alertText) { $liveAlert.text(alertText); }
+            if ($liveStatus.text() !== statusText) { $liveStatus.text(statusText); }
+            return;
+        }
         // Progress is never an alert, even while an error from Apply is kept.
         var error = !state.busy && state.message && state.message.kind === 'error';
         if ($liveAlert.text() !== (error ? text : '')) { $liveAlert.text(error ? text : ''); }
@@ -1185,6 +1216,267 @@ require([
         }
     }
 
+    // ------------------------------------------------- configuration tab
+
+    function confRequest(params, done) {
+        var conf = state.conf;
+        conf.loading = true;
+        conf.error = null;
+        render();
+        $.ajax({ url: CONF_ENDPOINT, type: 'GET', dataType: 'json', cache: false,
+            data: $.extend({ output_mode: 'json' }, params) })
+            .done(done)
+            .fail(function (xhr) { conf.error = errorText(xhr); })
+            .always(function () {
+                conf.loading = false;
+                render();
+            });
+    }
+
+    function loadConf() {
+        var conf = state.conf;
+        if (!conf.list) {
+            confRequest({}, function (body) {
+                conf.list = body.confs;
+                if ($.inArray(conf.name, conf.list) === -1 && conf.list.length) { conf.name = conf.list[0]; }
+                loadConf();
+            });
+            return;
+        }
+        var params = { conf: conf.name };
+        if (conf.all) { params.all = '1'; }
+        confRequest(params, function (body) { conf.data = body; });
+    }
+
+    function renderTabs() {
+        var $tabs = el('div', 'ea-tabs').attr({ role: 'tablist', 'aria-label': 'App management views' });
+        var pending = size(state.pending);
+        $.each([['apps', 'Apps'], ['conf', 'Configuration precedence']], function (i, tab) {
+            var active = state.tab === tab[0];
+            var $tab = el('button', 'ea-tab', tab[1]).attr({
+                type: 'button', role: 'tab', 'aria-selected': active ? 'true' : 'false',
+                id: 'ea-tab-' + tab[0], 'aria-controls': 'ea-tabpanel',
+                // Roving tabindex: Tab reaches the active tab; arrows move between them.
+                tabindex: active ? '0' : '-1', 'data-fid': 'tab:' + tab[0]
+            }).toggleClass('ea-tab-active', active).on('click', function () {
+                state.tab = tab[0];
+                state.typesOpen = false;
+                try {
+                    window.history.replaceState(null, '', tab[0] === 'conf' ? '#precedence' : '#');
+                } catch (ignore) { /* history may be unavailable in a sandboxed frame */ }
+                if (tab[0] === 'conf' && !state.conf.data && !state.conf.loading) { loadConf(); }
+                render();
+            });
+            if (tab[0] === 'apps' && pending) {
+                $tab.append(el('span', 'ea-tab-count', String(pending)).attr('title', plural(pending, 'staged change')));
+            }
+            $tabs.append($tab);
+        });
+        return $tabs;
+    }
+
+    function layerText(source) {
+        return (source.app === 'system' ? 'etc/system' : source.app) + ' / ' + source.layer;
+    }
+
+    function renderConfToolbar() {
+        var conf = state.conf;
+        var $bar = el('div', 'ea-toolbar');
+        var $file = el('select', 'ea-conf-file').attr({ 'aria-label': 'Configuration file', 'data-fid': 'conf-file' })
+            .prop('disabled', conf.loading || !conf.list);
+        $.each(conf.list || [conf.name], function (i, name) {
+            $file.append(el('option', null, name + '.conf').attr('value', name));
+        });
+        $file.val(conf.name).on('change', function () {
+            conf.name = $(this).val();
+            conf.data = null;
+            conf.app = '';     // the app may have no copy of the new file
+            conf.open = Object.create(null);
+            conf.single = Object.create(null);
+            loadConf();
+        });
+        $bar.append($file);
+        $bar.append(el('input', 'ea-filter ea-conf-filter').attr({
+            type: 'text', placeholder: 'Filter stanzas', 'aria-label': 'Filter stanzas by name', 'data-fid': 'conf-filter'
+        }).val(conf.filter).on('input', function () {
+            conf.filter = $(this).val();
+            render();
+        }));
+        var $app = el('select', 'ea-conf-app').attr({ 'aria-label': 'Only stanzas set by app', 'data-fid': 'conf-app' });
+        $app.append(el('option', null, 'Any app').attr('value', ''));
+        var apps = [];
+        $.each(conf.data ? conf.data.order : [], function (i, layer) {
+            if ($.inArray(layer.app, apps) === -1) { apps.push(layer.app); }
+        });
+        $.each(apps.sort(), function (i, name) {
+            $app.append(el('option', null, name === 'system' ? 'etc/system' : appText(name)).attr('value', name));
+        });
+        $app.val(conf.app).on('change', function () {
+            conf.app = $(this).val();
+            render();
+        });
+        $bar.append($app);
+        var $all = el('label', 'ea-check');
+        $all.append(el('input').attr({ type: 'checkbox', 'data-fid': 'conf-all' }).prop('checked', conf.all)
+            .on('change', function () {
+                conf.all = this.checked;
+                loadConf();
+            }));
+        $all.append(document.createTextNode(' Include stanzas without conflicts'));
+        $bar.append($all);
+        $bar.append(el('span', 'ea-actions').append(el('button', 'btn', 'Reload').attr({ type: 'button', 'data-fid': 'conf-reload' })
+            .prop('disabled', conf.loading).on('click', function () {
+                conf.list = null;
+                loadConf();
+            })));
+        return $bar;
+    }
+
+    function renderSetting(setting, searchTime) {
+        var $tr = el('tr');
+        var $name = el('th', 'ea-prec-name').attr('scope', 'row').append(el('code', null, setting.name));
+        if (setting.conflict) {
+            $name.append(el('span', 'ea-badge ea-badge-changed', 'values differ'));
+        } else if (setting.overridden) {
+            $name.append(el('span', 'ea-badge', 'same value'));
+        }
+        if (setting.secret) {
+            $name.append(el('span', 'ea-badge', 'secret, hidden').attr('title', 'The value is a password or key, so it is not shown.'));
+        }
+        $tr.append($name);
+        var $list = el('ol', 'ea-prec-sources');
+        $.each(setting.sources, function (i, source) {
+            // For a search-time file the app a search runs in decides which
+            // value applies, so no value is styled as in effect or struck
+            // through: the numbered order alone shows the global ranking.
+            var winner = source.effective && !searchTime;
+            var $li = el('li').toggleClass('ea-prec-effective', winner)
+                .toggleClass('ea-prec-overridden', !source.effective && !searchTime);
+            $li.append(el('span', 'ea-badge' + (winner ? ' ea-share ea-share-global' : ''),
+                searchTime ? (source.effective ? 'first in global order' : 'later in global order') :
+                    (source.effective ? 'in effect' : 'overridden')));
+            $li.append(el('span', 'ea-prec-layer', layerText(source)));
+            $li.append(el('code', 'ea-prec-value', source.value === '' ? '(empty)' : source.value));
+            $list.append($li);
+        });
+        return $tr.append(el('td').append($list));
+    }
+
+    function renderStanza(stanza) {
+        var conf = state.conf;
+        var $details = el('details', 'ea-stanza').prop('open', !!conf.open[stanza.name]);
+        // "toggle" does not bubble, so each details element gets its own handler.
+        $details.on('toggle', function () {
+            if (this.open) { conf.open[stanza.name] = true; } else { delete conf.open[stanza.name]; }
+        });
+        var $summary = el('summary', 'ea-stanza-head').attr('data-fid', 'stanza:' + stanza.name);
+        $summary.append(el('code', 'ea-stanza-name', '[' + stanza.name + ']'));
+        if (stanza.conflicts) {
+            $summary.append(el('span', 'ea-badge ea-badge-changed', plural(stanza.conflicts, 'conflicting setting')));
+        }
+        $summary.append(el('span', 'ea-muted ea-stanza-apps', 'Set in: ' + $.map(stanza.apps, function (app) {
+            return app === 'system' ? 'etc/system' : app;
+        }).join(', ')));
+        $details.append($summary);
+
+        var several = $.grep(stanza.settings, function (s) { return s.overridden; });
+        var once = stanza.settings.length - several.length;
+        var shown = conf.single[stanza.name] ? stanza.settings : several;
+        if (shown.length) {
+            var $table = el('table', 'ea-prec');
+            $table.append(el('thead').append(el('tr').append(el('th', null, 'Setting'),
+                el('th', null, 'Where it is set, highest priority first'))));
+            var $tbody = el('tbody');
+            $.each(shown, function (i, setting) { $tbody.append(renderSetting(setting, conf.data.search_time)); });
+            $details.append($table.append($tbody));
+        }
+        if (once) {
+            $details.append(el('button', 'btn btn-link ea-prec-more', conf.single[stanza.name] ?
+                'Hide the ' + plural(once, 'setting') + ' set in one place only' :
+                'Show ' + plural(once, 'more setting') + ' set in one place only').attr({
+                type: 'button', 'data-fid': 'single:' + stanza.name
+            }).on('click', function () {
+                if (conf.single[stanza.name]) { delete conf.single[stanza.name]; } else { conf.single[stanza.name] = true; }
+                conf.open[stanza.name] = true;
+                render();
+            }));
+        }
+        return $details;
+    }
+
+    function renderConfView() {
+        var conf = state.conf;
+        var $wrap = el('div', 'ea-conf');
+        $wrap.append(renderConfToolbar());
+        if (conf.loading) {
+            $wrap.append(el('div', 'ea-message ea-info ea-busy', 'Reading ' + conf.name + '.conf from every app...'));
+        }
+        if (conf.error) {
+            $wrap.append(el('div', 'ea-message ea-error', 'Could not read the configuration. ' + conf.error));
+            if (!conf.loading) {
+                $wrap.append(el('button', 'btn', 'Try again').attr({ type: 'button', 'data-fid': 'conf-retry' })
+                    .on('click', loadConf));
+            }
+        }
+        // The explanation is folded away so the stanzas start near the top.
+        var $how = el('details', 'ea-prec-how').prop('open', !!conf.howOpen).on('toggle', function () {
+            conf.howOpen = this.open;
+        });
+        $how.append(el('summary', null, 'How the order works').attr('data-fid', 'conf-how'));
+        $how.append(el('p', 'ea-muted ea-prec-note', 'Like btool, this reads every app\'s ' +
+            'default and local folders and etc/system, and lists each setting that is set in more than one place, ' +
+            'highest priority first. The order is Splunk\'s global one: etc/system/local, then each app\'s local ' +
+            'folder in ASCII order of its directory name (uppercase before lowercase), then each app\'s default ' +
+            'folder in the same order, then etc/system/default. Passwords and keys are never shown.'));
+        $wrap.append($how);
+        if (!conf.data) { return $wrap; }
+
+        if (conf.data.search_time) {
+            var indexTime = conf.data.conf === 'props' || conf.data.conf === 'transforms';
+            $wrap.append(el('div', 'ea-message ea-info ea-prec-searchtime', conf.data.conf + '.conf is read at ' +
+                'search time, per app: the app a search runs in, and each object\'s sharing, decide which value ' +
+                'applies there. The lists below are in the global order' + (indexTime ?
+                    ', which is also the one used for index-time settings in this file.' :
+                    ', which applies only outside any app.')));
+        }
+        var order = el('p', 'ea-prec-order').append(el('span', 'ea-muted', conf.data.search_time ?
+            'Global order, highest first: ' : conf.data.conf + '.conf is read from, highest first: '));
+        $.each(conf.data.order, function (i, layer) {
+            order.append(el('span', 'ea-badge', layerText(layer)), document.createTextNode(' '));
+        });
+        $wrap.append(order);
+
+        var needle = conf.filter.toLowerCase();
+        var stanzas = $.grep(conf.data.stanzas, function (stanza) {
+            return (!needle || stanza.name.toLowerCase().indexOf(needle) !== -1) &&
+                (!conf.app || $.inArray(conf.app, stanza.apps) !== -1);
+        });
+        var summary = plural(conf.data.conflicting_stanzas, 'stanza') + ' in ' + conf.data.conf + '.conf ' +
+            (conf.data.conflicting_stanzas === 1 ? 'has' : 'have') + ' settings with different values in different places.';
+        if (stanzas.length !== conf.data.stanzas.length) {
+            summary += ' ' + plural(stanzas.length, 'stanza') + (stanzas.length === 1 ? ' matches' : ' match') +
+                ' the filters.';
+        }
+        $wrap.append(el('p', 'ea-summary', summary));
+        if (!stanzas.length) {
+            var filters = [];
+            if (conf.filter) { filters.push('"' + conf.filter + '"'); }
+            if (conf.app) { filters.push('set by ' + (conf.app === 'system' ? 'etc/system' : conf.app)); }
+            $wrap.append(el('p', 'ea-empty', conf.data.stanzas.length ? 'No stanzas match ' + filters.join(' ') + '.' :
+                (conf.all ? 'No settings were found in ' + conf.data.conf + '.conf.' :
+                    'No conflicts: no setting in ' + conf.data.conf + '.conf has different values in different places.')));
+            return $wrap;
+        }
+        var $list = el('div', 'ea-stanzas');
+        $.each(stanzas.slice(0, MAX_STANZAS), function (i, stanza) { $list.append(renderStanza(stanza)); });
+        $wrap.append($list);
+        if (stanzas.length > MAX_STANZAS) {
+            $wrap.append(el('p', 'ea-message ea-info', 'Showing the first ' + MAX_STANZAS + ' of ' + stanzas.length +
+                ' stanzas. Filter by name or app to see the rest.'));
+        }
+        return $wrap;
+    }
+
     function render() {
         $root.toggleClass('ea-dark', splunkIsDark());
         if (!$body[0].parentNode) {
@@ -1199,11 +1491,20 @@ require([
             $body.append(renderMessages());
             return;
         }
-        $body.append(renderToolbar());
-        $body.append(renderMessages());
-        $body.append(renderSelectionBar());
-        $body.append(renderLegend());
-        $body.append(renderGrid());
+        $body.append(renderTabs());
+        var $panel = el('div', 'ea-tabpanel').attr({ id: 'ea-tabpanel', role: 'tabpanel',
+            'aria-labelledby': 'ea-tab-' + state.tab });
+        $body.append($panel);
+        if (state.tab === 'conf') {
+            $panel.append(renderConfView());
+            restore(snap);
+            return;
+        }
+        $panel.append(renderToolbar());
+        $panel.append(renderMessages());
+        $panel.append(renderSelectionBar());
+        $panel.append(renderLegend());
+        $panel.append(renderGrid());
         buildPanel();
         restore(snap);
     }
@@ -1214,6 +1515,16 @@ require([
         var objKey = $(this).closest('.ea-object').attr('data-key');
         if (this.checked) { state.selected[objKey] = true; } else { delete state.selected[objKey]; }
         render();   // the selection bar and the app's select-all box both change
+    });
+
+    // Left and Right move between the tabs, as in any tab list.
+    $root.on('keydown', '.ea-tab', function (event) {
+        if (event.which !== 37 && event.which !== 39) { return; }
+        event.preventDefault();
+        var $tabs = $root.find('.ea-tab');
+        var next = ($tabs.index(this) + (event.which === 39 ? 1 : $tabs.length - 1)) % $tabs.length;
+        $tabs.eq(next).click();
+        $root.find('.ea-tab').eq(next).focus();
     });
 
     $root.on('change', '.ea-select-app', function () {

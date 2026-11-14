@@ -10,8 +10,11 @@ It has two pages:
   you like, on as many tabs as you like, then save them all at once.
 - **App management** shows every app as a box holding its knowledge objects.
   Drag objects between apps, or select several and move, re-permission or
-  delete them, then apply all the changes at once. See
-  [App management](#app-management).
+  delete them, then apply all the changes at once. A second tab,
+  **Configuration precedence**, shows like btool which file every setting
+  comes from and where apps set the same setting differently. See
+  [App management](#app-management) and
+  [Configuration precedence](#configuration-precedence).
 
 ## The problem
 
@@ -195,6 +198,56 @@ lets them be moved and deleted.
   refuses are listed with its reason and stay staged, while the others are
   applied.
 
+## Configuration precedence
+
+The **Configuration precedence** tab of the App management page (or
+`app_management#precedence`) answers "which app's setting wins?". Pick a
+configuration file, such as `props.conf`. The tab lists each stanza that has a
+setting with different values in different places, and for each such setting
+every place it is set, highest priority first. For a file that is not read
+at search time, the first is marked **in effect** and the others are marked
+**overridden** and struck through.
+
+Like `splunk btool <conf> list --debug`, it reads the `.conf` files of every
+app's `default` and `local` folders and of `etc/system`. It does not use the
+REST API, because splunkd returns only the merged result there and cannot say
+which app or folder set a value. The order is Splunk's global one:
+
+1. `etc/system/local`
+2. each app's `local` folder, apps in ASCII order of their directory names
+   (uppercase before lowercase)
+3. each app's `default` folder, in the same order
+4. `etc/system/default`
+
+Settings used at search time (field extractions, lookups, event types and the
+like) are resolved per app instead: the app a search runs in, and each
+object's sharing, decide which value applies. The tab shows the global order
+only. For files read at search time (`props`, `transforms`, `macros`,
+`eventtypes`, `tags`, `savedsearches` and others) it says so above the list,
+and labels the values **first in global order** and **later in global
+order**, with none struck through, rather than claiming one is in effect
+everywhere. The explanation of the order is under **How the order works**.
+
+| Control | What it does |
+| --- | --- |
+| Configuration file | Which `.conf` file to show. `passwords.conf` is never read. |
+| **Filter stanzas** | Shows only stanzas whose name contains the text. |
+| App list | Shows only stanzas that app sets something in. |
+| **Include stanzas without conflicts** | Lists every stanza, not just those with conflicting values. |
+| **Show N more settings set in one place only** | In a stanza, also lists the settings only one file sets. |
+
+A setting set to the same value in two places is marked **same value**: it is
+overridden, but nothing changes. Passwords, keys and tokens (`pass4SymmKey`,
+`sslPassword` and the like) are marked **secret, hidden**: the tab shows where
+they are set, never their values. Secrets are recognised by the setting's
+name (ending in `password`, `pass4SymmKey`, `secret`, `token`, `_key` and
+similar), so a secret inside an ordinary-looking value, such as a webhook URL,
+is shown to the administrator viewing the tab.
+
+The tab is read-only. It needs the `admin_all_objects` capability (which
+`admin` and `sc_admin` hold), because reading the files bypasses Splunk's
+per-object permissions.
+
 ## Permissions and security
 
 The app never elevates. Every read and write is made to splunkd with the
@@ -251,6 +304,23 @@ settings tab (`"type": "settings"`) has `fields` (with a `kind` of `int`,
 per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 `unchanged` and `failed` counts. At most 5000 changes per request.
 
+### Configuration precedence
+
+```
+GET /services/easyadmin/conf
+GET /services/easyadmin/conf?conf=props
+GET /services/easyadmin/conf?conf=props&all=1
+```
+
+Needs `admin_all_objects`. Without `conf` it returns `confs`, the names of
+the `.conf` files found. With `conf` it returns `order` (the folders that
+have that file, highest priority first) and `stanzas`: each with its
+`conflicts` count, the `apps` that set something in it, and `settings`, plus
+`search_time` when the file is read per app at search time. Each
+setting has `conflict`, `overridden`, `secret` and `sources` (`app`, `layer`,
+`value`, `effective`), highest priority first. Only stanzas with a conflict
+are returned unless `all=1`.
+
 ### App management
 
 ```
@@ -299,8 +369,10 @@ counts. At most 2000 objects per request.
   search commands are not listed.
 - Objects in an app's `default/` folder cannot be moved or deleted (see
   [Objects in an app's default folder](#objects-in-an-apps-default-folder)).
-- Creating and cloning apps, the configuration precedence view and JSON
-  export and import are not in this version.
+- The configuration precedence tab shows Splunk's global order. It does not
+  model the per-app order used at search time, or settings in `etc/users`.
+- Creating and cloning apps, and JSON export and import, are not in this
+  version.
 
 ## Compatibility
 
@@ -319,7 +391,7 @@ counts. At most 2000 objects per request.
 Install the `.spl` through **Apps > Manage Apps > Install app from file** on
 the search head. On a search head cluster, deploy it with the deployer. If a
 page reports that its endpoint was not found, restart Splunk once. Upgrading
-to 1.2.0 adds the App management endpoint, which also needs one restart.
+to 1.2.0 or 1.3.0 adds an endpoint, which also needs one restart.
 
 ## Author
 
