@@ -264,13 +264,14 @@ def snapshot(client, apps=()):
         state[kind] = {name: comparable(kind, content)
                        for name, content in list_objects(client, kind).items()}
     state["app_acl"] = {}
-    for app in apps:
-        try:
-            state["app_acl"][app] = acl_comparable(app_acl(client, app))
-        except SplunkError as exc:
-            # An app that is not installed has no permissions to protect.
-            if exc.status != 404:
-                raise
+    if apps:
+        # One listing gives every app's ACL: one request instead of one per
+        # app, since the guard snapshots twice around every test. An app
+        # that is not installed is simply absent: nothing to protect.
+        data = client.request("GET", "/services/apps/local", {"count": 0})
+        for entry in data.get("entry") or []:
+            if entry.get("name") in apps:
+                state["app_acl"][entry["name"]] = acl_comparable(entry.get("acl"))
     return state
 
 

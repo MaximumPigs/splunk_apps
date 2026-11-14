@@ -68,8 +68,14 @@ def as_set(value):
 
 
 def text(value):
-    # splunkd's JSON gives numeric settings as numbers; the app deals in text.
-    return "" if value is None else str(value)
+    # splunkd's JSON gives numeric settings as numbers and flags as booleans
+    # (srchAllowAdvancedCron comes back as false, observed on 10.6.1); the
+    # app deals in text, with a flag as "1" or "0".
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(value)
 
 
 def wait_for_audit_line(search, role, timeout=90):

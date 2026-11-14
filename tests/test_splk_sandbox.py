@@ -76,6 +76,9 @@ class FakeSplunkd(object):
         return _Response(status, body)
 
     def _route(self, method, path, form):
+        if path == "/services/apps/local":
+            return 200, {"entry": [{"name": a, "acl": acl, "content": {}}
+                                   for a, acl in self.acls.items()]}
         if path.startswith("/services/apps/local/"):
             app = path.split("/")[4]
             if app not in self.acls:

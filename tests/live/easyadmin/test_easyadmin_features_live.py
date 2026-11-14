@@ -37,7 +37,6 @@ MATRIX_ITEMS = [
     ("srchIndexesAllowed", "_internal"),
     ("srchIndexesDefault", "_internal"),
     ("srchIndexesDisallowed", "_audit"),
-    ("deleteIndexesAllowed", "main"),
     ("capabilities", "schedule_search"),
     ("imported_roles", "user"),
     ("grantable_roles", "user"),
@@ -52,12 +51,12 @@ SETTING_VALUES = [
     ("queuedSearchQuota", "3"),
     ("srchDiskQuota", "123"),
     ("srchTimeWin", "86400"),
-    ("srchTimeEarliest", "-1"),
+    # A new role already has -1 (no limit) on 10.6.1, so write something else.
+    ("srchTimeEarliest", "3600"),
     ("srchMinScheduleInterval", "120"),
     ("srchAllowAdvancedCron", None),        # a flag: flipped from whatever it is
     ("srchFilter", "index=main sourcetype=splktest"),
     ("defaultApp", "search"),
-    ("federatedProviders", ["splktest_provider"]),
     ("srchFederatedProvidersAllowed", ["splktest_provider"]),
     ("srchFederatedProvidersDefault", ["splktest_provider"]),
     ("fieldFilterExemption", ["splktest_field"]),
@@ -68,6 +67,11 @@ SETTING_VALUES = [
     ("kvstore_delete.deny_list", ["splktest_collection"]),
     ("kvstore_delete.implicit_deny_list", ["splktest_collection"]),
 ]
+
+
+# Attributes splunkd refuses to let a plain admin write; each has its own test
+# below. Listed here so the coverage test still accounts for every attribute.
+SEPARATELY_TESTED = {"deleteIndexesAllowed", "federatedProviders"}
 
 
 @pytest.fixture
@@ -81,8 +85,9 @@ def test_every_attribute_the_app_edits_is_covered_here(splunk):
     document = ea.model(splunk)
     matrix = {f["name"] for t in document["tabs"] if t["type"] == "matrix" for f in t["fields"]}
     settings = {f["name"] for t in document["tabs"] if t["type"] == "settings" for f in t["fields"]}
-    assert matrix == {field for field, _item in MATRIX_ITEMS}
-    assert settings == {field for field, _value in SETTING_VALUES}
+    assert matrix | settings == ({field for field, _item in MATRIX_ITEMS}
+                                 | {field for field, _value in SETTING_VALUES}
+                                 | SEPARATELY_TESTED)
 
 
 @pytest.mark.parametrize("field,item", MATRIX_ITEMS, ids=[f for f, _ in MATRIX_ITEMS])
@@ -127,6 +132,42 @@ def test_setting_is_written_read_back_and_put_back(splunk, role, field, value):
     summary = ea.submit(splunk, [ea.setting(role, field, original, value)])
     assert summary["results"][0]["status"] == "updated", summary
     assert ea.loaded_value(ea.model(splunk), role, field) == original
+
+
+def _refused_with_403(summary, role):
+    """True when the only result is splunkd's 403 for ``role``, passed through."""
+    return (summary["failed"] == 1 and summary["results"][0]["role"] == role
+            and "HTTP 403" in summary["results"][0]["message"])
+
+
+def test_delete_indexes_refused_without_can_delete(splunk, role):
+    """Observed on 10.6.1: an admin without the can_delete role gets 403 writing
+    deleteIndexesAllowed. The app reports splunkd's refusal and writes nothing."""
+    summary = ea.submit(splunk, [ea.grant(role, "main", field="deleteIndexesAllowed")])
+    assert _refused_with_403(summary, role), summary
+    assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == set()
+
+
+def test_delete_indexes_granted_and_revoked_by_a_can_delete_admin(splunk, sandbox, role):
+    """An administrator who also holds can_delete can tick and untick the attribute."""
+    name, password = sandbox.create_user(roles=["admin", "can_delete"], label="easyadmin_del")
+    deleter = splunk.as_user(name, password)
+    summary = ea.submit(deleter, [ea.grant(role, "main", field="deleteIndexesAllowed")])
+    assert summary["updated"] == 1, summary
+    assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == {"main"}
+    summary = ea.submit(deleter, [ea.grant(role, "main", on=False, field="deleteIndexesAllowed")])
+    assert summary["updated"] == 1, summary
+    assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == set()
+
+
+def test_federated_providers_refused_for_admin(splunk, role):
+    """Observed on 10.6.1 with no federated provider defined: writing
+    federatedProviders as admin gets 403. The app reports it and writes nothing."""
+    original = ea.loaded_value(ea.model(splunk), role, "federatedProviders")
+    summary = ea.submit(splunk, [ea.setting(role, "federatedProviders",
+                                            ["splktest_provider"], original)])
+    assert _refused_with_403(summary, role), summary
+    assert ea.as_set(ea.role_content(splunk, role).get("federatedProviders")) == set(original)
 
 
 # ------------------------------------------------------- shaded cells
@@ -302,10 +343,12 @@ def _fill(document, role):
 def test_malformed_request_is_refused_whole(splunk, role, label, document, message):
     """Any malformed change rejects the whole request with 400 and writes nothing."""
     before = ea.role_content(splunk, role)
-    # A valid change in the same request proves nothing at all is written.
+    # A valid change after the bad one proves nothing at all is written. It
+    # goes last so error positions ("Change 1") stay as written, and not into
+    # the empty list, which must stay empty.
     body = _fill(document, role)
-    if isinstance(body["changes"], list):
-        body["changes"].insert(0, ea.grant(role, "_internal"))
+    if isinstance(body["changes"], list) and body["changes"]:
+        body["changes"].append(ea.grant(role, "_internal"))
     with pytest.raises(SplunkError) as caught:
         ea.submit_json(splunk, body)
     assert caught.value.status == 400
@@ -375,7 +418,7 @@ def test_grantable_user_can_edit(splunk, sandbox):
     target_role = sandbox.create_role(label="easyadmin", srchIndexesAllowed="main")
     editor = sandbox.create_role(label="easyadmin_ga", imported_roles="user",
                                  srchIndexesAllowed="main",
-                                 capabilities=["edit_roles_grantable", "list_users_roles"],
+                                 capabilities="edit_roles_grantable",
                                  grantable_roles=target_role)
     name, password = sandbox.create_user(roles=[editor], label="easyadmin_ga")
     client = splunk.as_user(name, password)
