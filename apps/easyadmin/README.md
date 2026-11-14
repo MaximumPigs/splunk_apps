@@ -103,6 +103,10 @@ numbers, since Splunk uses `-1` in some (a stock `user` role has
 - **Effective immediately**, as with any role edit, for every user holding the
   role.
 - A malformed request is rejected whole and changes nothing.
+- **Field filter exemptions can only be added.** Splunk's roles API appends
+  whatever is written to `fieldFilterExemption` and offers no way to remove
+  an entry, so the app writes only new entries and refuses a save that
+  removes one, saying which entries and writing nothing on that role.
 
 ## Permissions and security
 
@@ -155,6 +159,15 @@ per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 `unchanged` and `failed` counts. At most 5000 changes per request.
 
 ## Limitations
+
+- **Indexes events can be deleted from** (`deleteIndexesAllowed`) can only be
+  set on a role that itself holds the `delete_by_keyword` capability; on
+  other roles Splunk refuses the save (HTTP 403), and the page reports it.
+- On Splunk Enterprise 10.6.1 with no federated providers defined, Splunk
+  refuses an administrator's write to **Federated providers**
+  (`federatedProviders`) with HTTP 403; the page reports it. Other
+  federated settings save normally.
+- Field filter exemptions cannot be removed here (see above).
 
 - The index list is what the search head knows. In a distributed deployment
   whose indexes are defined only on indexers, add columns by name.

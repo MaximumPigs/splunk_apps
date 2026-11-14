@@ -380,6 +380,27 @@ def test_submit_can_empty_a_list():
     assert gateway.writes == [("user", {"srchIndexesAllowed": []})]
 
 
+def test_append_only_setting_writes_only_new_entries():
+    """splunkd appends posted fieldFilterExemption values, so only new ones are sent."""
+    gateway = FakeGateway({"user": {"fieldFilterExemption": ["a"]}})
+    summary = core.submit_changes(gateway, [setting("user", "fieldFilterExemption", ["a", "b"], ["a"])])
+    assert summary["updated"] == 1
+    assert gateway.writes == [("user", {"fieldFilterExemption": ["b"]})]
+
+
+def test_append_only_setting_refuses_a_removal_and_writes_nothing():
+    gateway = FakeGateway({"user": {"fieldFilterExemption": ["a", "b"], "srchIndexesAllowed": []}})
+    summary = core.submit_changes(gateway, [
+        setting("user", "fieldFilterExemption", ["b", "c"], ["a", "b"]),
+        grant("user", "main"),
+    ])
+    assert gateway.writes == []
+    assert summary["failed"] == 1
+    assert summary["results"][0]["message"] == (
+        "Splunk cannot remove fieldFilterExemption entries through its REST API (a); "
+        "nothing on this role was written.")
+
+
 def test_submit_reports_failures_per_role_and_carries_on():
     gateway = FakeGateway({"locked": {}, "user": {}}, refuse=["locked"])
     summary = core.submit_changes(gateway, [

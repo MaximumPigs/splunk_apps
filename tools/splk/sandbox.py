@@ -70,6 +70,9 @@ KINDS = {
         # Derived from other roles (imported_capabilities and friends), so
         # they change when an imported role changes; that role is compared
         # in its own right. imported_roles is the role's own setting.
+        # splunkd only ever appends to these (observed on 10.6.1 for
+        # fieldFilterExemption), so a removal cannot be written back.
+        "append_only": ("fieldFilterExemption",),
         "ignore_prefixes": ("eai:", "imported_"),
         "keep": ("imported_roles",),
         "ignore": (),
@@ -77,6 +80,7 @@ KINDS = {
     "user": {
         "collection": "/services/authentication/users",
         "writable": ("roles", "email", "realname", "defaultApp", "tz", "force_change_pass"),
+        "append_only": (),
         "ignore_prefixes": ("eai:",),
         "keep": (),
         # Derived from roles, or changed by signing in (which every UI run
@@ -203,9 +207,10 @@ def restore_params(kind, fields):
     written are returned separately so the caller can report them.
     """
     writable = KINDS[kind]["writable"]
+    append_only = KINDS[kind]["append_only"]
     params, unrestorable = {}, []
     for attr, value in sorted(fields.items()):
-        if attr not in writable:
+        if attr not in writable or attr in append_only:
             unrestorable.append(attr)
         elif not value:
             params[attr] = ""
@@ -454,6 +459,10 @@ class Sandbox(object):
         """
         if (kind, name) in self.created:
             return
+        append_only = [a for a in attributes if a in KINDS[kind]["append_only"]]
+        if append_only:
+            raise ValueError("Refusing to change %s on existing %s %r: splunkd only appends "
+                             "to it, so it cannot be restored" % (", ".join(append_only), kind, name))
         if kind == "user" and "password" in attributes:
             raise ValueError("Refusing to change the password of existing user %r: "
                              "it cannot be read back, so it cannot be restored" % name)

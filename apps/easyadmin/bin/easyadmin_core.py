@@ -138,6 +138,14 @@ MATRIX_FIELDS = OrderedDict(
 SETTING_KINDS = OrderedDict(
     (name, kind) for tab in SETTINGS_TABS for name, _label, kind in tab["fields"])
 
+# List settings splunkd's authorization/roles endpoint only ever adds to.
+# Observed on 10.6.1: posting fieldFilterExemption appends the posted values
+# to the stored list (posting "" stores an empty entry beside the old ones),
+# so nothing can be removed through it. The app writes only the new entries
+# and refuses a change that would remove one, rather than report a removal as
+# saved when nothing changed.
+APPEND_ONLY_SETTINGS = ("fieldFilterExemption",)
+
 # Holding either capability lets a user edit roles. Splunk Cloud administrators
 # (sc_admin) have edit_roles_grantable rather than edit_roles.
 EDIT_CAPABILITIES = ("edit_roles", "edit_roles_grantable")
@@ -538,11 +546,13 @@ def apply_delta(current, grant, revoke):
 def _plan_role_update(content, entry):
     """Work out the fields to write for one role, or raise on a stale setting.
 
-    Returns (update, conflicts): ``update`` maps field -> new value for every
-    field that actually changes, ``conflicts`` lists settings changed by
-    someone else since the page loaded.
+    Returns (update, conflicts, refusals): ``update`` maps field -> new value
+    for every field that actually changes, ``conflicts`` lists settings
+    changed by someone else since the page loaded, and ``refusals`` explains
+    changes splunkd cannot make (removing from an append-only setting).
     """
     update = OrderedDict()
+    refusals = []
     for field, delta in entry["matrix"].items():
         current = as_list(content.get(field))
         wanted = apply_delta(current, delta["grant"], delta["revoke"])
@@ -555,6 +565,16 @@ def _plan_role_update(content, entry):
             current = as_list(content.get(field))
             if set(current) != set(previous):
                 conflicts.append(field)
+            elif field in APPEND_ONLY_SETTINGS:
+                removed = [item for item in current if item not in value]
+                if removed:
+                    refusals.append("Splunk cannot remove %s entries through its REST API "
+                                    "(%s); nothing on this role was written."
+                                    % (field, ", ".join(removed)))
+                added = [item for item in value if item not in current]
+                if added:
+                    # Only the new entries: splunkd appends whatever is posted.
+                    update[field] = added
             elif set(value) != set(current):
                 update[field] = value
         else:
@@ -563,7 +583,7 @@ def _plan_role_update(content, entry):
                 conflicts.append(field)
             elif value != current:
                 update[field] = value
-    return update, conflicts
+    return update, conflicts, refusals
 
 
 def submit_changes(gateway, raw_changes, user="unknown"):
@@ -583,11 +603,15 @@ def submit_changes(gateway, raw_changes, user="unknown"):
     for role, entry in plan.items():
         try:
             content = gateway.get_role(role)
-            update, conflicts = _plan_role_update(content, entry)
+            update, conflicts, refusals = _plan_role_update(content, entry)
             if conflicts:
                 results.append({"role": role, "status": "error", "message":
                                 "Changed elsewhere since the page loaded: %s. Reload and try again."
                                 % ", ".join(conflicts)})
+                continue
+            if refusals:
+                # Held back whole, like a conflict: a role is never half-written.
+                results.append({"role": role, "status": "error", "message": " ".join(refusals)})
                 continue
             if not update:
                 results.append({"role": role, "status": "unchanged",

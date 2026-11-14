@@ -59,7 +59,6 @@ SETTING_VALUES = [
     ("defaultApp", "search"),
     ("srchFederatedProvidersAllowed", ["splktest_provider"]),
     ("srchFederatedProvidersDefault", ["splktest_provider"]),
-    ("fieldFilterExemption", ["splktest_field"]),
     ("kvstore_create.deny_list", ["splktest_collection"]),
     ("kvstore_create.implicit_deny_list", ["splktest_collection"]),
     ("kvstore_update.deny_list", ["splktest_collection"]),
@@ -69,9 +68,9 @@ SETTING_VALUES = [
 ]
 
 
-# Attributes splunkd refuses to let a plain admin write; each has its own test
-# below. Listed here so the coverage test still accounts for every attribute.
-SEPARATELY_TESTED = {"deleteIndexesAllowed", "federatedProviders"}
+# Attributes splunkd treats specially (refused to a plain admin, or append
+# only); each has its own tests below. Listed here so the coverage test still accounts for every attribute.
+SEPARATELY_TESTED = {"deleteIndexesAllowed", "federatedProviders", "fieldFilterExemption"}
 
 
 @pytest.fixture
@@ -163,68 +162,36 @@ def test_delete_indexes_granted_on_a_role_with_delete_by_keyword(splunk, sandbox
     assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == set()
 
 
-# TEMPORARY investigation, to be replaced by a real test once the answer is
-# known: clearing fieldFilterExemption through the app reports "updated" but
-# the value stays. Try each way of clearing it straight against splunkd and
-# report which, if any, works.
-def test_probe_how_field_filter_exemption_clears(splunk, sandbox):
-    import urllib.parse
+def test_field_filter_exemptions_can_be_added(splunk, role):
+    """New exemptions are written; splunkd appends what is posted, so the app
+    sends only the new entries and existing ones are kept."""
+    first = ea.submit(splunk, [ea.setting(role, "fieldFilterExemption", ["splktest_a"], [])])
+    assert first["updated"] == 1, first
+    second = ea.submit(splunk, [ea.setting(role, "fieldFilterExemption",
+                                           ["splktest_a", "splktest_b"], ["splktest_a"])])
+    assert second["updated"] == 1, second
+    stored = ea.role_content(splunk, role).get("fieldFilterExemption")
+    assert ea.as_set(stored) == {"splktest_a", "splktest_b"}
+    # No duplicate entries from re-posting the existing one.
+    assert sorted(stored) == ["splktest_a", "splktest_b"]
 
-    # Round 1 (10.6.1): POSTing "" or " " to authorization/roles APPENDS it
-    # (['', 'splktest_field']); an empty value through configs/conf-authorize
-    # changed nothing visible. Round 2 below.
-    outcome = {}
 
-    def fresh():
-        return sandbox.create_role(label="easyadmin_ffe", srchIndexesAllowed="main",
-                                   fieldFilterExemption="splktest_field")
-
-    def roles_path(role):
-        return "/services/authorization/roles/%s" % urllib.parse.quote(role, safe="")
-
-    def read(role):
-        return repr(ea.role_content(splunk, role).get("fieldFilterExemption"))
-
-    def attempt(label, action):
-        try:
-            outcome[label] = action()
-        except SplunkError as exc:
-            outcome[label] = "error: %s" % exc
-
-    def replace_with_other():
-        role = fresh()
-        splunk.request("POST", roles_path(role), {"fieldFilterExemption": "splktest_other"})
-        return read(role)
-
-    def conf_empty_then_reload():
-        role = fresh()
-        splunk.request("POST", "/servicesNS/nobody/system/configs/conf-authorize/%s"
-                       % urllib.parse.quote("role_" + role, safe=""), {"fieldFilterExemption": ""})
-        splunk.request("POST", "/services/authorization/roles/_reload")
-        return read(role)
-
-    def conf_stanza_value():
-        role = fresh()
-        data = splunk.request("GET", "/servicesNS/nobody/system/configs/conf-authorize/%s"
-                              % urllib.parse.quote("role_" + role, safe=""))
-        return repr(data["entry"][0]["content"].get("fieldFilterExemption"))
-
-    def fieldfilter_endpoints():
-        found = {}
-        for path in ("/services/authorization/fieldfilters", "/services/data/fieldfilters",
-                     "/services/authorization/field_filters"):
-            try:
-                data = splunk.request("GET", path)
-                found[path] = "ok, %d entries" % len(data.get("entry") or [])
-            except SplunkError as exc:
-                found[path] = "HTTP %s" % exc.status
-        return found
-
-    attempt("replace with another value", replace_with_other)
-    attempt("conf endpoint empty then roles _reload", conf_empty_then_reload)
-    attempt("stanza value as stored in conf", conf_stanza_value)
-    attempt("field filter endpoints", fieldfilter_endpoints)
-    raise AssertionError("PROBE RESULTS (not a failure of the app): %r" % outcome)
+def test_field_filter_exemption_removal_is_refused(splunk, sandbox):
+    """Observed on 10.6.1: authorization/roles only appends fieldFilterExemption
+    (posting "" stores an empty entry; posting another value adds it), and a
+    change through configs/conf-authorize is not seen by the roles endpoint.
+    So the app refuses a removal and says why, instead of reporting it saved."""
+    role = sandbox.create_role(label="easyadmin", srchIndexesAllowed="main",
+                               fieldFilterExemption="splktest_a")
+    summary = ea.submit(splunk, [ea.setting(role, "fieldFilterExemption", [], ["splktest_a"]),
+                                 ea.grant(role, "_internal")])
+    assert summary["failed"] == 1
+    assert summary["results"][0]["message"] == (
+        "Splunk cannot remove fieldFilterExemption entries through its REST API (splktest_a); "
+        "nothing on this role was written.")
+    content = ea.role_content(splunk, role)
+    assert ea.as_set(content.get("fieldFilterExemption")) == {"splktest_a"}
+    assert ea.as_set(content["srchIndexesAllowed"]) == {"main"}
 
 
 def test_federated_providers_refused_for_admin(splunk, role):

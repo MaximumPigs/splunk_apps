@@ -206,6 +206,13 @@ def test_changing_an_existing_users_password_is_refused(client):
         sb.Sandbox(client).update("user", "admin", password="x")
 
 
+def test_changing_an_append_only_attribute_of_an_existing_role_is_refused(client):
+    with pytest.raises(ValueError, match="only appends"):
+        sb.Sandbox(client).update("role", "user", fieldFilterExemption="x")
+    params, unrestorable = sb.restore_params("role", {"fieldFilterExemption": ()})
+    assert params == {} and unrestorable == ["fieldFilterExemption"]
+
+
 def test_only_sandbox_names_can_be_created_or_tracked(client):
     box = sb.Sandbox(client)
     with pytest.raises(ValueError):
