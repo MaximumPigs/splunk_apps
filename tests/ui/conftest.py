@@ -19,6 +19,13 @@ import pytest
 from splk import config
 from splk import ui as splk_ui
 
+if os.environ.get("SPLK_UI") == "1":
+    # A UI test that saves through a page changes the target; the guard
+    # snapshots users, roles and app permissions around every test and puts
+    # them back. See splk.testing. Imported only in UI mode, like Playwright.
+    from splk.testing import (  # noqa: F401
+        _environment_guard, _sandbox_session, sandbox, sandbox_client)
+
 log = logging.getLogger("splk.ui")
 
 UI_DIR = os.path.dirname(os.path.abspath(__file__))

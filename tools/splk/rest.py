@@ -39,9 +39,12 @@ def _messages_from_body(body):
 class SplunkClient(object):
     """Talks to one target. Every request carries ``output_mode=json``."""
 
-    def __init__(self, target, timeout=60, opener=None):
+    def __init__(self, target, timeout=60, opener=None, session_key=None):
         self.target = target
         self.timeout = timeout
+        # Requests carry the target's token unless this client was made for a
+        # signed-in user (see as_user), when they carry that user's session.
+        self._session_key = session_key
         if opener is not None:
             # Tests inject an opener pointing at a fake server.
             self._opener = opener
@@ -56,27 +59,41 @@ class SplunkClient(object):
 
     # ------------------------------------------------------------------ core
 
-    def request(self, method, path, params=None, timeout=None):
+    def _authorization(self):
+        """The Authorization header value: a user's session, else the target token."""
+        if self._session_key:
+            return "Splunk %s" % self._session_key
+        return "Bearer %s" % self.target.token
+
+    def request(self, method, path, params=None, timeout=None, json_body=None):
         """Send one request and return the decoded JSON body (or {} if empty).
 
         ``path`` is relative to the management port root, e.g.
-        ``/services/server/info``. GET params go in the query string; POST
-        params are form-encoded in the body, which is what splunkd expects.
+        ``/services/server/info``. GET and DELETE params go in the query
+        string; POST params are form-encoded in the body, which is what
+        splunkd expects. ``json_body`` sends that object as an
+        ``application/json`` body instead (params then go in the query string),
+        for custom endpoints that accept JSON.
         """
         params = dict(params or {})
         params.setdefault("output_mode", "json")
         encoded = urllib.parse.urlencode(params, doseq=True)
         url = self.target.base_url + path
         data = None
-        if method == "GET":
+        content_type = None
+        if method in ("GET", "DELETE") or json_body is not None:
             url = "%s?%s" % (url, encoded)
         else:
             data = encoded.encode("utf-8")
+            content_type = "application/x-www-form-urlencoded"
+        if json_body is not None:
+            data = json.dumps(json_body).encode("utf-8")
+            content_type = "application/json"
 
         req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Authorization", "Bearer %s" % self.target.token)
-        if data is not None:
-            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        req.add_header("Authorization", self._authorization())
+        if content_type is not None:
+            req.add_header("Content-Type", content_type)
 
         started = time.time()
         log.debug("%s %s", method, path)
@@ -105,6 +122,21 @@ class SplunkClient(object):
             raise SplunkError("Non-JSON response from %s %s" % (method, path), status=status, body=body)
 
     # ------------------------------------------------------------- helpers
+
+    def as_user(self, username, password):
+        """Sign in as another user and return a client that acts as them.
+
+        Live tests use this to check what a less privileged account sees and
+        may do. The password travels only in the login request's body and is
+        never logged (request() logs method and path, nothing else).
+        """
+        data = self.request("POST", "/services/auth/login",
+                            {"username": username, "password": password})
+        key = data.get("sessionKey")
+        if not key:
+            raise SplunkError("Sign-in as %s returned no session key" % username)
+        log.debug("Signed in to splunkd as %s", username)
+        return SplunkClient(self.target, timeout=self.timeout, opener=self._opener, session_key=key)
 
     def server_info(self):
         """Return the ``content`` dict of /services/server/info."""
@@ -183,7 +215,7 @@ class SplunkClient(object):
         params = {"index": index, "sourcetype": sourcetype, "source": source, "host": host}
         url = "/services/receivers/simple?" + urllib.parse.urlencode(params)
         req = urllib.request.Request(self.target.base_url + url, data=raw.encode("utf-8"), method="POST")
-        req.add_header("Authorization", "Bearer %s" % self.target.token)
+        req.add_header("Authorization", self._authorization())
         try:
             with self._opener.open(req, timeout=self.timeout) as resp:
                 resp.read()
