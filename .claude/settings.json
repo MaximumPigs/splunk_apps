@@ -10,6 +10,7 @@
       "Bash(splk dev*)",
       "Bash(splk deploy*)",
       "Bash(splk shot*)",
+      "Bash(splk runs*)",
       "Bash(python -m pytest*)",
       "Bash(pytest*)",
       "Bash(python scripts/package_app.py*)",
