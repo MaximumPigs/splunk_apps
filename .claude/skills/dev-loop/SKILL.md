@@ -46,9 +46,19 @@ deploy) has two known causes. Check them before debugging the fix:
 - `appserver/static/` changed but `[install] build` was already served:
   bump it again and redeploy. Bump once per such deploy, not per release.
 - `bin/` changed behind a `scripttype = persist` handler: the old process
-  keeps serving until it idles out (minutes). `--restart` does not help: it
-  restarts only when splunkd asks for one, which a Python change never does.
-  Prove the new code runs with something only it shows (a label, a message).
+  keeps serving until it has been **idle** for several minutes, and every
+  request (a test run, a page load) resets that timer. Do not poll or loop
+  test runs: wait about 7 minutes with no requests, then run once (a retry
+  loop every 2 minutes kept old code for 18 minutes). `--restart` does not
+  help: it restarts only when splunkd asks for one, which a Python change
+  never does. Prove the new code runs with something only it shows
+  (`lessons/splunkd-persist-handler-stale-code.md`).
+- To read disk state under `$SPLUNK_HOME/etc`, go through splunkd (an app
+  endpoint or a live test): the shell may get "permission denied", which
+  proves nothing (`lessons/splk-shell-cannot-read-splunk-etc.md`).
+- Multi-line edit scripts: write them to a scratchpad file and run that, or
+  use the Edit tool; Python in a Bash heredoc broke twice on escapes and
+  quoting (`lessons/process-heredoc-python-edits.md`).
 
 | Stage | Where to look |
 | --- | --- |

@@ -23,7 +23,7 @@ RULES = [
      "deny", "Talk to Splunk through splk (splk search / deploy / doctor), not raw REST on 8089."),
     # Restarting or stopping splunkd outside splk.
     (r"\bsplunk(\.exe)?\s+(restart|stop)\b|server/control/restart",
-     "deny", "Restarts go through `splk deploy --restart`, which asks first and waits for splunkd."),
+     "deny", "Restarts go through `splk deploy --restart`, which waits for splunkd to come back."),
     # Copying straight into $SPLUNK_HOME/etc/apps skips packaging and AppInspect.
     (r"\b(cp|copy|xcopy|robocopy|copy-item|mv|move|rsync)\b.*etc[/\\]+apps",
      "deny", "Deploy with `splk deploy <app>` so the package is built and versioned."),

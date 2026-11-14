@@ -7,8 +7,10 @@ level: pattern
 **Symptom:** easyadmin 1.2.0. A probe live test created a throwaway app
 (`POST /services/apps/local`) to move objects into, then deleted it
 (`DELETE /services/apps/local/<name>`). After the DELETE splunkd reported
-"restart required", so the target needed a restart (which always needs the
-person) just to run the live tests.
+"restart required", so the target needed a restart just to run the live
+tests. (Restarting the dev target no longer needs the person, since the
+owner's commit 0cb296d, but a test that forces a restart each run is still
+slow and leaves other targets dirty.)
 
 **Cause:** creating or deleting an app is a splunkd change that only fully
 applies after a restart. Any live test, in any app, that creates or deletes

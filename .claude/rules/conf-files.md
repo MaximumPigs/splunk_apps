@@ -37,5 +37,5 @@ paths:
 - One key per line, `key = value`, no duplicate keys in a stanza (Splunk keeps
   only the last, silently). LF endings.
 - Comment non-obvious settings with the reason, as existing files do.
-- After a conf change, `splk dev <app>`. `commands.conf` changes need a restart;
-  ask the person before `--restart`.
+- After a conf change, `splk dev <app>`. `commands.conf` changes need a restart:
+  use `--restart` on the dev target without asking; ask first for any other target.

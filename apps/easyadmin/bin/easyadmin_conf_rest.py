@@ -94,6 +94,60 @@ class ConfFileReader(object):
         real = os.path.realpath(path)
         return real == self._etc_real or real.startswith(self._etc_real + os.sep)
 
+    def _read(self, path):
+        """The text of one .conf file, or None (missing, outside etc/, too long)."""
+        try:
+            if not os.path.isfile(path):
+                return None
+            if not self._inside_etc(path):
+                logger.warning("Skipped %s: it links outside etc/", path)
+                return None
+            with io.open(path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read(conf_core.MAX_FILE_CHARS + 1)
+        except (IOError, OSError) as error:
+            logger.info("Could not read %s: %s", path, error)
+            return None
+        if len(text) > conf_core.MAX_FILE_CHARS:
+            logger.warning("Skipped %s: longer than %d characters", path, conf_core.MAX_FILE_CHARS)
+            return None
+        return text
+
+    def read_own_layers(self, conf, app, user=None):
+        """{layer: text} for one object's own files: default, local and user.
+
+        ``app`` and ``user`` come from the request, so they are never put in
+        a path as given: they must equal an entry listed in etc/apps (or be
+        "system") and etc/users. The conf name is one the code chose.
+        """
+        if not conf_core.CONF_NAME_RE.match(conf):
+            return {}
+        folders = []
+        if app == conf_core.SYSTEM:
+            system = os.path.join(self._etc, "system")
+            folders = [("default", os.path.join(system, "default")), ("local", os.path.join(system, "local"))]
+        else:
+            try:
+                apps = os.listdir(os.path.join(self._etc, "apps"))
+            except OSError:
+                apps = []
+            if app not in apps:
+                return {}
+            folders = [("default", os.path.join(self._etc, "apps", app, "default")),
+                       ("local", os.path.join(self._etc, "apps", app, "local"))]
+            if user:
+                try:
+                    users = os.listdir(os.path.join(self._etc, "users"))
+                except OSError:
+                    users = []
+                if user in users:
+                    folders.append(("user", os.path.join(self._etc, "users", user, app, "local")))
+        files = {}
+        for layer, folder in folders:
+            text = self._read(os.path.join(folder, conf + ".conf"))
+            if text is not None:
+                files[layer] = text
+        return files
+
     def read_conf(self, conf):
         files = {}
         total = 0

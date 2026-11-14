@@ -1,6 +1,6 @@
 ---
-confirmed: 4
-seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14]
+confirmed: 6
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-15]
 apps: [easyadmin]
 ---
 # REST endpoint behind a page
@@ -43,10 +43,13 @@ conf) through the app's own Python, with the signed-in user's permissions.
 - The caller's own token (no `passSystemAuth`) means splunkd enforces the
   user's capabilities, so the app can never grant more than Settings would.
 - `persist` handlers keep their process alive. After changing `bin/`, a green
-  deploy can serve the old code for 2 to 10 minutes (seen in three sessions). `splk
-  deploy --restart` does **not** help: it restarts only when splunkd posts
-  "restart required", which a Python change never does. Wait, and prove the
-  new code runs with something only it shows (a label, a message) before
+  deploy serves the old code until the handler has been **idle** for several
+  minutes, and each request resets that (seen in four sessions). Do not poll:
+  wait about 7 minutes with no requests, then run once (worked three times
+  out of three on 2026-11-15). `splk deploy
+  --restart` does **not** help: it restarts only when splunkd posts
+  "restart required", which a Python change never does. Prove the new code
+  runs with something only it shows (a label, a message) before
   trusting a test run (`lessons/splunkd-persist-handler-stale-code.md`). A
   new endpoint needs one restart before it is registered at all; after it,
   token calls can return 401 for about 30 s, so run `splk doctor` until it

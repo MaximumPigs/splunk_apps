@@ -183,7 +183,7 @@ def test_stale_location_is_reported(splunk, objects):
                    {"app": "launcher", "user": "nobody"})
     result = apply(splunk, [ref(obj, delete=True)])
     assert result["failed"] == 1
-    assert "no longer in search" in result["results"][0]["message"]
+    assert 'no longer in "search"' in result["results"][0]["message"]
 
 
 def test_user_without_rights_cannot_change_others_objects(splunk, sandbox, objects):
@@ -218,3 +218,125 @@ def test_form_encoded_changes_are_accepted(splunk, objects):
     obj = find(model(splunk), "macro", name)
     result = splunk.request("POST", ENDPOINT, {"changes": json.dumps([ref(obj, delete=True)])})
     assert result["applied"] == 1
+
+
+# ------------------------------------------------------------------- copying
+
+def _delete_quietly(splunk, path):
+    try:
+        splunk.request("DELETE", path)
+    except SplunkError:
+        pass
+
+
+def test_copy_creates_a_second_object_and_keeps_the_original(splunk, objects):
+    name = objects.macro()
+    obj = find(model(splunk), "macro", name)
+    try:
+        result = apply(splunk, [ref(obj, copy_to="launcher")])
+        assert result["applied"] == 1, result
+        copied = splunk.request("GET", "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))["entry"][0]
+        assert copied["content"]["definition"] == "index=_internal"
+        assert copied["acl"]["app"] == "launcher"
+        assert acl_of(splunk, "nobody", "search", "admin/macros", name)["app"] == "search"
+        # A second copy is refused rather than overwriting the first.
+        again = apply(splunk, [ref(obj, copy_to="launcher")])
+        assert again["failed"] == 1 and 'already exists in "launcher"' in again["results"][0]["message"]
+    finally:
+        _delete_quietly(splunk, "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))
+
+
+def test_copy_keeps_sharing_and_a_dashboards_source(splunk, objects):
+    name = objects.view()
+    splunk.request("POST", "/servicesNS/nobody/search/data/ui/views/%s/acl" % q(name),
+                   {"sharing": "global", "owner": "nobody", "perms.read": "*", "perms.write": "admin"})
+    obj = find(model(splunk), "view", name)
+    try:
+        assert apply(splunk, [ref(obj, copy_to="launcher")])["applied"] == 1
+        copied = splunk.request("GET", "/servicesNS/nobody/launcher/data/ui/views/%s" % q(name))["entry"][0]
+        assert "<label>Live</label>" in copied["content"]["eai:data"]
+        assert copied["acl"]["sharing"] == "global"
+    finally:
+        _delete_quietly(splunk, "/servicesNS/nobody/launcher/data/ui/views/%s" % q(name))
+
+
+def test_an_object_shipped_in_default_can_be_copied(splunk):
+    document = model(splunk)
+    shipped = next(o for o in document["objects"]
+                   if o["type"] == "macro" and o["app"] == "search" and not o["movable"] and o["copyable"])
+    path = "/servicesNS/nobody/launcher/admin/macros/%s" % q(shipped["name"])
+    try:
+        result = apply(splunk, [ref(shipped, copy_to="launcher")])
+        assert result["applied"] == 1, result
+        original = splunk.request("GET", "/servicesNS/nobody/search/admin/macros/%s" % q(shipped["name"]))
+        copied = splunk.request("GET", path)["entry"][0]
+        assert copied["content"]["definition"] == original["entry"][0]["content"]["definition"]
+        assert copied["acl"]["app"] == "launcher"
+    finally:
+        _delete_quietly(splunk, path)
+
+
+def test_props_objects_and_tags_are_not_offered_for_copying(splunk):
+    # splunkd's REST API merges these across apps, so a copy could not be
+    # written reliably; the endpoint refuses rather than half-copying.
+    document = model(splunk)
+    source = next(o for o in document["objects"] if o["type"] == "extraction")
+    assert source["copyable"] is False
+    with pytest.raises(SplunkError) as caught:
+        apply(splunk, [ref(source, copy_to="launcher")])
+    assert caught.value.status == 400 and "cannot be copied" in str(caught.value)
+
+
+# -------------------------------------------------------- explicit settings
+
+def _details(client, obj):
+    return client.request("GET", ENDPOINT, {k: obj[k] for k in ("type", "ns", "app", "name")})
+
+
+def test_details_list_only_the_settings_set_in_the_object(splunk, objects):
+    name = objects.macro()
+    details = _details(splunk, find(model(splunk), "macro", name))
+    # Created with only a definition: that is all its own stanza holds,
+    # however many settings splunkd reports for it.
+    assert details["explicit_conf"] == "macros"
+    assert [(s["name"], s["value"], s["layer"]) for s in details["explicit"]] == [
+        ("definition", "index=_internal", "local")]
+    assert len(details["settings"]) > len(details["explicit"])
+
+
+def test_a_shipped_objects_own_settings_come_from_default(splunk):
+    shipped = next(o for o in model(splunk)["objects"]
+                   if o["type"] == "macro" and o["app"] == "search" and not o["movable"])
+    details = _details(splunk, shipped)
+    assert details["explicit"], "a shipped macro sets at least its definition"
+    assert {s["layer"] for s in details["explicit"]} <= {"default", "local"}
+    assert "definition" in [s["name"] for s in details["explicit"]]
+
+
+def test_a_private_objects_own_settings_come_from_the_owners_folder(splunk, objects):
+    name = objects.macro(owner="admin")
+    details = _details(splunk, find(model(splunk), "macro", name))
+    assert [(s["name"], s["layer"]) for s in details["explicit"]] == [("definition", "user")]
+
+
+def test_without_admin_all_objects_the_full_list_is_returned(splunk, sandbox, objects):
+    name = objects.macro()
+    user, password = sandbox.create_user(roles=["user"], label="easyadmin_explicit_ro")
+    client = splunk.as_user(user, password)
+    details = _details(client, find(model(client), "macro", name))
+    assert details["explicit"] is None and details["explicit_note"] == "capability"
+    assert details["settings"]
+
+
+def test_shipped_reports_are_not_offered_as_movable(splunk):
+    # A saved search in a default folder still lists move and remove links,
+    # but splunkd refuses the move ("cannot be deleted and thus it cannot be
+    # moved"); the model must not offer it. Seen with the search app's
+    # "Bucket Merge Retrieve Conf Settings".
+    shipped = [o for o in model(splunk)["objects"] if o["type"] == "savedsearch" and o["app"] == "search"]
+    assert shipped, "the search app ships saved searches"
+    entry = splunk.request("GET", "/servicesNS/nobody/search/saved/searches/%s" % q(shipped[0]["name"]))["entry"][0]
+    if not entry["acl"].get("removable"):
+        assert "move" in entry["links"]   # the misleading link is still there
+        assert shipped[0]["movable"] is False and shipped[0]["removable"] is False
+        assert shipped[0]["copyable"] is True

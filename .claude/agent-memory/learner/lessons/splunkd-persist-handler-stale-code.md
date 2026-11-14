@@ -1,10 +1,10 @@
 ---
-hits: 3
-seen: [2026-11-12, 2026-11-14, 2026-11-14]
+hits: 4
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14]
 area: splunkd
 level: rule
 ---
-**Symptom:** easyadmin, three sessions.
+**Symptom:** easyadmin, four sessions.
 - 2026-11-12: after the `update_role` fix, live stayed red with the old error
   for about 5 minutes. Runs at 06:26, 06:27 and 06:28 still failed
   `test_bulk_update_grants_and_revokes_in_one_submit` and
@@ -23,6 +23,11 @@ level: rule
   new 400 for `..`). Each cleared in about 2 minutes (green 17:58:01 and
   18:03:02) with no code change. Asserting on something only the new code
   produces is what proved which code was serving.
+- 2026-11-14 (1.4.0, copy feature): after the 22:43:02 deploy, a retry loop
+  ran the live tests about every 2 minutes; nine runs from 22:43:34 to
+  23:00:45 all failed `test_props_objects_and_tags_are_not_offered_for_copying`
+  (`assert True is False`, old `TYPES`). After roughly 7 to 10 minutes with
+  no requests, the first run at 23:10:28 passed (104 passed).
 
 **Cause:** any `restmap.conf` handler with `scripttype = persist` is affected.
 splunkd keeps the handler's Python process alive and does not reload its code
@@ -34,14 +39,20 @@ So `--restart` is a no-op for a Python-only change. The 2026-11-12 entry of
 this lesson claimed `--restart` "would have applied it at once"; that was
 never observed and was wrong.
 
-**Fix:** no code change either time. The only route that worked was the
-handler's idle timeout (new code running within about 2 to 10 minutes).
+**Fix:** no code change. The only route that worked was the handler's
+**idle** timeout. Correction (2026-11-14, 1.4.0): the timeout counts from the
+last request, so every test run, `splk shot` or page load against the
+endpoint resets it. Earlier hits looked like "2 to 10 minutes" because the
+waits happened to be quiet; polling kept the old code alive for 18+ minutes.
+Confirmed 2026-11-15: the 7-minute idle wait then a single run worked three
+times out of three (not counted as new hits: the rule held).
 
 **Catch earlier:** after changing `bin/` behind a persist handler, prove which
 code is running before trusting any run: make a change only the new code
 shows (a label, a message, or an assertion only new code passes) and check it
 with `splk search` over the endpoint, `splk shot`, or the app's log. If the
-old code is still serving, wait; do not debug the fix. Promoted to
+old code is still serving, **stop sending requests to the endpoint**,
+wait about 7 minutes idle, then run once; never poll or loop retries. Promoted to
 `.claude/skills/dev-loop/SKILL.md` ("Reading failures": stale code).
 Candidate tool fix (not built): a forced restart option in `splk deploy`
 (still asking the person) that restarts even without `restart_required`, or a

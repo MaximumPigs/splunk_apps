@@ -35,6 +35,11 @@ import logging
 import os
 import sys
 
+try:  # Python 3
+    from urllib.parse import quote
+except ImportError:  # pragma: no cover - Splunk no longer ships Python 2
+    from urllib import quote
+
 # splunkd starts persistent handlers with its own working directory, so the
 # app's bin/ is not reliably importable until it is added here.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from splunk.persistconn.application import PersistentServerConnectionApplication  # noqa: E402
 
 import easyadmin_apps_core as apps_core  # noqa: E402
+import easyadmin_conf_rest as conf_rest  # noqa: E402  (a module: its handler class stays out of this one)
 import easyadmin_core as core  # noqa: E402
 import easyadmin_rest as roles_rest  # noqa: E402  (a module, so its handler class stays out of this one)
 
@@ -57,6 +63,8 @@ class AppsGateway(roles_rest.SplunkdGateway):
         # the links say whether splunkd will move or delete it.
         return [{"name": entry.get("name"), "id": entry.get("id"),
                  "acl": entry.get("acl") or {}, "links": entry.get("links") or {},
+                 # Which fields the endpoint accepts on create: a copy sends these.
+                 "fields": entry.get("fields") or {},
                  "content": entry.get("content") or {}}
                 for entry in document.get("entry") or []]
 
@@ -81,8 +89,14 @@ class AppsGateway(roles_rest.SplunkdGateway):
 
     def current_context(self):
         entries = self._entries(self._request("/services/authentication/current-context"))
-        username = entries[0]["content"].get("username") if entries else None
-        return {"username": username, "theme": self._user_theme(username)}
+        content = entries[0]["content"] if entries else {}
+        username = content.get("username")
+        return {"username": username, "theme": self._user_theme(username),
+                "capabilities": core.as_list(content.get("capabilities"))}
+
+    def read_own_conf(self, conf, app, user):
+        """The object's own layers of <conf>.conf: app default and local, owner's folder."""
+        return conf_rest.ConfFileReader(os.environ["SPLUNK_HOME"]).read_own_layers(conf, app, user)
 
     def get_object(self, path, full=False):
         # The path is built by easyadmin_apps_core.object_path from a known
@@ -106,6 +120,10 @@ class AppsGateway(roles_rest.SplunkdGateway):
 
     def delete_object(self, path):
         self._request(path, method="DELETE")
+
+    def create_object(self, collection, args):
+        # simpleRequest needs a dict; list values go as repeated form fields.
+        self._request(collection, method="POST", postargs=dict(args))
 
 
 def _query_dict(request):

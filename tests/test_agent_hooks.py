@@ -64,8 +64,10 @@ def test_bash_allows_paved_road(command):
     assert guard_bash.decide(command) == (None, None), command
 
 
-def test_bash_asks_before_restart():
-    assert guard_bash.decide("splk deploy fillcontinuous --restart")[0] == "ask"
+def test_bash_lets_splk_restart_run():
+    # The owner allows restarting the dev target whenever needed, so a restart
+    # through splk (which waits for splunkd) runs without a prompt.
+    assert guard_bash.decide("splk deploy fillcontinuous --restart") == (None, None)
 
 
 def test_bash_hook_end_to_end(tmp_path):

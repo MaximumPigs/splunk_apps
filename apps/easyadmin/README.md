@@ -9,8 +9,8 @@ It has two pages:
   into tabs. Every tab lists the roles down the side. Change as many cells as
   you like, on as many tabs as you like, then save them all at once.
 - **App management** shows every app as a box holding its knowledge objects.
-  Drag objects between apps, or select several and move, re-permission or
-  delete them, then apply all the changes at once. A second tab,
+  Drag objects between apps, or select several and move, copy,
+  re-permission or delete them, then apply all the changes at once. A second tab,
   **Configuration precedence**, shows like btool which file every setting
   comes from and where apps set the same setting differently. See
   [App management](#app-management) and
@@ -160,24 +160,65 @@ added from the **Types** menu.
 | **Filter objects by name** and **Types** | Narrow the objects in every box. **Types** is a drop-down of every type, with shortcuts for the common types, all and none. Every app stays on show, so you can filter for an object and then drag it to any app. |
 | **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. |
 | The tick box in an app's title | Selects every object shown in that app (after the filters). It is half-ticked when only some are selected. |
-| Drag an object onto another app's box | Stages a move. Dragging a ticked object moves every ticked object. |
-| Tick objects, then **Move to app...** and **Move** | Stages a move without dragging. |
+| Drag an object onto another app's box | Stages a move, or a copy for an object that ships in a default folder (which cannot be moved). Hold Ctrl (Cmd on a Mac) while dropping to copy instead. Dragging a ticked object takes every ticked object. |
+| Tick objects, then **To app...** and **Move** or **Copy** | Stages a move or a copy without dragging. **Move** copies the objects that cannot be moved, as a drop does, and says so. |
 | **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |
 | **Delete** | Stages the ticked objects for deletion. |
-| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable) and every one of its settings (read-only). |
+| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings (read-only): see [Settings in the panel](#settings-in-the-panel). |
 | **Apply N changes** | Applies every staged change, after a confirmation that says how many objects are moved, re-permissioned and deleted. |
-| **Discard changes** | Drops every staged change. |
+| The × on a staged-change badge | Drops that one change (a move, a copy, a permission change or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
+| **Discard changes** | Drops every staged change, after asking. |
 
 A staged change is outlined and labelled on the object (`moving from search`,
-`permissions changed`, `will be deleted`), and a moved object shows in the
-box it is moving to. Nothing is written until **Apply**. Leaving the page
+`copying to launcher`, `permissions changed`, `will be deleted`). A moved
+object shows in the box it is moving to; a staged copy shows there as a
+dashed `copy from` row, and the original stays where it is.
+
+### Settings in the panel
+
+The panel lists the settings set in the object itself: those in its
+`[<name>]` stanza in its app's `default` and `local` files, or in the owner's
+folder for a private object, each marked `default`, `local` or `private`.
+Settings it only inherits, from `[default]` stanzas and `etc/system/default`,
+are left out; **Show all N settings, including inherited defaults** lists
+everything splunkd reports for it.
+
+Like the precedence tab, this reads the configuration files, so it needs the
+`admin_all_objects` capability; without it the panel lists every setting, as
+splunkd reports them. It applies to objects kept as a stanza: reports and
+alerts, search macros, event types, tags, field transformations, lookup
+definitions, workflow actions, time ranges, data models, KV store
+collections and alert actions. Dashboards, navigation menus and prebuilt
+panels are XML files whose settings are all their own, and props-based
+objects are a single setting each.
+
+### Copying objects
+
+A copy is a second object with the same name, settings, owner, sharing and
+read and write roles, in another app. The original is not changed. A copy is
+refused when the other app already has an object of that type and name (one
+that lives in that app, not one shared with it from elsewhere).
+
+A copy is made by creating the object again through splunkd with the
+original's settings. These types cannot be copied:
+
+- field extractions, field aliases, calculated fields, automatic lookups,
+  source type renaming and tags: splunkd does not accept them back through
+  their own endpoints, and its configuration endpoints merge them across
+  apps, so a copy could not be written reliably;
+- lookup table files, which need Splunk's upload staging folder;
+- navigation menus, which belong to their app. Nothing is written until **Apply**. Leaving the page
 with staged changes asks first.
 
 ### Objects in an app's default folder
 
 An object that ships in an app's `default/` folder shows a lock and the
 `default` badge. Splunk cannot move or delete such an object, so the page
-cannot either. Its permissions can still be changed. Whether an object is locked comes from Splunk itself
+cannot either. (Splunk still lists move and delete actions for a report in
+a default folder, then refuses them; the page goes by Splunk's `removable`
+flag instead. Should Splunk refuse a move anyway, the page stages a copy in
+its place and asks you to apply again.) It can be copied to another app (dragging it there stages a
+copy), and its permissions can still be changed. Whether an object is locked comes from Splunk itself
 for each object, not from a list kept by this app.
 
 Lookup table files are not split into default and local folders, and Splunk
@@ -334,7 +375,7 @@ objects can be moved into it), `objects`, `roles`, `users` and `warnings`
 (object types your account cannot list). Each object has `type`, `name`,
 `app`, `ns` (the namespace it lives in: its owner for a private object,
 `nobody` otherwise), `owner`, `sharing`, `read`, `write`, `movable`,
-`removable` and `can_change_perms`. With `type`, `ns`, `app` and `name`, it
+`copyable`, `removable` and `can_change_perms`. With `type`, `ns`, `app` and `name`, it
 returns that one object with its `settings`.
 
 `POST` takes one entry per object, addressed where the page saw it:
@@ -348,7 +389,8 @@ returns that one object with its `settings`.
 ]}
 ```
 
-`acl` always carries `sharing` and `owner`; `read` and `write` are ignored for
+`copy_to` (an app name) creates a copy there instead of moving; it cannot be
+combined with `move_to` or `delete`. `acl` always carries `sharing` and `owner`; `read` and `write` are ignored for
 `"sharing": "user"`. An empty `write` list leaves no write roles. The response
 has one result per object with `status` of `applied` or `error`, its
 `message`, and `moved_to` when it was moved, plus `applied` and `failed`
@@ -368,11 +410,15 @@ counts. At most 2000 objects per request.
 - App management lists the knowledge object types above. Inputs, indexes and
   search commands are not listed.
 - Objects in an app's `default/` folder cannot be moved or deleted (see
-  [Objects in an app's default folder](#objects-in-an-apps-default-folder)).
+  [Objects in an app's default folder](#objects-in-an-apps-default-folder));
+  copy them instead.
+- Props-based objects (field extractions, aliases, calculated fields,
+  automatic lookups, source type renaming), tags, lookup table files and
+  navigation menus cannot be copied.
 - The configuration precedence tab shows Splunk's global order. It does not
   model the per-app order used at search time, or settings in `etc/users`.
 - Creating and cloning apps, and JSON export and import, are not in this
-  version.
+  version yet.
 
 ## Compatibility
 

@@ -156,6 +156,7 @@ require([
         pending: newMap(),     // object key -> {moveTo, acl, del}
         selected: newMap(),    // object key -> true
         details: newMap(),     // object key -> settings from the server, or 'loading' / {error}
+        showAllSettings: newMap(),  // object key -> true to list inherited settings too
         filter: '',            // object name filter
         appFilter: '',         // app name or label filter
         types: null,           // type id -> true for the types on show (set on first load)
@@ -262,12 +263,19 @@ require([
 
     // Store one object's staged edits, dropping any that match what it is now.
     function setPending(obj, edits) {
-        var pending = state.pending[obj.key] || { moveTo: null, acl: null, del: false };
-        if ('moveTo' in edits) { pending.moveTo = edits.moveTo === obj.app ? null : edits.moveTo; }
+        var pending = state.pending[obj.key] || { moveTo: null, copyTo: null, acl: null, del: false };
+        if ('moveTo' in edits) {
+            pending.moveTo = edits.moveTo === obj.app ? null : edits.moveTo;
+            if (pending.moveTo) { pending.copyTo = null; }   // moved or copied, not both
+        }
+        if ('copyTo' in edits) {
+            pending.copyTo = edits.copyTo === obj.app ? null : edits.copyTo;
+            if (pending.copyTo) { pending.moveTo = null; }
+        }
         if ('acl' in edits) { pending.acl = edits.acl && !sameAcl(edits.acl, currentAcl(obj)) ? edits.acl : null; }
         if ('del' in edits) { pending.del = !!edits.del; }
-        if (pending.del) { pending.moveTo = null; pending.acl = null; }
-        if (pending.moveTo || pending.acl || pending.del) {
+        if (pending.del) { pending.moveTo = null; pending.copyTo = null; pending.acl = null; }
+        if (pending.moveTo || pending.copyTo || pending.acl || pending.del) {
             state.pending[obj.key] = pending;
         } else {
             delete state.pending[obj.key];
@@ -275,9 +283,14 @@ require([
     }
 
     // An app as people see it: its label, with the directory name when different.
+    // In quotes, so a name reads as a name inside a message.
     function appText(name) {
         var app = state.apps[name];
-        return app && app.label !== name ? app.label + ' (' + name + ')' : name;
+        return app && app.label !== name ? '"' + app.label + '" (' + name + ')' : '"' + name + '"';
+    }
+
+    function quoted(text) {
+        return '"' + text + '"';
     }
 
     // "1 object ships in its app's..." / "2 objects ship in their apps'...".
@@ -287,25 +300,74 @@ require([
             (count === 1 ? 'it is' : 'they are') + '.';
     }
 
-    // Stage a move of each object that can be moved, and say what happened.
-    function stageMove(objectKeys, app) {
+    // False when ``app`` already holds an object of this type and name, so
+    // a move or copy there would be refused at Apply.
+    function clashFree(obj, app) {
+        return app === obj.app || !state.byKey[[obj.type, obj.ns, app, obj.name].join('\u0000')];
+    }
+
+    // The panel's version: says why and re-renders when there is a clash.
+    function targetFree(obj, app) {
+        if (clashFree(obj, app)) { return true; }
+        state.message = { kind: 'info', lines: [appText(app) + ' already has an object of the same type and ' +
+            'name, so ' + quoted(obj.name) + ' was not staged.'] };
+        render();
+        return false;
+    }
+
+    // Stage a move or a copy of each object to ``app`` and say what happened.
+    // ``mode`` is 'move', 'copy' or 'auto': auto moves what can be moved and
+    // copies what ships in a default folder (which cannot be moved).
+    function stageTransfer(objectKeys, app, mode) {
         var moved = 0;
-        var locked = 0;
+        var copied = 0;
+        var refused = 0;
+        var same = 0;
+        var clash = [];
+        var replaced = 0;
         $.each(objectKeys, function (i, objKey) {
             var obj = state.byKey[objKey];
             if (!obj) { return; }
-            if (!obj.movable) { locked += 1; return; }
-            setPending(obj, { moveTo: app, del: false });
-            if (state.pending[objKey] && state.pending[objKey].moveTo === app) { moved += 1; }
+            if (obj.app === app) { same += 1; return; }
+            var copy = mode === 'copy' || (mode === 'auto' && !obj.movable);
+            if (copy ? !obj.copyable : !obj.movable) { refused += 1; return; }
+            // The target already holds an object of this type and name: a
+            // copy or move would be refused at Apply, so say so now.
+            if (!clashFree(obj, app)) { clash.push(obj.name); return; }
+            var before = state.pending[obj.key];
+            if (before && (copy ? before.moveTo : before.copyTo)) { replaced += 1; }
+            setPending(obj, copy ? { copyTo: app, del: false } : { moveTo: app, del: false });
+            if (copy) { copied += 1; } else { moved += 1; }
         });
         var lines = [];
-        if (moved) {
-            lines.push('Staged a move of ' + plural(moved, 'object') + ' to ' + appText(app) + '. Apply to make it.');
-        } else if (!locked) {
-            lines.push('Nothing to move: ' + (objectKeys.length === 1 ? 'the object is' : 'the objects are') +
+        if (moved) { lines.push('Staged a move of ' + plural(moved, 'object') + ' to ' + appText(app) + '.'); }
+        if (copied) {
+            lines.push('Staged a copy of ' + plural(copied, 'object') + ' into ' + appText(app) + '.' +
+                (mode === 'auto' ? ' Objects that cannot be moved (in a default folder, or not movable by your ' +
+                    'account) were copied instead.' : ''));
+        }
+        if (replaced) {
+            lines.push('This replaced ' + plural(replaced, 'staged ' + (mode === 'copy' ? 'move' : 'copy'),
+                'staged ' + (mode === 'copy' ? 'moves' : 'copies')) + ': an object is either moved or copied.');
+        }
+        if (moved || copied) { lines.push('Apply to make the changes.'); }
+        if (clash.length) {
+            lines.push(appText(app) + ' already has ' + (clash.length === 1 ? 'an object' : 'objects') + ' of the same ' +
+                'type and name, so ' + (clash.length === 1 ? 'it was' : 'they were') + ' not staged: ' +
+                $.map(clash.slice(0, 5), quoted).join(', ') + (clash.length > 5 ? ' and ' + (clash.length - 5) + ' more' : '') + '.');
+        }
+        if (same && !moved && !copied && !refused) {
+            lines.push('Nothing to do: ' + (same === 1 ? 'the object is' : 'the objects are') +
                 ' already in ' + appText(app) + '.');
         }
-        if (locked) { lines.push(lockedText(locked, 'moved')); }
+        if (refused) {
+            var them = refused === 1 ? 'it was left as it is.' : 'they were left as they are.';
+            lines.push(mode === 'move' ? lockedText(refused, 'moved') : mode === 'copy' ?
+                plural(refused, 'object') + (refused === 1 ? ' is' : ' are') + ' of a type that cannot be copied ' +
+                '(props-based objects, tags, lookup table files and navigation menus), so ' + them :
+                plural(refused, 'object') + ' cannot be moved (a default folder, or your account\'s permissions), ' +
+                'and ' + (refused === 1 ? 'its' : 'their') + ' type cannot be copied, so ' + them);
+        }
         state.message = { kind: 'info', lines: lines };
     }
 
@@ -320,6 +382,7 @@ require([
                 change['delete'] = true;
             } else {
                 if (pending.moveTo) { change.move_to = pending.moveTo; }
+                if (pending.copyTo) { change.copy_to = pending.copyTo; }
                 if (pending.acl) {
                     change.acl = { sharing: pending.acl.sharing, owner: pending.acl.owner,
                         read: pending.acl.read, write: pending.acl.write };
@@ -372,7 +435,8 @@ require([
                     dropped += 1;
                 } else {
                     var pending = state.pending[objKey];
-                    setPending(obj, { moveTo: pending.moveTo || obj.app, acl: pending.acl, del: pending.del });
+                    setPending(obj, { moveTo: pending.moveTo || obj.app, copyTo: pending.copyTo || obj.app,
+                        acl: pending.acl, del: pending.del });
                 }
             });
             $.each(keys(state.selected), function (i, objKey) {
@@ -417,15 +481,18 @@ require([
         var changes = collectChanges();
         if (!changes.length) { return; }
         var moves = 0;
+        var copies = 0;
         var acls = 0;
         var deletes = 0;
         $.each(changes, function (i, change) {
             if (change['delete']) { deletes += 1; }
             if (change.move_to) { moves += 1; }
+            if (change.copy_to) { copies += 1; }
             if (change.acl) { acls += 1; }
         });
         var parts = [];
         if (moves) { parts.push('move ' + plural(moves, 'object')); }
+        if (copies) { parts.push('copy ' + plural(copies, 'object') + ' into another app'); }
         if (acls) { parts.push('change the permissions of ' + plural(acls, 'object')); }
         if (deletes) { parts.push('delete ' + plural(deletes, 'object')); }
         var prompt = 'Apply changes to ' + plural(changes.length, 'object') + ': ' + parts.join(', ') + '?';
@@ -453,6 +520,8 @@ require([
             }
         }).done(function (body) {
             var failures = [];
+            var copiesInstead = 0;
+            var aclOnOriginal = [];
             $.each(body.results || [], function (i, result) {
                 var obj = state.byKey[result.key];
                 var pending = state.pending[result.key];
@@ -461,7 +530,25 @@ require([
                     delete state.selected[result.key];
                     return;
                 }
-                failures.push(result.message);
+                // The move was refused (the object ships in a default
+                // folder) and it can be copied: stage a copy to the same app.
+                // The page does this itself, so the server's advice to copy
+                // it is left out of the message.
+                if (result.copy_instead && pending && pending.moveTo) {
+                    pending.copyTo = pending.moveTo;
+                    pending.moveTo = null;
+                    copiesInstead += 1;
+                    if (pending.acl) { aclOnOriginal.push(obj ? obj.name : result.key); }
+                    failures.push(result.message.replace(/ Copy it instead\.$/, ''));
+                } else {
+                    failures.push(result.message);
+                }
+                // Copied, but a later step failed: the copy exists, so stop
+                // staging it and keep only what is left to retry.
+                if (result.copied_to && pending) {
+                    pending.copyTo = null;
+                    if (!pending.acl) { delete state.pending[result.key]; }
+                }
                 // Moved but not re-permissioned: keep the permission edit,
                 // now addressed at the object's new app, so it can be retried.
                 if (result.moved_to && obj && pending) {
@@ -475,9 +562,18 @@ require([
             if (body.failed) {
                 state.message = { kind: 'error', lines: ['Applied ' + plural(body.applied, 'change') + '; ' +
                     plural(body.failed, 'object') + ' could not be changed and still show as staged:']
-                    .concat(failures) };
+                    .concat(failures).concat(copiesInstead ? [plural(copiesInstead, 'move was', 'moves were') +
+                        ' staged as a copy instead, because ' + (copiesInstead === 1 ? 'that object' : 'those objects') +
+                        ' cannot be moved. Apply again to copy ' + (copiesInstead === 1 ? 'it.' : 'them.')] : [])
+                    .concat(aclOnOriginal.length ? ['The staged permission change of ' +
+                        $.map(aclOnOriginal, quoted).join(', ') + ' now applies to the original, which stays where ' +
+                        'it is; set the copy\'s permissions after applying.'] : []) };
             } else {
-                state.message = { kind: 'success', lines: ['Applied changes to ' + plural(body.applied, 'object') + '.'] };
+                // Say what was done, object by object (the server words each one).
+                var done = $.map($.grep(body.results || [], function (r) { return r.status !== 'error'; }),
+                    function (r) { return r.message; });
+                state.message = { kind: 'success', lines: ['Applied changes to ' + plural(body.applied, 'object') + ':']
+                    .concat(done.slice(0, 10)).concat(done.length > 10 ? ['...and ' + (done.length - 10) + ' more.'] : []) };
             }
             load();
         }).fail(function (xhr) {
@@ -520,6 +616,10 @@ require([
             if (!matches(obj)) { return; }
             var app = appOf(obj);
             (map[app] = map[app] || []).push(obj);
+            var pending = state.pending[obj.key];
+            if (pending && pending.copyTo) {
+                (map[pending.copyTo] = map[pending.copyTo] || []).push({ ghostOf: obj });
+            }
         });
         return map;
     }
@@ -530,8 +630,8 @@ require([
     // filter and the built-in toggle, and a box with staged changes always shows.
     function visibleApps(byApp) {
         return $.grep(state.data.apps, function (app) {
-            if (byApp[app.name] && $.grep(byApp[app.name], function (obj) {
-                return state.pending[obj.key];
+            if (byApp[app.name] && $.grep(byApp[app.name], function (item) {
+                return state.pending[(item.ghostOf || item).key];
             }).length) {
                 return true;
             }
@@ -677,18 +777,19 @@ require([
                 state.message = null;
                 load();
             }));
-        $actions.append(el('button', 'btn ea-discard', count ? 'Discard ' + plural(count, 'change') : 'Discard changes')
+        $actions.append(el('button', 'btn ea-discard', count ? 'Discard changes to ' + plural(count, 'object') : 'Discard changes')
             .attr({ type: 'button', 'data-fid': 'discard' })
             .prop('disabled', state.busy || !count).on('click', function () {
                 // Staged work can be large and is not recoverable: ask first.
-                if (!window.confirm('Discard ' + plural(count, 'staged change') + '? Nothing has been applied yet.')) {
+                if (!window.confirm('Discard the staged changes to ' + plural(count, 'object') +
+                        '? Nothing has been applied yet.')) {
                     return;
                 }
                 state.pending = newMap();
-                state.message = { kind: 'info', lines: ['Discarded ' + plural(count, 'staged change') + '.'] };
+                state.message = { kind: 'info', lines: ['Discarded the staged changes to ' + plural(count, 'object') + '.'] };
                 render();
             }));
-        $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply ' + plural(count, 'change') : 'Apply changes')
+        $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply changes to ' + plural(count, 'object') : 'Apply changes')
             .attr({ type: 'button', 'data-fid': 'apply' })
             .prop('disabled', state.busy || !count).on('click', apply));
         $bar.append($actions);
@@ -745,23 +846,30 @@ require([
         var $bar = el('div', 'ea-selection').attr('aria-label', 'Selected objects');
         if (!count) {
             $bar.append(el('span', 'ea-muted',
-                'Tick objects to move, re-permission or delete several at once, or drag an object to another app.'));
+                'Tick objects to move, copy, re-permission or delete several at once, or drag an object to ' +
+                'another app (hold Ctrl, or Cmd on a Mac, to copy instead of moving).'));
             return $bar;
         }
         $bar.append(el('strong', null, plural(count, 'object') + ' selected'));
-        var $target = appOptions(el('select', 'ea-move-target').attr({ 'aria-label': 'Move selected objects to app',
-            'data-fid': 'move-target' }), '', 'Move to app...');
+        var $target = appOptions(el('select', 'ea-move-target').attr({ 'aria-label': 'Move or copy selected objects to app',
+            'data-fid': 'move-target' }), '', 'To app...');
         $bar.append($target);
-        $bar.append(el('button', 'btn', 'Move').attr({ type: 'button', 'data-fid': 'move-selected' }).on('click', function () {
-            var app = $target.val();
-            if (!app) {
-                state.message = { kind: 'info', lines: ['Choose the app to move the selected objects to.'] };
-                render();
-                return;
-            }
-            stageMove(keys(state.selected), app);
-            render();
-        }));
+        $.each([['Move', 'move'], ['Copy', 'copy']], function (i, action) {
+            $bar.append(el('button', 'btn', action[0]).attr({ type: 'button', 'data-fid': action[1] + '-selected' })
+                .on('click', function () {
+                    var app = $target.val();
+                    if (!app) {
+                        state.message = { kind: 'info', lines: ['Choose the app to ' + action[1] +
+                            ' the selected objects to.'] };
+                        render();
+                        return;
+                    }
+                    // Move works as a drop does: objects that cannot be
+                    // moved (a default folder) are copied instead, and said so.
+                    stageTransfer(keys(state.selected), app, action[1] === 'move' ? 'auto' : 'copy');
+                    render();
+                }));
+        });
         $bar.append(el('button', 'btn', 'Edit permissions').attr({ type: 'button', 'data-fid': 'bulk-acl' })
             .on('click', function () { openPanel({ mode: 'bulk' }); }));
         $bar.append(el('button', 'btn', 'Delete').attr({ type: 'button', 'data-fid': 'delete-selected' }).on('click', function () {
@@ -806,20 +914,87 @@ require([
         $legend.append($sharing);
         var $note = el('p', 'ea-muted');
         $note.append(icon('lock'), document.createTextNode(
-            ' ships in the app\'s default folder: it can be re-permissioned, not moved or deleted. ' +
+            ' ships in the app\'s default folder: it can be copied or re-permissioned, not moved or deleted. ' +
             'Staged changes are outlined and labelled until you apply them.'));
         $legend.append($note);
         return $legend;
     }
 
-    function changeBadges(obj) {
+    // Each staged change on an object, as {kind, text}. ``kind`` names the
+    // part of the pending edit that its discard button clears.
+    function changeParts(obj) {
         var pending = state.pending[obj.key];
-        var badges = [];
-        if (!pending) { return badges; }
-        if (pending.del) { badges.push('will be deleted'); }
-        if (pending.moveTo) { badges.push('moving from ' + obj.app); }
-        if (pending.acl) { badges.push('permissions changed'); }
-        return badges;
+        var parts = [];
+        if (!pending) { return parts; }
+        if (pending.del) { parts.push({ kind: 'del', text: 'will be deleted' }); }
+        if (pending.moveTo) { parts.push({ kind: 'move', text: 'moving from ' + obj.app }); }
+        if (pending.copyTo) { parts.push({ kind: 'copy', text: 'copying to ' + pending.copyTo }); }
+        if (pending.acl) { parts.push({ kind: 'acl', text: 'permissions changed' }); }
+        return parts;
+    }
+
+    function changeBadges(obj) {
+        return $.map(changeParts(obj), function (part) { return part.text; });
+    }
+
+    // Drop one staged change from one object, leaving its other changes.
+    // Prototype-free, so only these four kinds are ever accepted.
+    var DISCARD = newMap();
+    DISCARD.del = { del: false };
+    DISCARD.move = { moveTo: null };
+    DISCARD.copy = { copyTo: null };
+    DISCARD.acl = { acl: null };
+
+    function discardOne(objKey, kind) {
+        var obj = state.byKey[objKey];
+        // While Apply runs the change has already been sent: keep it, so a
+        // failure can still be retried.
+        if (!obj || !DISCARD[kind] || state.busy) { return; }
+        // Its words, taken before it is cleared, for the message.
+        var part = $.grep(changeParts(obj), function (p) { return p.kind === kind; })[0];
+        var edits = $.extend({}, DISCARD[kind]);
+        // setPending reads "back to its own app" as no move or copy.
+        if (kind === 'move') { edits.moveTo = obj.app; }
+        if (kind === 'copy') { edits.copyTo = obj.app; }
+        setPending(obj, edits);
+        var left = changeParts(obj).length;
+        state.message = { kind: 'info', lines: ['Discarded the staged change "' + (part ? part.text : kind) +
+            '" for ' + quoted(obj.name) + '.' + (left ? ' Its other staged ' + (left === 1 ? 'change is' : 'changes are') +
+            ' kept.' : '')] };
+        render();
+        // Keep the keyboard where it was: on this object's name. A filter can
+        // hide its box once nothing is staged there; then go to Apply.
+        var fid = 'open:' + objKey;
+        var found = $root.find('[data-fid]').filter(function () { return this.getAttribute('data-fid') === fid; })[0] ||
+            $root.find('.ea-apply')[0];
+        if (found) { found.focus(); }
+    }
+
+    // The small x on a staged-change badge. Its name says what it discards.
+    function discardButton(obj, part) {
+        return el('button', 'ea-discard-one', '\u00d7').prop('disabled', state.busy).attr({
+            type: 'button', 'data-key': obj.key, 'data-kind': part.kind,
+            'data-fid': 'discard:' + part.kind + ':' + obj.key,
+            'aria-label': 'Discard staged change: ' + part.text + ' (' + obj.name + ')',
+            title: 'Discard this staged change'
+        });
+    }
+
+    // A staged copy, shown in the app it will be copied into. Its name opens
+    // the original's panel; it has no tick box, as it does not exist yet.
+    function renderGhost(obj) {
+        var typeLabel = state.typeLabels[obj.type] || obj.type;
+        var $li = el('li', 'ea-object ea-changed ea-ghost').attr('data-key', obj.key);
+        $li.append(el('span', 'ea-select-spacer').attr('aria-hidden', 'true'));
+        $li.append(icon(obj.type, typeLabel));
+        $li.append(el('button', 'ea-object-name', obj.name).attr({
+            type: 'button', title: 'Staged copy of ' + typeLabel.toLowerCase() + ' ' + obj.name + ' from ' + obj.app,
+            'data-fid': 'ghost:' + obj.key
+        }));
+        $li.append(el('span', 'ea-tags').append(el('span', 'ea-badge ea-badge-changed', 'copy from ' + obj.app)
+            .append(discardButton(obj, { kind: 'copy', text: 'copy from ' + obj.app + ' to ' +
+                state.pending[obj.key].copyTo }))));
+        return $li;
     }
 
     function renderObject(obj) {
@@ -829,7 +1004,7 @@ require([
         var $li = el('li', 'ea-object').attr('data-key', obj.key);
         if (pending) { $li.addClass('ea-changed'); }
         if (pending && pending.del) { $li.addClass('ea-deleted'); }
-        if (obj.movable) { $li.attr('draggable', 'true'); }
+        if (obj.movable || obj.copyable) { $li.attr('draggable', 'true'); }
 
         $li.append(el('input', 'ea-select').attr({
             type: 'checkbox', 'aria-label': 'Select ' + typeLabel.toLowerCase() + ' ' + obj.name,
@@ -848,8 +1023,8 @@ require([
         // Colour-coded by sharing, and always labelled, so colour is never the only cue.
         $tags.append(el('span', 'ea-badge ea-share ea-share-' + acl.sharing, SHARING_LABELS[acl.sharing] || acl.sharing));
         if (obj.disabled) { $tags.append(el('span', 'ea-badge', 'disabled')); }
-        $.each(changeBadges(obj), function (i, text) {
-            $tags.append(el('span', 'ea-badge ea-badge-changed', text));
+        $.each(changeParts(obj), function (i, part) {
+            $tags.append(el('span', 'ea-badge ea-badge-changed', part.text).append(discardButton(obj, part)));
         });
         $li.append($tags);
         return $li;
@@ -861,22 +1036,24 @@ require([
         if (!objects.length) { $box.addClass('ea-app-empty'); }
         var $head = el('header', 'ea-app-head');
         var $titleRow = el('div', 'ea-app-title-row');
-        if (objects.length) {
+        var real = $.grep(objects, function (item) { return !item.ghostOf; });
+        if (real.length) {
             // One tick selects every object shown in the box (after filters);
             // half-ticked when only some of them are selected.
-            var picked = $.grep(objects, function (obj) { return state.selected[obj.key]; }).length;
+            var picked = $.grep(real, function (obj) { return state.selected[obj.key]; }).length;
             $titleRow.append(el('input', 'ea-select-app').attr({
                 type: 'checkbox', 'data-app': app.name, 'data-fid': 'selapp:' + app.name,
-                'aria-label': 'Select all ' + plural(objects.length, 'object') + ' shown in ' + app.label,
+                'aria-label': 'Select all ' + plural(real.length, 'object') + ' shown in ' + app.label,
                 title: 'Select all objects shown in this app'
-            }).prop({ checked: picked === objects.length, indeterminate: picked > 0 && picked < objects.length }));
+            }).prop({ checked: picked === real.length, indeterminate: picked > 0 && picked < real.length }));
         }
         $titleRow.append(el('h3', 'ea-app-title', app.label).attr('title', app.label + ' (' + app.name + ')'));
         $head.append($titleRow);
         var $meta = el('div', 'ea-app-meta');
         $meta.append(el('code', null, app.name));
+        var realCount = $.grep(objects, function (item) { return !item.ghostOf; }).length;
         $meta.append(el('span', null, state.filter ?
-            plural(objects.length, 'match', 'matches') : plural(objects.length, 'object')));
+            plural(realCount, 'match', 'matches') : plural(realCount, 'object')));
         if (app.builtin) { $meta.append(el('span', 'ea-badge', 'built-in')); }
         if (app.disabled) { $meta.append(el('span', 'ea-badge', 'disabled')); }
         if (!app.target) {
@@ -892,9 +1069,9 @@ require([
             var empty = state.filter ? 'No matching objects.' :
                 shownTypeCount() < state.data.types.length ? 'No objects of the selected types.' :
                     'No knowledge objects visible to your account.';
-            $list.append(el('li', 'ea-empty', empty + (app.target ? ' Drop objects here to move them.' : '')));
+            $list.append(el('li', 'ea-empty', empty + (app.target ? ' Drop objects here to move or copy them.' : '')));
         }
-        $.each(objects, function (i, obj) { $list.append(renderObject(obj)); });
+        $.each(objects, function (i, item) { $list.append(item.ghostOf ? renderGhost(item.ghostOf) : renderObject(item)); });
         $box.append($list);
         return $box;
     }
@@ -908,7 +1085,10 @@ require([
         }).length;
         var typeCount = shownTypeCount();
         var shown = 0;
-        $.each(apps, function (i, app) { shown += (byApp[app.name] || []).length; });
+        $.each(apps, function (i, app) {
+            // Staged copies do not exist yet, so they are not counted.
+            shown += $.grep(byApp[app.name] || [], function (item) { return !item.ghostOf; }).length;
+        });
         var allTypes = typeCount === state.data.types.length;
         var summary = 'Showing ' + plural(apps.length, 'app') + ' and ' + plural(shown, 'object') + ' (' +
             (allTypes ? 'all types' : typeCount + ' of ' + state.data.types.length + ' types') + ').';
@@ -1033,15 +1213,45 @@ require([
             $app.val(appOf(obj));
         }
         $app.on('change', function () {
+            var hadCopy = pending && pending.copyTo;
+            if (!targetFree(obj, $app.val())) { return; }
             setPending(obj, { moveTo: $app.val() });
+            if (hadCopy && $app.val() !== obj.app) {
+                state.message = { kind: 'info', lines: ['Replaced the staged copy with a move: an object is either ' +
+                    'moved or copied.'] };
+            }
             rerender();
         });
         var $appField = el('div', 'ea-field').append(el('label', null, 'App').attr('for', 'ea-app'), $app);
         if (!obj.movable) {
             $appField.append(el('div', 'ea-muted', 'Ships in this app\'s default folder, so it cannot be moved or ' +
-                'deleted. Its permissions can still be changed.'));
+                'deleted. It can be copied to another app, and its permissions can still be changed.'));
         }
         $panel.append($appField);
+
+        var $copy = appOptions(el('select').attr({ id: 'ea-copy', 'data-fid': 'panel-copy' }),
+            pending && pending.copyTo ? pending.copyTo : '', 'Do not copy')
+            .prop('disabled', !obj.copyable || (pending && pending.del));
+        $copy.on('change', function () {
+            if ($copy.val() && !targetFree(obj, $copy.val())) { return; }
+            var hadMove = pending && pending.moveTo;
+            setPending(obj, { copyTo: $copy.val() || obj.app });
+            if (hadMove && $copy.val()) {
+                state.message = { kind: 'info', lines: ['Replaced the staged move with a copy: an object is either ' +
+                    'moved or copied.'] };
+            }
+            rerender();
+        });
+        var $copyField = el('div', 'ea-field').append(el('label', null, 'Copy to app').attr('for', 'ea-copy'), $copy);
+        if (!obj.copyable) {
+            $copyField.append(el('div', 'ea-muted', 'Objects of this type cannot be copied: props-based ' +
+                'objects and tags are merged across apps by splunkd, lookup table files need an upload, and a ' +
+                'navigation menu belongs to its app.'));
+        } else {
+            $copyField.append(el('div', 'ea-muted', 'Creates a second object with the same name, settings and ' +
+                'permissions in that app. The original stays where it is.'));
+        }
+        $panel.append($copyField);
 
         var aclEnabled = obj.can_change_perms && !(pending && pending.del);
         var setAcl = function (next) {
@@ -1080,22 +1290,74 @@ require([
         }
         $panel.append($actions);
 
-        $panel.append(el('h3', null, 'Settings'));
         var details = state.details[obj.key];
         if (!details || details === 'loading') {
+            $panel.append(el('h3', null, 'Settings'));
             $panel.append(el('p', 'ea-muted', 'Loading settings...'));
             loadDetails(obj);
         } else if (details.error) {
+            $panel.append(el('h3', null, 'Settings'));
             $panel.append(el('p', 'ea-message ea-error', 'Could not load the settings. ' + details.error));
-        } else if (!details.settings.length) {
-            $panel.append(el('p', 'ea-muted', 'This object has no settings to show.'));
         } else {
-            var $dl = el('dl', 'ea-settings');
-            $.each(details.settings, function (i, setting) {
-                $dl.append(el('dt', null, setting.name));
-                $dl.append(el('dd', null, setting.value + (setting.truncated ? ' ... (shortened)' : '')));
-            });
-            $panel.append($dl);
+            renderSettings($panel, obj, details);
+        }
+    }
+
+    var LAYER_TEXT = { 'default': 'default', local: 'local', user: 'private' };
+
+    function settingsList(settings, withLayer) {
+        var $dl = el('dl', 'ea-settings');
+        $.each(settings, function (i, setting) {
+            var $dt = el('dt', null, setting.name);
+            if (withLayer) {
+                $dt.append(el('span', 'ea-badge ea-setting-layer', LAYER_TEXT[setting.layer] || setting.layer)
+                    .attr('title', setting.layer === 'user' ? 'Set in the owner\'s private folder' :
+                        'Set in the app\'s ' + setting.layer + ' folder'));
+            }
+            $dl.append($dt);
+            $dl.append(el('dd', null, setting.value + (setting.truncated ? ' ... (shortened)' : '')));
+        });
+        return $dl;
+    }
+
+    // The object's own settings first (read from its stanza in its app's
+    // default and local files, as btool does); everything it inherits
+    // (from [default] stanzas and etc/system/default) only on request.
+    function renderSettings($panel, obj, details) {
+        var showAll = state.showAllSettings[obj.key];
+        var explicit = details.explicit;
+        if (explicit) {
+            $panel.append(el('h3', null, 'Settings set in this object'));
+            $panel.append(el('p', 'ea-muted', 'From its [' + obj.name + '] stanza in ' + details.explicit_conf +
+                '.conf. Settings it inherits from defaults are not listed.'));
+            if (explicit.length) {
+                $panel.append(settingsList(explicit, true));
+            } else {
+                $panel.append(el('p', 'ea-muted', 'None: every setting of this object comes from defaults.'));
+            }
+        } else {
+            $panel.append(el('h3', null, 'Settings'));
+            $panel.append(el('p', 'ea-muted', details.explicit_note === 'capability' ?
+                'All settings, including inherited defaults: telling the object\'s own settings apart needs the ' +
+                'admin_all_objects capability, as it reads the configuration files.' :
+                'All of this object\'s settings are its own.'));
+            $panel.append(details.settings.length ? settingsList(details.settings, false) :
+                el('p', 'ea-muted', 'This object has no settings to show.'));
+            return;
+        }
+        if (details.settings.length <= explicit.length) { return; }   // nothing more to show
+        $panel.append(el('button', 'btn btn-link ea-show-all', showAll ? 'Hide the inherited settings' :
+            'Show all ' + plural(details.settings.length, 'setting') + ', including inherited defaults').attr({
+            type: 'button', 'data-fid': 'show-all:' + obj.key, 'aria-expanded': showAll ? 'true' : 'false'
+        }).on('click', function () {
+            if (state.showAllSettings[obj.key]) { delete state.showAllSettings[obj.key]; } else {
+                state.showAllSettings[obj.key] = true;
+            }
+            renderPanel();
+        }));
+        if (showAll) {
+            $panel.append(el('h3', null, 'All settings, as splunkd reports them'));
+            $panel.append(settingsList(details.settings, false));
         }
     }
 
@@ -1527,10 +1789,16 @@ require([
         $root.find('.ea-tab').eq(next).focus();
     });
 
+    $root.on('click', '.ea-discard-one', function (event) {
+        event.stopPropagation();
+        discardOne(this.getAttribute('data-key'), this.getAttribute('data-kind'));
+    });
+
     $root.on('change', '.ea-select-app', function () {
         var objects = objectsByApp()[this.getAttribute('data-app')] || [];
         var on = this.checked;
         $.each(objects, function (i, obj) {
+            if (obj.ghostOf) { return; }   // a staged copy cannot be selected
             if (on) { state.selected[obj.key] = true; } else { delete state.selected[obj.key]; }
         });
         render();
@@ -1557,7 +1825,7 @@ require([
         var objKey = this.getAttribute('data-key');
         state.dragKeys = state.selected[objKey] ? keys(state.selected) : [objKey];
         var transfer = event.originalEvent.dataTransfer;
-        transfer.effectAllowed = 'move';
+        transfer.effectAllowed = 'copyMove';
         // Firefox starts a drag only when some data is set.
         transfer.setData('text/plain', state.byKey[objKey] ? state.byKey[objKey].name : '');
         $(this).addClass('ea-dragging');
@@ -1573,7 +1841,13 @@ require([
         var app = state.apps[this.getAttribute('data-app')];
         if (!state.dragKeys || !app || !app.target) { return; }
         event.preventDefault();   // marks the box as a valid drop target
-        event.originalEvent.dataTransfer.dropEffect = 'move';
+        // The pointer shows a copy when Ctrl (Cmd) is held, or when nothing
+        // dragged can be moved (it ships in a default folder).
+        var original = event.originalEvent;
+        var copying = original.ctrlKey || original.metaKey || !$.grep(state.dragKeys, function (k) {
+            return state.byKey[k] && state.byKey[k].movable;
+        }).length;
+        original.dataTransfer.dropEffect = copying ? 'copy' : 'move';
         $(this).addClass('ea-drop');
     });
 
@@ -1585,8 +1859,9 @@ require([
         event.preventDefault();
         var app = this.getAttribute('data-app');
         var dragged = state.dragKeys || [];
+        var original = event.originalEvent;
         state.dragKeys = null;
-        stageMove(dragged, app);
+        stageTransfer(dragged, app, original.ctrlKey || original.metaKey ? 'copy' : 'auto');
         render();
     });
 

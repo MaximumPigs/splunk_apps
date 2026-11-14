@@ -766,3 +766,75 @@
     cursor: pointer;
     color: var(--ea-fg);
 }
+
+/* A staged copy, shown in the app it will be copied into: dashed, not draggable. */
+#easyadmin-apps .ea-object.ea-ghost {
+    border: 1px dashed var(--ea-changed);
+}
+
+#easyadmin-apps .ea-object.ea-ghost .ea-object-name {
+    font-style: italic;
+}
+
+/* Keeps a ghost row's icon in line with the rows that have a tick box. */
+#easyadmin-apps .ea-select-spacer {
+    display: inline-block;
+    width: 13px;
+    flex: none;
+}
+
+/* The x on a staged-change badge: discards that one change. */
+#easyadmin-apps .ea-discard-one {
+    margin-left: 4px;
+    padding: 0 3px;
+    /* A larger target than the glyph alone (WCAG 2.5.8). */
+    min-width: 16px;
+    min-height: 16px;
+    border: none;
+    background: none;
+    color: var(--ea-fg);
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#easyadmin-apps .ea-discard-one:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+#easyadmin-apps .ea-discard-one:hover {
+    background: var(--ea-hover);
+}
+
+/*
+ * Several staged-change badges (each with its x) can be wider than the box.
+ * The name keeps a readable width, and the badges wrap under it rather than
+ * squeezing it to a letter.
+ */
+#easyadmin-apps .ea-object {
+    flex-wrap: wrap;
+}
+
+#easyadmin-apps .ea-object .ea-object-name {
+    flex: 1 1 140px;
+    min-width: 140px;
+}
+
+#easyadmin-apps .ea-object .ea-tags {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-left: auto;
+}
+
+/* Where an object's own setting is set: default, local or private. */
+#easyadmin-apps .ea-setting-layer {
+    margin-left: 6px;
+    font-family: inherit;
+    font-weight: normal;
+}
+
+#easyadmin-apps .ea-show-all {
+    padding-left: 0;
+}

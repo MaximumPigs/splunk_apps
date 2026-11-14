@@ -1,6 +1,6 @@
 ---
-confirmed: 1
-seen: [2026-11-14]
+confirmed: 2
+seen: [2026-11-14, 2026-11-15]
 apps: [easyadmin]
 ---
 # Show which file sets a conf value (precedence, like btool)
@@ -53,6 +53,15 @@ confirm on the PR before claiming Cloud-ready.
 `local` folders is reported in order, secrets never returned, bad and
 excluded names refused, a user without `admin_all_objects` refused; UI tests
 in `tests/ui/easyadmin/test_easyadmin_conf_ui.py`.
+
+**Own settings** (what the object's stanza sets, not what it inherits):
+read its `[<name>]` stanza from the app's `default` and `local` files, plus
+`etc/users/<owner>/<app>/local` for a private object, later layers winning.
+Conf from the fixed `STANZA_CONFS` map; app and owner must equal an
+`os.listdir` entry (never joined from the request); secrets masked; gated on
+`admin_all_objects` from `current-context` (`add_explicit` in `easyadmin_apps_core.py`). Live-verified: a
+created macro gives `definition` from `local`, a shipped one `default`, a
+private one `user`. Same hardening as above.
 
 **Reference:** `apps/easyadmin/bin/easyadmin_conf_core.py`,
 `apps/easyadmin/bin/easyadmin_conf_rest.py`,
