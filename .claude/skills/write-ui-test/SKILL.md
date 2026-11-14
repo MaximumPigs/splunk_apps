@@ -35,6 +35,7 @@ JavaScript problems the screenshot may not.
 | `page_log(page)` | `.console_errors` and `.page_errors` (uncaught exceptions) since the page was opened. |
 | `web` | The signed-in session: `web.url(path)` for Splunk Web URLs, `web.new_page()`. |
 | `page` | This test's tab. A failure saves `<test>-FAILED.png` and `<test>-trace.zip`. |
+| `sandbox`, `sandbox_client` | Create and change users, roles and app permissions, undone after the test; an admin REST client to check what a save wrote. |
 
 Replay a failure step by step with `python -m playwright show-trace build/reports/ui/<app>/<test>-trace.zip`.
 
@@ -45,9 +46,15 @@ Replay a failure step by step with `python -m playwright show-trace build/report
 - One behaviour per test; the docstring says what the README promises.
 - Assert `page_log(page).page_errors == []` on the main page test. Do not
   assert on all `console_errors`: Splunk Web logs its own.
-- Read-only by default. A test that saves must create and delete its own
-  objects (like the live tests' throwaway roles), and never edits real roles,
-  users or preferences.
+- A test that saves works on objects from the `sandbox` fixture (the same as
+  live tests; see `write-live-test`), and calls `sandbox.remember` before
+  anything that could touch a real object. The environment guard fails any
+  test that leaves users, roles or app permissions changed. Never change the
+  signed-in user's preferences.
+- Answer `window.confirm` with `page.once("dialog", ...)` before the click,
+  and record its message to assert on. To sign in as another user, create it
+  with `sandbox.create_user` and open `splk.ui.SplunkWeb(target,
+  environ={...}, state_dir=<tmp>)` with its credentials.
 - When a result depends on the signed-in user's settings (theme, timezone),
   read the setting in the test and `pytest.skip` if it does not apply. Do not
   change the user's preferences.

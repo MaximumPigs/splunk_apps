@@ -74,6 +74,10 @@ config is `config/targets.toml`; the token and the Splunk Web sign-in are in
   see the page yourself: open the screenshot and check it. Ask the person only
   for judgement (does it look right) or what the browser cannot reach, and
   say what you already checked.
+- **Tests may change the dev target, but only through `sandbox`.** Live and UI
+  tests can create users and roles, edit roles and change app permissions;
+  the guard snapshots users, roles and app permissions around every test and
+  fails any test that leaves a difference (see `write-live-test`).
 - **Prove a fix closes the original reproduction**, before and after, not just
   that a new test passes.
 - Report what was verified versus inferred, volunteer the gap ("passes

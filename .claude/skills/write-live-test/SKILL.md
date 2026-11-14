@@ -19,6 +19,30 @@ skipped in plain `pytest` and in CI.
 | `splunk` | The REST client (`app_info`, `oneshot`, ...). |
 | `target` | Target config, including `target.test_index`. |
 | `expected_version(app)` | Version from `app.conf`. |
+| `sandbox` | Create and change users, roles and app permissions; all undone after the test, pass or fail. |
+
+## Tests that change the target
+
+The target is a dev instance with an admin token, so a live test may create
+users and roles, edit existing roles or change app permissions. Do it only
+through `sandbox` (`splk.sandbox.Sandbox`):
+
+| Call | Undone by |
+| --- | --- |
+| `sandbox.create_role(label, **attrs)` -> name | delete |
+| `sandbox.create_user(roles, label)` -> (name, password) | delete (before its roles) |
+| `sandbox.update(kind, name, **attrs)` | writing the touched attributes back |
+| `sandbox.remember(kind, name, [attrs])` | the same, for changes the app or a page makes |
+| `sandbox.set_app_permissions(app, read=, write=)` | writing the old ACL back |
+| `client.as_user(name, password)` | (a REST client acting as a sandbox user) |
+
+Created objects are named `splktest_<label>_<hex8>`; nothing else is ever
+deleted. Around every test (autouse, `splk.testing`) the guard snapshots all
+users, roles and the repo's app permissions, and after cleanup compares
+again: anything still different is repaired where safe and the test errors in
+teardown, naming each difference. A killed run is repaired and swept at the
+next start. Changing an existing user's password is refused: it cannot be
+read back.
 
 ## Choose the input
 
@@ -52,6 +76,8 @@ skipped in plain `pytest` and in CI.
 - One behaviour per test; the docstring says what the README promises.
 - Each test must fail if the feature is removed. Check that by breaking it once.
 - Log nothing secret; the `search` fixture already logs the SPL.
+- Never create or change objects with raw `splunk.request` writes: the guard
+  will catch it, but only `sandbox` makes cleanup part of the test.
 - Searches run as oneshot jobs, which return Splunk's error messages. Do not
   switch to `search/jobs/export`: it returns 200 with an empty body on failure.
 
