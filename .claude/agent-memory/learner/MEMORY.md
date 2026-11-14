@@ -53,5 +53,6 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): cannot prompt; reload after permission change. |
 | 1 | pattern | [Probe guards before designing on them](lessons/process-probe-guards-before-designing-on-them.md): `.agent/` write denied. Playbook `observe-tool-behaviour-first`. |
 | 1 | lesson | [PowerShell mangled JSON argument](lessons/windows-powershell-json-arguments.md): spawn from Python with an arg list. |
+| 1 | pattern | [Narrowing a guard regex reopened bypasses](lessons/security-guard-regex-narrowing-reopens-bypasses.md): `+main`, quotes, `bash -c`, `~0` slipped; test the deny corpus first, boundaries = what a ref cannot contain. Playbook `probe-a-hook-with-decide`. |
 | 1 | hook | [AI commit author became a co-author trailer](lessons/git-ai-commit-author.md): squash merge credits every commit author; the bash guard checks the author. |
 | 1 | hook | [PowerShell corrupted UTF-8](lessons/windows-powershell-encoding.md): never write repo files with PowerShell. |
