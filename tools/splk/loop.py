@@ -244,6 +244,18 @@ def changed_files():
     return [line[3:].strip().strip('"') for line in out.splitlines() if line.strip()]
 
 
+def new_branch(name):
+    """Create (or reset) a work branch at HEAD that tracks nothing.
+
+    A branch tracking main is one Sync click in an editor away from pushing
+    to main: VS Code ran `git push origin <branch>:main` for exactly that
+    reason (2026-11-15). The branch gets its own upstream on first push.
+    """
+    git("checkout", "-q", "--no-track", "-B", name)
+    # -B keeps the upstream of a branch that already existed; drop it.
+    git("branch", "--unset-upstream", check=False)
+
+
 def commit_all(message):
     """Commit everything as the owner (git's configured identity). False if nothing changed."""
     if not changed_files():
@@ -456,7 +468,7 @@ def phase_groom(state, settings):
         branch = loop_core.branch_for(item)
         state["item"] = {"key": item.key, "section": item.section, "title": item.title,
                          "app": item.app, "branch": branch, "kind": "feature"}
-        git("checkout", "-q", "-B", branch)
+        new_branch(branch)
         commit_all("Roadmap: groom before %s" % item.title)
         clear_handoff()
         write_file(ITEM_FILE, item.text)
@@ -464,13 +476,13 @@ def phase_groom(state, settings):
     elif loop_core.should_audit([i for i in items if i.key not in parked]):
         state["item"] = {"key": "audit", "section": "Roadmap", "title": "Proposals from a code review",
                          "app": None, "branch": "roadmap/audit-%s" % stamp, "kind": "roadmap"}
-        git("checkout", "-q", "-B", state["item"]["branch"])
+        new_branch(state["item"]["branch"])
         commit_all("Roadmap: groom")
         state["phase"] = "audit"
     elif changed_files():
         state["item"] = {"key": "groom", "section": "Roadmap", "title": "Roadmap answers and questions",
                          "app": None, "branch": "roadmap/groom-%s" % stamp, "kind": "roadmap"}
-        git("checkout", "-q", "-B", state["item"]["branch"])
+        new_branch(state["item"]["branch"])
         commit_all("Roadmap: record answers and open questions")
         state["phase"] = "publish"
     else:
