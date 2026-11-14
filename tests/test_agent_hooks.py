@@ -47,6 +47,13 @@ def run_hook(name, event, project_dir):
     "git -C . push origin main",
     "git push origin HEAD:main",
     "rm -rf apps",
+    "git checkout -b feature/x origin/main",
+    "git checkout -B feature/x origin/main",
+    "git -C d:/repo checkout -b feature/x origin/main",
+    "git switch -c feature/x origin/main",
+    "git branch feature/x origin/main",
+    "git branch --set-upstream-to=origin/main",
+    "git branch -u origin/main feature/x",
 ])
 def test_bash_denies_bypasses(command):
     decision, reason = guard_bash.decide(command, environ={})
@@ -98,6 +105,12 @@ def test_bash_allows_reads_in_loop_steps(command):
     "cat .env.example",
     "git push -u origin feature/my-branch",
     "rm -rf build/reports",
+    "git checkout --no-track -b feature/x origin/main",
+    "git switch --no-track -c feature/x origin/main",
+    "git checkout -b feature/x main",
+    "git checkout main",
+    "git branch -r --contains origin/main",
+    "git log --oneline origin/main",
 ])
 def test_bash_allows_paved_road(command):
     assert guard_bash.decide(command, environ={}) == (None, None), command

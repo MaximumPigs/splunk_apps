@@ -36,6 +36,15 @@ RULES = [
     # Any spelling: `git push origin main`, `git -C . push origin main`, refspecs.
     (r"\bgit\b[^|;&]*\bpush\b[^|;&]*\b(main|master)\b",
      "deny", "Never push to main; push the branch and open a PR."),
+    # A branch that tracks origin/main is one editor Sync away from pushing to
+    # main: VS Code ran `git push origin <branch>:main` for exactly that
+    # (2026-11-15). Branching from origin/main is fine with --no-track.
+    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+-[bB]|switch\s+(-[cC]|--create|--force-create)|branch)"
+     r"\s+(?!-)\S+\s+origin/(main|master)\b",
+     "deny", "This branch would track main, so an editor Sync could push it to main. "
+             "Add --no-track: `git checkout --no-track -b <branch> origin/main`."),
+    (r"\bgit\b[^|;&]*\bbranch\b[^|;&]*(--set-upstream-to[=\s]|\s-u\s+)origin/(main|master)\b",
+     "deny", "A feature branch must not track main; it gets its own upstream on first push."),
     # PowerShell file writes corrupt UTF-8 (ANSI codepage) or add a BOM (5.1).
     (r"\b(set-content|out-file|add-content)\b",
      "deny", "Do not write repository files with PowerShell: it corrupts UTF-8 or adds a BOM. "
