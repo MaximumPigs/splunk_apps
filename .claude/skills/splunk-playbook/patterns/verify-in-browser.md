@@ -1,6 +1,6 @@
 ---
-confirmed: 1
-seen: [2026-11-14]
+confirmed: 2
+seen: [2026-11-14, 2026-11-14]
 apps: [easyadmin]
 ---
 # See it in a browser before claiming it works
@@ -33,7 +33,9 @@ and four published claims were wrong because nobody looked
 
 Seen working on easyadmin 1.1.0 (2026-11-14): a `shot` per settings tab in
 the UI test gave the UX review its evidence, and the probe's `-FAILED.png`
-showed the role editor's real layout at once.
+showed the role editor's real layout at once. Again on 1.2.0: the drag
+test's `-FAILED.png` showed the hidden drop target in one look
+(`lessons/ux-filter-hides-drop-target.md`).
 
 **Verify:** the UI stage of `splk dev <app>` is green, and the screenshot in
 `build/reports/ui/<app>/` shows the feature.

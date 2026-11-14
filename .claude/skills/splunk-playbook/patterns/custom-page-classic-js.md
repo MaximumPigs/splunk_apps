@@ -1,6 +1,6 @@
 ---
-confirmed: 2
-seen: [2026-11-12, 2026-11-14]
+confirmed: 3
+seen: [2026-11-12, 2026-11-14, 2026-11-14]
 apps: [easyadmin]
 ---
 # Custom page: Classic dashboard hosting JavaScript
@@ -33,7 +33,18 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
    `tab.note` only when set and explains lists only when the tab has a list
    field (`legend()` in `easyadmin_roles.js`; UI test
    `test_imported_value_is_shown_under_a_setting`). Kept after UX review.
-
+8. Pages that re-render the whole body (`easyadmin_apps.js`):
+   - put the `role=status` and `role=alert` live regions **outside** the
+     re-rendered body, created once, and set their text only when it changes;
+   - give every focusable control a `data-fid` and restore focus, caret and
+     scroll after each render, so typing in a filter is not lost;
+   - filters narrow items, never the containers that are drop or move
+     targets (`lessons/ux-filter-hides-drop-target.md`);
+   - a button whose state depends on an input is updated from that input's
+     handler, not only at render (`lessons/ux-every-control-needs-a-ui-test.md`).
+9. Bulk or destructive edits: stage, then one Apply that reports a result per
+   object; keep failed items staged for retry, and re-key staged edits for an
+   object whose location changed in a partial apply.
 **Why this way:**
 - `version="1.1"` selects the current jQuery, which AppInspect requires of a
   dashboard that loads custom JavaScript.
@@ -45,10 +56,13 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
 - Splunk Web rejects state-changing proxy requests without the form key.
 
 **Verify:** `tests/ui/<app>/`: the page renders its main element, has no page
-errors, and each control does what it says (`write-ui-test` skill). Look at
+errors, and each control does what it says, secondary panels included: an
+untested bulk-panel control shipped a Major (`write-ui-test` skill). Look at
 the screenshot. Check static changes with `splk shot <app>/<view>` after the
 build bump.
 
 **Reference:** `apps/easyadmin/default/data/ui/views/role_management.xml`,
 `apps/easyadmin/appserver/static/easyadmin_roles.js`,
-`tests/ui/easyadmin/test_easyadmin_ui.py`.
+`tests/ui/easyadmin/test_easyadmin_ui.py`; steps 8 and 9 in
+`views/app_management.xml`, `easyadmin_apps.js`,
+`tests/ui/easyadmin/test_easyadmin_apps_ui.py`.
