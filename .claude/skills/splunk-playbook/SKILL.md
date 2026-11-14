@@ -32,6 +32,7 @@ finally worked instead of rediscovering it.
 | [Show which file sets a conf value](patterns/conf-precedence-from-files.md) | Attributing `.conf` values to an app and layer, clashes, btool-like views; reading conf files safely. | 2 (easyadmin) |
 | [Custom search command](patterns/search-command.md) | Adding an SPL command with splunklib. | 1 (fillcontinuous) |
 | [See it in a browser before claiming it works](patterns/verify-in-browser.md) | Any change whose effect is only visible in Splunk Web. | 2 (easyadmin) |
+| [Probe a hook from a Python file](patterns/probe-a-hook-with-decide.md) | Changing or reviewing a deny rule in `.claude/hooks/`; testing both the deny corpus and the false positive. | 1 (repo hooks) |
 
 ## Writing a pattern
 

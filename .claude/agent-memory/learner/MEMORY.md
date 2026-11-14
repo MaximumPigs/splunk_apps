@@ -48,5 +48,6 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | rule | [sc_admin beside admin](lessons/appinspect-sc-admin.md): `check_kos_are_accessible` on Cloud. |
 | 1 | rule | [AppInspect actions take app_path oppositely](lessons/ci-appinspect-action-paths.md): CLI wants a file, API a directory. |
 | 1 | rule | [SDK metadata overstated its Python floor](lessons/vendoring-sdk-python-metadata.md): vendor without `ai/`. |
+| 1 | pattern | [Narrowing a guard regex reopened bypasses](lessons/security-guard-regex-narrowing-reopens-bypasses.md): `+main`, quotes, `bash -c`, `~0` slipped; test the deny corpus first, boundaries = what a ref cannot contain. Playbook `probe-a-hook-with-decide`. |
 | 1 | hook | [AI commit author became a co-author trailer](lessons/git-ai-commit-author.md): squash merge credits every commit author; the bash guard checks the author. |
 | 1 | hook | [PowerShell corrupted UTF-8](lessons/windows-powershell-encoding.md): never write repo files with PowerShell. |
