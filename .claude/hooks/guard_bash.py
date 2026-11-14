@@ -51,7 +51,7 @@ RULES = [
     # main: VS Code ran `git push origin <branch>:main` for exactly that
     # (2026-11-15). Branching from origin/main is fine with --no-track.
     # The server-side ruleset is the boundary; these stop accidents.
-    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+(-[bBt]|--track)|switch\s+(-[cC]|--create|--force-create)"
+    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+(-[bBt]\S*|--track)|switch\s+(-[cC]|--create|--force-create)"
      r"|worktree\s+add)\b[^|;&]*[\s=]" + _ORIGIN_MAIN,
      "deny", _TRACK_REASON),
     (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\bbranch\s+((--track|-t)\s+)?(?!-)\S+\s+((--track|-t)\s+)?"

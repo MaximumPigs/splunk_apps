@@ -74,6 +74,7 @@ def run_hook(name, event, project_dir):
     "git checkout --track origin/main",
     "git checkout -t origin/main",
     "git checkout --track=origin/main",
+    "git checkout -bx origin/main",
     "rm -rf apps",
     "git checkout -b feature/x origin/main",
     "git checkout -B feature/x origin/main",
