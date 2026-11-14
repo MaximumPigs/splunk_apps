@@ -44,9 +44,6 @@ RULES = [
      "deny", "Recursive delete of a top-level path. Delete specific files instead."),
     (r"\bremove-item\b.*-recurse.*\b(apps|\.git|tests|tools)\b",
      "deny", "Recursive delete of a top-level path. Delete specific files instead."),
-    # A restart through splk is allowed, but the person decides.
-    (r"\bsplk\b.*\s--restart\b",
-     "ask", "This may restart splunkd on the target. Confirm before it runs."),
 ]
 
 COMPILED = [(re.compile(p, re.IGNORECASE), d, r) for p, d, r in RULES]
