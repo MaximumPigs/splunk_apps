@@ -4,7 +4,7 @@ The owner wants easyadmin to change only what Settings > Roles can. This walks
 the editor on the live instance for a throwaway role, opens every tab of the
 edit dialog, and records what each shows (screenshots plus the text and form
 controls) in build/reports/ui/easyadmin/role-editor-*.png and
-role-editor.json. Nothing is saved: the dialog is closed with Escape.
+role-editor.json. Nothing is saved: the page is left with Cancel.
 
 Delete this file once easyadmin's tabs have been matched to the editor.
 """
@@ -45,30 +45,38 @@ def test_probe_role_editor(web, page, sandbox, artifacts):
     except Exception as exc:  # noqa: BLE001 - a probe records, it does not fail
         report["steps"].append("no filter box: %s" % str(exc).splitlines()[0])
 
+    # On 10.6.1 the role name opens a full "Edit Role <name>" page (not a
+    # modal dialog), with its own tab strip and Cancel / Save Role buttons.
     try:
         page.get_by_text(role, exact=True).first.click(timeout=10000)
-        dialog = page.locator("[role=dialog]").first
-        dialog.wait_for(timeout=15000)
+        page.get_by_text("Edit Role %s" % role).first.wait_for(timeout=15000)
+        page.wait_for_load_state("networkidle")
         page.wait_for_timeout(1500)
-        report["steps"].append("opened the edit dialog")
+        report["steps"].append("opened the edit page: %s" % page.url)
     except Exception as exc:  # noqa: BLE001
         report["steps"].append("could not open the editor: %s" % str(exc).splitlines()[0])
         web.screenshot(page, os.path.join(artifacts, "role-editor-failed.png"))
         _write(artifacts, report)
         raise AssertionError("PROBE could not open the role editor; see role-editor.json")
 
-    tabs = dialog.locator("[role=tab]")
-    labels = [t.strip() for t in tabs.all_inner_texts()] or ["(no tabs)"]
+    tabs = page.locator("[role=tab]")
+    labels = [t.strip() for t in tabs.all_inner_texts()]
     report["tab_labels"] = labels
-    for index, label in enumerate(labels):
-        if tabs.count():
+    body = page.locator("body")
+    for index, label in enumerate(labels or ["(no tabs)"]):
+        if labels:
             tabs.nth(index).click()
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(2000)
         shot = os.path.join(artifacts, "role-editor-tab-%d.png" % (index + 1))
-        dialog.screenshot(path=shot)
-        report["tabs"].append({"label": label, "text": dialog.inner_text()[:6000],
-                               "controls": _controls(dialog)})
-    page.keyboard.press("Escape")
+        web.screenshot(page, shot)
+        report["tabs"].append({"label": label, "text": body.inner_text()[:20000],
+                               "controls": _controls(body)})
+    # Leave without saving: Cancel discards the form.
+    try:
+        page.get_by_role("button", name="Cancel").first.click(timeout=5000)
+        report["steps"].append("left with Cancel")
+    except Exception as exc:  # noqa: BLE001
+        report["steps"].append("no Cancel button: %s" % str(exc).splitlines()[0])
     _write(artifacts, report)
     log.info("Role editor probe written to %s", artifacts)
 

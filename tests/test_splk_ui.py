@@ -17,6 +17,8 @@ from splk import cli, config, stages
 from splk import ui as splk_ui
 
 USER, PASSWORD = "admin", "changeme-dev"
+# A second account, for sessions opened with new_user_page().
+OTHER_USER, OTHER_PASSWORD = "viewer", "viewer-dev"
 
 
 def _target(**overrides):
@@ -153,7 +155,7 @@ class FakeSplunkWeb(http.server.BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             return self._send(200, LOGIN_PAGE.format(return_to=query.get("return_to", ["/en-US/app/launcher/home"])[0],
                                                      error=""))
-        if "session=ok" not in (self.headers.get("Cookie") or ""):
+        if "session=ok-" not in (self.headers.get("Cookie") or ""):
             return self._send(303, headers={"Location": "/en-US/account/login?return_to=" +
                                             urllib.parse.quote(self.path, safe="")})
         return self._send(200, VIEW_PAGE)
@@ -161,10 +163,13 @@ class FakeSplunkWeb(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length") or 0)
         form = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8"))
-        if form.get("username") == [USER] and form.get("password") == [PASSWORD]:
+        accounts = {USER: PASSWORD, OTHER_USER: OTHER_PASSWORD}
+        user = (form.get("username") or [""])[0]
+        if user in accounts and form.get("password") == [accounts[user]]:
             type(self).logins += 1
+            # The cookie names the user, so a test can tell sessions apart.
             return self._send(303, headers={"Location": form.get("return_to", ["/en-US/app/launcher/home"])[0],
-                                            "Set-Cookie": "session=ok; Path=/"})
+                                            "Set-Cookie": "session=ok-%s; Path=/" % user})
         return self._send(200, LOGIN_PAGE.format(return_to="", error="Invalid username or password."))
 
 
@@ -227,5 +232,29 @@ def test_browser_reports_page_that_never_readies(fake_web, tmp_path):
         with pytest.raises(splk_ui.UiError) as err:
             web.open_view(web.new_page(), "easyadmin", ready_selector="#never")
         assert "#never" in str(err.value)
+    finally:
+        web.__exit__(None, None, None)
+
+
+def test_second_user_signs_in_in_the_same_browser_without_touching_the_cache(fake_web, tmp_path):
+    """new_user_page() is a separate cookie jar, and never replaces the owner's cached session."""
+    web = _open_web(fake_web, tmp_path)
+    try:
+        web.open_view(web.new_page(), "easyadmin", "role_management", ready_selector="#root table.ready")
+        state = splk_ui.state_file(fake_web, str(tmp_path))
+        with open(state, encoding="utf-8") as handle:
+            cached = handle.read()
+
+        page = web.new_user_page(OTHER_USER, OTHER_PASSWORD)
+        web.open_view(page, "easyadmin", "role_management", ready_selector="#root table.ready")
+        assert FakeSplunkWeb.logins == 2
+        assert [c["value"] for c in page.context.cookies()] == ["ok-" + OTHER_USER]
+        assert [c["value"] for c in web.context.cookies()] == ["ok-" + USER]
+        with open(state, encoding="utf-8") as handle:
+            assert handle.read() == cached
+
+        with pytest.raises(splk_ui.UiError) as err:
+            web.new_user_page(OTHER_USER, "wrong")
+        assert OTHER_USER in str(err.value) and "wrong" not in str(err.value)
     finally:
         web.__exit__(None, None, None)

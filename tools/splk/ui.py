@@ -187,6 +187,9 @@ class SplunkWeb(object):
         self._playwright = None
         self._browser = None
         self.context = None
+        # Contexts opened by new_user_page(), keyed by id(): their credentials,
+        # so open() can sign them in again without touching the owner's cache.
+        self._user_contexts = {}
 
     # -------------------------------------------------------------- lifecycle
 
@@ -202,12 +205,7 @@ class SplunkWeb(object):
             launch["executable_path"] = executable
         log.debug("Launching Chromium (headless=%s, executable=%s)", launch["headless"], executable or "bundled")
         self._browser = self._playwright.chromium.launch(**launch)
-        options = {
-            "viewport": VIEWPORT,
-            # Same switch as the REST client: a dev instance's self-signed
-            # certificate is accepted only when the target says so.
-            "ignore_https_errors": not self.target.verify_tls,
-        }
+        options = self._context_options()
         if os.path.isfile(self.state_path):
             # Reuse the cached sign-in; if it has expired, open() signs in again.
             options["storage_state"] = self.state_path
@@ -218,8 +216,11 @@ class SplunkWeb(object):
     def __exit__(self, *exc_info):
         # Close in reverse order; each step is best-effort so one failure does
         # not leave a browser process behind.
-        for closer in (getattr(self.context, "close", None), getattr(self._browser, "close", None),
-                       getattr(self._playwright, "stop", None)):
+        closers = [context.close for context, _ in self._user_contexts.values()]
+        closers += [getattr(self.context, "close", None), getattr(self._browser, "close", None),
+                    getattr(self._playwright, "stop", None)]
+        self._user_contexts = {}
+        for closer in closers:
             if closer is None:
                 continue
             try:
@@ -228,11 +229,38 @@ class SplunkWeb(object):
                 log.debug("Browser cleanup step failed: %s", exc)
         return False
 
+    def _context_options(self):
+        return {
+            "viewport": VIEWPORT,
+            # Same switch as the REST client: a dev instance's self-signed
+            # certificate is accepted only when the target says so.
+            "ignore_https_errors": not self.target.verify_tls,
+        }
+
     # ------------------------------------------------------------------ pages
 
     def new_page(self):
         """Open a tab whose console errors are recorded (see page_log)."""
-        page = self.context.new_page()
+        return self._track(self.context.new_page())
+
+    def new_user_page(self, user, password):
+        """Open a tab signed in as another user, in this same browser.
+
+        Tests that need a second account (a read-only user, say) must not
+        start a second SplunkWeb: Playwright's sync API refuses to start
+        while another sync_playwright() is running in the same thread. A new
+        browser context has its own cookies, so this session and the
+        owner's never mix, and it is never written to the owner's cached
+        state file. It is closed with this SplunkWeb.
+        """
+        context = self._browser.new_context(**self._context_options())
+        context.set_default_timeout(self.timeout_ms)
+        self._user_contexts[id(context)] = (context, (user, password))
+        page = self._track(context.new_page())
+        self._sign_in(page, user, password)
+        return page
+
+    def _track(self, page):
         page_log = PageLog()
         page_log.attach(page)
         self.logs[id(page)] = page_log
@@ -246,12 +274,28 @@ class SplunkWeb(object):
         return web_url(self.target, path)
 
     def login(self, page):
-        """Sign in through Splunk Web's login form and cache the session.
+        """Sign in through Splunk Web's login form.
+
+        A page from new_user_page() signs in again as its own user. Any other
+        page signs in as the owner (from the environment), and that session
+        is cached so the next run does not sign in again.
+        """
+        entry = self._user_contexts.get(id(page.context))
+        if entry is not None:
+            self._sign_in(page, *entry[1])
+            return
+        user, password = web_credentials(self.target, self.environ)
+        self._sign_in(page, user, password, owner=True)
+        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
+        self.context.storage_state(path=self.state_path)
+        log.debug("Cached Splunk Web session in %s", self.state_path)
+
+    def _sign_in(self, page, user, password, owner=False):
+        """Fill and submit the login form; raise UiError if it is refused.
 
         Fields are found by name, and the submit control by type, rather than
         by ids or classes that change between Splunk Web versions.
         """
-        user, password = web_credentials(self.target, self.environ)
         log.info("Signing in to Splunk Web at %s as %s", self.target.web_url, user)
         page.goto(self.url(LOGIN_PATH), wait_until="domcontentloaded")
         page.fill('input[name="username"]', user)
@@ -266,13 +310,12 @@ class SplunkWeb(object):
         try:
             page.wait_for_url(lambda url: not is_login_url(url))
         except Exception:  # noqa: BLE001 - Playwright's TimeoutError; reported below
-            raise UiError(
-                "Splunk Web sign-in failed: still on the login page after submitting the form. "
-                "Check $%s and $%s, and that the account is not locked out."
-                % (self.target.web_user_env, self.target.web_password_env))
-        os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
-        self.context.storage_state(path=self.state_path)
-        log.debug("Cached Splunk Web session in %s", self.state_path)
+            if owner:
+                hint = "Check $%s and $%s" % (self.target.web_user_env, self.target.web_password_env)
+            else:
+                hint = "Check the credentials passed for %s" % user
+            raise UiError("Splunk Web sign-in failed: still on the login page after submitting the form. "
+                          "%s, and that the account is not locked out." % hint)
 
     def _goto(self, page, url):
         """page.goto, turning a network failure into one clear UiError.
