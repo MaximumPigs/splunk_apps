@@ -10,7 +10,7 @@ Cloud vetting.
 | App ID | Splunkbase name | What it does |
 | --- | --- | --- |
 | [`fillcontinuous`](apps/fillcontinuous/) | MaximumPigs fillcontinuous Add-on | Fills the missing time buckets that `timechart` and `makecontinuous` cannot, across any number of group-by fields. Registers `fillcontinuous` and the alias `fillgaps`. |
-| [`easyadmin`](apps/easyadmin/) | MaximumPigs Easy Admin App | An admin page for bulk-editing settings with the logged-in user's own permissions. Role management: every role's indexes, capabilities, inheritance and other settings in tabbed grids, saved in one submit. |
+| [`easyadmin`](apps/easyadmin/) | MaximumPigs Easy Admin App | An admin page for bulk-editing settings with the logged-in user's own permissions. Role management: every role's indexes, capabilities, inheritance and other settings in tabbed grids, saved in one submit. App management: every app's knowledge objects in boxes, moved by drag and drop, re-permissioned or deleted in bulk, applied at once. |
 
 Splunkbase requires the display name to follow
 `(Company | Brand | Author) [solution] (App | Add-on | Connector)`, and to match

@@ -1,0 +1,501 @@
+/*
+ * Easy Admin - app management page.
+ *
+ * Same scheme as easyadmin_roles.css: two palettes, light and dark, as custom
+ * properties on the page root, and every colour below refers to one of them.
+ * tests/test_easyadmin_assets.py checks both stylesheets: no literal colour
+ * outside the palette blocks, the same names in both palettes, and readable
+ * contrast for each text and background pair.
+ *
+ * The page script adds .ea-dark to the root when the background Splunk drew
+ * behind the panel is dark.
+ */
+
+#easyadmin-apps {
+    --ea-fg: #1a1c20;
+    --ea-muted: #55606e;
+    --ea-bg: #ffffff;
+    --ea-head: #f2f4f5;
+    --ea-hover: #f7f9fa;
+    --ea-border: #c3cbd4;
+    --ea-grid: #e1e6eb;
+    --ea-badge-bg: #dfe4ea;
+    --ea-badge-fg: #3c444d;
+    --ea-changed: #b86e00;
+    --ea-changed-bg: #fdf0dc;
+    --ea-drop: #1a6fc4;
+    --ea-drop-bg: #e3effb;
+    --ea-focus: #1a6fc4;
+    --ea-danger: #b0281b;
+    --ea-input-bg: #ffffff;
+    --ea-input-fg: #1a1c20;
+    --ea-input-border: #a9b3be;
+    --ea-info-bg: #f2f4f5;
+    --ea-info-edge: #6b7785;
+    --ea-error-bg: #fdecea;
+    --ea-error-edge: #c0392b;
+    --ea-success-bg: #e8f5e9;
+    --ea-success-edge: #2e7d32;
+    --ea-shadow: #8a96a3;
+    color-scheme: light;
+}
+
+#easyadmin-apps.ea-dark {
+    --ea-fg: #e6e9ed;
+    --ea-muted: #a7b0bb;
+    --ea-bg: #1e2228;
+    --ea-head: #2a2f37;
+    --ea-hover: #262b33;
+    --ea-border: #4b5360;
+    --ea-grid: #333944;
+    --ea-badge-bg: #3a414c;
+    --ea-badge-fg: #dfe4ea;
+    --ea-changed: #f0a030;
+    --ea-changed-bg: #4a3512;
+    --ea-drop: #5aa9f5;
+    --ea-drop-bg: #1f3a57;
+    --ea-focus: #5aa9f5;
+    --ea-danger: #ff8a80;
+    --ea-input-bg: #15181d;
+    --ea-input-fg: #e6e9ed;
+    --ea-input-border: #4b5360;
+    --ea-info-bg: #262b33;
+    --ea-info-edge: #7b8794;
+    --ea-error-bg: #4a1f1c;
+    --ea-error-edge: #e5534b;
+    --ea-success-bg: #1e3a24;
+    --ea-success-edge: #4caf50;
+    --ea-shadow: #000000;
+    color-scheme: dark;
+}
+
+#easyadmin-apps {
+    color: var(--ea-fg);
+    background: var(--ea-bg);
+    padding: 12px;
+}
+
+/* Splunk Web's form styles assume its light theme; take colours from the palette. */
+#easyadmin-apps input[type="text"],
+#easyadmin-apps select {
+    color: var(--ea-input-fg);
+    background: var(--ea-input-bg);
+    border: 1px solid var(--ea-input-border);
+}
+
+#easyadmin-apps input[type="text"]::placeholder {
+    color: var(--ea-muted);
+}
+
+#easyadmin-apps .btn:not(.btn-primary) {
+    color: var(--ea-fg);
+    background: var(--ea-head);
+    border: 1px solid var(--ea-border);
+}
+
+#easyadmin-apps .btn.btn-link {
+    background: none;
+    border-color: transparent;
+    text-decoration: underline;
+}
+
+#easyadmin-apps .btn.ea-danger {
+    color: var(--ea-danger);
+}
+
+#easyadmin-apps button:focus-visible,
+#easyadmin-apps input:focus-visible,
+#easyadmin-apps select:focus-visible,
+#easyadmin-apps [tabindex]:focus-visible {
+    outline: 2px solid var(--ea-focus);
+    outline-offset: 1px;
+}
+
+/* Live regions: read by screen readers, not drawn (the visible copy is in .ea-messages). */
+#easyadmin-apps .ea-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+#easyadmin-apps .ea-muted {
+    color: var(--ea-muted);
+}
+
+#easyadmin-apps .ea-toolbar,
+#easyadmin-apps .ea-selection {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+#easyadmin-apps .ea-toolbar input[type="text"],
+#easyadmin-apps .ea-toolbar select,
+#easyadmin-apps .ea-selection select {
+    margin: 0;
+    height: 32px;
+    box-sizing: border-box;
+    width: auto;
+    flex: none;
+}
+
+#easyadmin-apps .ea-toolbar .ea-filter {
+    width: 240px;
+}
+
+#easyadmin-apps .ea-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    color: var(--ea-fg);
+}
+
+#easyadmin-apps .ea-check input {
+    margin: 0;
+}
+
+#easyadmin-apps .ea-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 8px;
+}
+
+#easyadmin-apps .ea-selection {
+    min-height: 40px;
+    padding: 4px 8px;
+    border: 1px solid var(--ea-border);
+    background: var(--ea-head);
+}
+
+#easyadmin-apps .ea-message {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    color: var(--ea-fg);
+    border-left: 4px solid var(--ea-info-edge);
+    background: var(--ea-info-bg);
+}
+
+#easyadmin-apps .ea-message.ea-error {
+    border-left-color: var(--ea-error-edge);
+    background: var(--ea-error-bg);
+}
+
+#easyadmin-apps .ea-message.ea-success {
+    border-left-color: var(--ea-success-edge);
+    background: var(--ea-success-bg);
+}
+
+/* Legend: every type's icon with its name, so the icons can be learned. */
+#easyadmin-apps .ea-legend {
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+#easyadmin-apps .ea-legend-types {
+    list-style: none;
+    margin: 0 0 4px 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+}
+
+#easyadmin-apps .ea-legend-types li,
+#easyadmin-apps .ea-legend p {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+}
+
+#easyadmin-apps .ea-icon {
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vertical-align: middle;
+}
+
+#easyadmin-apps .ea-summary {
+    font-size: 12px;
+    margin: 0 0 6px 0;
+}
+
+#easyadmin-apps .ea-empty {
+    color: var(--ea-muted);
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+/* App boxes: as many columns as fit, in alphabetical order. */
+#easyadmin-apps .ea-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+#easyadmin-apps .ea-app {
+    border: 1px solid var(--ea-border);
+    background: var(--ea-bg);
+    min-width: 0;
+}
+
+#easyadmin-apps .ea-app.ea-drop {
+    border-color: var(--ea-drop);
+    box-shadow: 0 0 0 2px var(--ea-drop);
+    background: var(--ea-drop-bg);
+}
+
+#easyadmin-apps .ea-app-head {
+    padding: 6px 8px;
+    background: var(--ea-head);
+    border-bottom: 1px solid var(--ea-border);
+}
+
+#easyadmin-apps .ea-app-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#easyadmin-apps .ea-app-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    font-size: 12px;
+    color: var(--ea-muted);
+}
+
+#easyadmin-apps .ea-app-meta code {
+    color: var(--ea-muted);
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+/* Each box scrolls on its own, so one large app does not push the rest away. */
+#easyadmin-apps .ea-objects {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+#easyadmin-apps .ea-object {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--ea-grid);
+}
+
+#easyadmin-apps .ea-object:hover {
+    background: var(--ea-hover);
+}
+
+#easyadmin-apps .ea-object[draggable="true"] {
+    cursor: grab;
+}
+
+#easyadmin-apps .ea-object.ea-dragging {
+    opacity: 0.5;
+}
+
+/* A staged change: an outline plus a text badge, never colour alone. */
+#easyadmin-apps .ea-object.ea-changed {
+    box-shadow: inset 3px 0 0 var(--ea-changed);
+    background: var(--ea-changed-bg);
+}
+
+#easyadmin-apps .ea-object.ea-deleted .ea-object-name {
+    text-decoration: line-through;
+}
+
+#easyadmin-apps .ea-select {
+    margin: 0;
+    flex: none;
+}
+
+#easyadmin-apps .ea-object-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--ea-fg);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+#easyadmin-apps .ea-object-name:hover {
+    text-decoration: underline;
+}
+
+#easyadmin-apps .ea-tags {
+    flex: none;
+    display: inline-flex;
+    gap: 4px;
+}
+
+#easyadmin-apps .ea-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    background: var(--ea-badge-bg);
+    color: var(--ea-badge-fg);
+}
+
+#easyadmin-apps .ea-badge .ea-icon {
+    width: 11px;
+    height: 11px;
+}
+
+#easyadmin-apps .ea-badge-changed {
+    color: var(--ea-fg);
+    background: var(--ea-changed-bg);
+    border: 1px solid var(--ea-changed);
+}
+
+/* Details panel: slides over the right of the page. */
+#easyadmin-apps .ea-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 440px;
+    max-width: 100%;
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 16px;
+    box-sizing: border-box;
+    background: var(--ea-bg);
+    color: var(--ea-fg);
+    border-left: 1px solid var(--ea-border);
+    box-shadow: -4px 0 16px var(--ea-shadow);
+}
+
+#easyadmin-apps .ea-panel-close {
+    float: right;
+}
+
+#easyadmin-apps .ea-panel-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 18px;
+    margin: 0 0 4px 0;
+    word-break: break-all;
+}
+
+#easyadmin-apps .ea-panel h3 {
+    font-size: 14px;
+    margin: 16px 0 6px 0;
+}
+
+#easyadmin-apps .ea-panel-state {
+    display: block;
+    border-radius: 2px;
+    padding: 4px 8px;
+}
+
+#easyadmin-apps .ea-field {
+    margin-bottom: 10px;
+}
+
+#easyadmin-apps .ea-field label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--ea-fg);
+}
+
+#easyadmin-apps .ea-field select,
+#easyadmin-apps .ea-field input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    height: 32px;
+    margin: 0;
+}
+
+#easyadmin-apps .ea-field-error {
+    color: var(--ea-danger);
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-perms {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+#easyadmin-apps .ea-perms th,
+#easyadmin-apps .ea-perms td {
+    padding: 2px 6px;
+    border-bottom: 1px solid var(--ea-grid);
+    color: var(--ea-fg);
+    text-align: left;
+}
+
+#easyadmin-apps .ea-perms td {
+    text-align: center;
+    width: 64px;
+}
+
+#easyadmin-apps .ea-perms tbody th {
+    font-weight: normal;
+    word-break: break-all;
+}
+
+#easyadmin-apps .ea-perms input {
+    margin: 0;
+}
+
+#easyadmin-apps .ea-panel-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+#easyadmin-apps .ea-settings {
+    margin: 0;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-settings dt {
+    font-family: monospace;
+    font-weight: 600;
+    color: var(--ea-muted);
+    margin-top: 6px;
+}
+
+#easyadmin-apps .ea-settings dd {
+    margin: 0;
+    font-family: monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
