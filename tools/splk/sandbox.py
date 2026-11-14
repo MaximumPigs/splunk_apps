@@ -313,6 +313,11 @@ def load_pending(path):
             for kind, objects in raw.items()}
 
 
+def pending_age(path):
+    """Seconds since the snapshot at ``path`` was written."""
+    return max(0, int(time.time() - os.path.getmtime(path)))
+
+
 def clear_pending(path):
     try:
         os.remove(path)

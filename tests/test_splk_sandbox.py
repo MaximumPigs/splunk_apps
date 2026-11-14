@@ -278,6 +278,7 @@ def test_pending_snapshot_round_trips_through_disk(tmp_path, client):
     state = sb.snapshot(client, apps=("easyadmin",))
     sb.save_pending(path, state)
     assert sb.load_pending(path) == state
+    assert 0 <= sb.pending_age(path) < 60
     sb.clear_pending(path)
     sb.clear_pending(path)  # clearing twice is harmless
     assert sb.load_pending(path) is None
