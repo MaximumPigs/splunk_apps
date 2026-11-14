@@ -148,16 +148,47 @@ def test_delete_indexes_refused_without_can_delete(splunk, role):
     assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == set()
 
 
-def test_delete_indexes_granted_and_revoked_by_a_can_delete_admin(splunk, sandbox, role):
-    """An administrator who also holds can_delete can tick and untick the attribute."""
-    name, password = sandbox.create_user(roles=["admin", "can_delete"], label="easyadmin_del")
-    deleter = splunk.as_user(name, password)
-    summary = ea.submit(deleter, [ea.grant(role, "main", field="deleteIndexesAllowed")])
+def test_delete_indexes_granted_on_a_role_with_delete_by_keyword(splunk, sandbox):
+    """authorize.conf: deleteIndexesAllowed "must be used in conjunction with the
+    delete_by_keyword capability". On a role that holds it, the attribute can
+    be ticked and unticked. (Holding can_delete as the editor was not enough:
+    observed 403 on 10.6.1.)"""
+    role = sandbox.create_role(label="easyadmin", srchIndexesAllowed="main",
+                               capabilities="delete_by_keyword")
+    summary = ea.submit(splunk, [ea.grant(role, "main", field="deleteIndexesAllowed")])
     assert summary["updated"] == 1, summary
     assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == {"main"}
-    summary = ea.submit(deleter, [ea.grant(role, "main", on=False, field="deleteIndexesAllowed")])
+    summary = ea.submit(splunk, [ea.grant(role, "main", on=False, field="deleteIndexesAllowed")])
     assert summary["updated"] == 1, summary
     assert ea.as_set(ea.role_content(splunk, role).get("deleteIndexesAllowed")) == set()
+
+
+# TEMPORARY investigation, to be replaced by a real test once the answer is
+# known: clearing fieldFilterExemption through the app reports "updated" but
+# the value stays. Try each way of clearing it straight against splunkd and
+# report which, if any, works.
+def test_probe_how_field_filter_exemption_clears(splunk, sandbox):
+    import urllib.parse
+    candidates = {
+        "empty string": ("roles", {"fieldFilterExemption": ""}),
+        "single space": ("roles", {"fieldFilterExemption": " "}),
+        "conf endpoint empty": ("conf", {"fieldFilterExemption": ""}),
+    }
+    outcome = {}
+    for label, (route, params) in candidates.items():
+        role = sandbox.create_role(label="easyadmin_ffe", srchIndexesAllowed="main",
+                                   fieldFilterExemption="splktest_field")
+        if route == "roles":
+            path = "/services/authorization/roles/%s" % urllib.parse.quote(role, safe="")
+        else:
+            path = "/servicesNS/nobody/system/configs/conf-authorize/%s" % \
+                urllib.parse.quote("role_" + role, safe="")
+        try:
+            splunk.request("POST", path, params)
+            outcome[label] = repr(ea.role_content(splunk, role).get("fieldFilterExemption"))
+        except SplunkError as exc:
+            outcome[label] = "error: %s" % exc
+    raise AssertionError("PROBE RESULTS (not a failure of the app): %r" % outcome)
 
 
 def test_federated_providers_refused_for_admin(splunk, role):
