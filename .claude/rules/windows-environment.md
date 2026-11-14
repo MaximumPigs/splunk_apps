@@ -26,4 +26,5 @@ No `paths` frontmatter: this loads every session.
   locally; CI clears them.
 - Splunk Web is `http://localhost:8000` (not `splunk.home:8000`); splunkd is
   `127.0.0.1:8089` in `config/targets.toml`, because Python's `localhost`
-  tries IPv6 `::1` first and each refused attempt costs about a second. Never type the owner's password anywhere.
+  tries IPv6 `::1` first and each refused attempt costs about a second.
+- Never type the owner's password anywhere.
