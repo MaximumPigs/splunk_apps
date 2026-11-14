@@ -16,6 +16,8 @@ whether it ships views (App) or not (Add-on).
 
 Model every file on `apps/fillcontinuous/`, which already passes the full
 AppInspect set; copy its comments' reasoning, not its command-specific content.
+For pages, REST endpoints and themes, follow the `splunk-playbook` patterns and
+use `apps/easyadmin/` as the reference.
 
 ```
 apps/<app>/
@@ -27,6 +29,7 @@ apps/<app>/
   bin/<app>_core.py       only if it has Python; pure logic, unit-tested
 tests/test_<app>_core.py  if bin/ exists
 tests/live/<app>/test_<app>_live.py   at least one live test
+tests/ui/<app>/test_<app>_ui.py       if it ships views: at least one UI test
 splunkbase/<app>/listing.md           if it will be published
 ```
 

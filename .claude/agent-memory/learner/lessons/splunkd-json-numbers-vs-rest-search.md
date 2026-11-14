@@ -2,7 +2,7 @@
 hits: 1
 seen: [2026-11-13]
 area: splunkd
-level: lesson
+level: pattern
 ---
 **Symptom:** easyadmin live `test_bulk_update_across_tabs_in_one_submit` and
 `test_settings_tab_reads_back_what_was_written` failed with HTTP 400 "previous
@@ -21,3 +21,5 @@ tests read through a `_text()` helper and compare `str(...)`.
 **Catch earlier:** when inspecting an endpoint to design against, read it the
 way the code will (the REST JSON, e.g. through a live-test fixture), not
 through `| rest`. Normalise scalar REST values to text at the boundary.
+
+**Pattern:** the working recipe is in playbook `splunkd-roles-rest-api`.

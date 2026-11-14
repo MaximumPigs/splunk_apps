@@ -2,7 +2,7 @@
 hits: 1
 seen: [2026-11-13]
 area: splunkd
-level: lesson
+level: pattern
 ---
 **Symptom:** easyadmin live `test_bulk_update_across_tabs_in_one_submit`
 expected a role's `capabilities` to be its starting set plus
@@ -27,3 +27,5 @@ as inherited rather than ticked.
 **Catch earlier:** never assert on a role's own `capabilities` alone after
 changing its imports; compare the union. Do not assume a new role starts
 empty.
+
+**Pattern:** the working recipe is in playbook `splunkd-roles-rest-api`.

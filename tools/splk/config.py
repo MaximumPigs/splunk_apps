@@ -33,7 +33,9 @@ class Target(object):
 
     def __init__(self, name, host, port=8089, scheme="https", verify_tls=True,
                  token_env="SPLUNK_TOKEN", token=None, allow_restart=False,
-                 stage_dir=None, server_stage_dir=None, test_index="splk_test"):
+                 stage_dir=None, server_stage_dir=None, test_index="splk_test",
+                 web_url=None, web_locale="en-US", web_user_env="SPLUNK_WEB_USERNAME",
+                 web_password_env="SPLUNK_WEB_PASSWORD"):
         self.name = name
         self.host = host
         self.port = int(port)
@@ -51,6 +53,14 @@ class Target(object):
         self.server_stage_dir = server_stage_dir
         # Index live tests may write seed events into. Never a production one.
         self.test_index = test_index
+        # Splunk Web (port 8000), used only by browser tests and `splk shot`.
+        # It cannot take a token: the browser signs in with a username and
+        # password named by these env vars, so a target without web_url simply
+        # has no UI stage.
+        self.web_url = web_url.rstrip("/") if web_url else None
+        self.web_locale = web_locale
+        self.web_user_env = web_user_env
+        self.web_password_env = web_password_env
 
     @property
     def base_url(self):
@@ -135,6 +145,7 @@ def resolve_target(name=None, path=None, environ=None, require_token=True):
     allowed = {
         "host", "port", "scheme", "verify_tls", "token_env", "allow_restart",
         "stage_dir", "server_stage_dir", "test_index",
+        "web_url", "web_locale", "web_user_env", "web_password_env",
     }
     unknown = sorted(set(spec) - allowed)
     if unknown:

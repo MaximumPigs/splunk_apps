@@ -19,6 +19,7 @@ sys.path.insert(0, HOOKS_DIR)
 import check_edit  # noqa: E402
 import guard_bash  # noqa: E402
 import guard_files  # noqa: E402
+import stop_retro  # noqa: E402
 
 
 def run_hook(name, event, project_dir):
@@ -179,6 +180,72 @@ def test_stop_hook_asks_for_retro_once(tmp_path):
 def test_stop_hook_respects_stop_hook_active(tmp_path):
     code, out = run_hook("stop_retro.py", {"session_id": "s1", "stop_hook_active": True}, str(tmp_path))
     assert (code, out) == (0, None)
+
+
+def _session(project, started=100):
+    sessions = os.path.join(project, ".agent", "sessions")
+    os.makedirs(sessions)
+    with open(os.path.join(sessions, "s1.json"), "w") as handle:
+        json.dump({"started": started}, handle)
+
+
+def test_stop_hook_asks_for_debrief_after_deploys_without_failures(tmp_path):
+    """No stage went red, but an app was deployed: the session still gets a debrief."""
+    project = str(tmp_path)
+    _session(project)
+    _runs(project, [{"epoch": 200 + i, "app": "easyadmin", "stage": "deploy", "ok": True, "summary": "ok"}
+                    for i in range(3)])
+    code, out = run_hook("stop_retro.py", {"session_id": "s1"}, project)
+    assert code == 0 and out["decision"] == "block"
+    assert "debrief" in out["reason"] and "easyadmin (3 deploys)" in out["reason"]
+    # Asked once; the second stop goes through.
+    assert run_hook("stop_retro.py", {"session_id": "s1"}, project) == (0, None)
+
+
+def test_followups_debrief_skipped_once_something_was_learned():
+    entries = [{"epoch": 200, "app": "a", "stage": "deploy", "ok": True}]
+    assert stop_retro.followups([], entries, learned_at=300, started=100, unreviewed=[]) == []
+    due = stop_retro.followups([], entries, learned_at=50, started=100, unreviewed=[])
+    assert [key for key, _ in due] == ["debrief:a"]
+    # Fewer than three deploys: no "took several iterations" nudge.
+    assert "iterations" not in due[0][1]
+
+
+def test_followups_fix_replaces_debrief_and_security_is_separate():
+    fixed = [(("a", "live"), {"summary": "1 failed"}, {"epoch": 300})]
+    entries = [{"epoch": 250, "app": "a", "stage": "deploy", "ok": True}]
+    due = stop_retro.followups(fixed, entries, learned_at=0, started=100, unreviewed=["apps/a/bin/a.py"])
+    assert [key for key, _ in due] == ["fix:a/live", "security:apps/a/bin/a.py"]
+    assert "splunk-security-review" in due[1][1]
+
+
+@pytest.mark.parametrize("path, expected", [
+    ("apps/easyadmin/bin/easyadmin_rest.py", True),
+    ("apps/easyadmin/appserver/static/easyadmin_roles.js", True),
+    ("apps/easyadmin/metadata/default.meta", True),
+    ("apps/fillcontinuous/lib/splunklib/client.py", False),
+    ("apps/easyadmin/README.md", False),
+    ("tools/splk/ui.py", True),
+    (".claude/hooks/guard_bash.py", True),
+    ("tests/test_x.py", False),
+])
+def test_security_review_covers_code_not_docs_or_vendored(path, expected):
+    assert stop_retro.is_code(path) is expected
+
+
+def test_unreviewed_code_is_code_edited_this_session_after_the_last_review():
+    changed = ["apps/a/bin/a.py", "apps/a/bin/b.py", "apps/a/README.md"]
+    mtimes = {"apps/a/bin/a.py": 500, "apps/a/bin/b.py": 50, "apps/a/README.md": 500}
+    # b.py predates the session; README is not code.
+    assert stop_retro.unreviewed_code(changed, mtimes, started=100, reviewed_at=0) == ["apps/a/bin/a.py"]
+    assert stop_retro.unreviewed_code(changed, mtimes, started=100, reviewed_at=600) == []
+
+
+def test_last_review_reads_security_entries():
+    entries = [{"epoch": 10, "stage": "security", "ok": False}, {"epoch": 20, "stage": "deploy"},
+               {"epoch": 15, "stage": "security", "ok": True}]
+    assert stop_retro.last_review(entries) == 15
+    assert stop_retro.last_review([]) == 0
 
 
 # ------------------------------------------------- encoding and 3.9 checks

@@ -94,19 +94,26 @@ def cmd_deploy(args, log):
 
 
 def cmd_test(args, log):
-    """Unit tests always; live tests only with --live (they need a target)."""
+    """Unit tests always; live tests with --live and browser tests with --ui (they need a target)."""
     results = [stages.unit_tests(command="test")]
-    if args.live:
-        target = config.resolve_target(args.target)
+    if args.live or args.ui:
+        # Browser tests sign in with a password, not the token, so only
+        # --live insists on one.
+        target = config.resolve_target(args.target, require_token=args.live)
         for app in _apps_from(args):
-            results.append(stages.live_tests(app, target))
+            if args.live:
+                results.append(stages.live_tests(app, target))
+            if args.ui:
+                results.append(stages.ui_tests(app, target, headed=args.headed))
     return _emit(args, results)
 
 
 def cmd_dev(args, log):
     """The full loop for one app, stopping at the first failing stage.
 
-    build -> unit tests -> AppInspect -> deploy -> live tests
+    build -> unit tests -> AppInspect -> deploy -> live tests -> UI tests
+
+    The UI stage runs only for apps that have tests/ui/<app>.
     """
     _check_app(args.app)
     target = config.resolve_target(args.target)
@@ -122,6 +129,8 @@ def cmd_dev(args, log):
         ok = run(stages.inspect(app, results[0].artifact, command="dev"))
     ok = ok and run(stages.deploy(app, results[0].artifact, target, restart=args.restart, command="dev"))
     ok = ok and run(stages.live_tests(app, target, command="dev"))
+    if stages.has_ui_tests(app):
+        ok = ok and run(stages.ui_tests(app, target, headed=args.headed, command="dev"))
     log.info("dev %s: %s", app, "GREEN" if ok else "RED (see the failing stage above)")
     return _emit(args, results)
 
@@ -141,6 +150,61 @@ def cmd_search(args, log):
         return EXIT_FAILED
     print(json.dumps(rows[: args.limit], indent=2))
     log.info("%d row(s)%s", len(rows), " (truncated)" if len(rows) > args.limit else "")
+    return EXIT_OK
+
+
+def cmd_shot(args, log):
+    """Open one Splunk Web page in a browser, save a screenshot, report errors.
+
+    The browser counterpart of `splk search`: for looking, not asserting. The
+    agent opens the PNG to see the page; checks that must keep passing belong
+    in tests/ui/<app>/.
+    """
+    import os
+
+    from splk import ui
+
+    target = config.resolve_target(args.target, require_token=False)
+    path, app, view = ui.parse_page_spec(args.page)
+    if path is None:
+        path = ui.view_path(app, view, args.theme)
+    elif args.theme:
+        path += ("&" if "?" in path else "?") + "theme=" + args.theme
+    out = args.out or os.path.join(
+        ui.REPORTS_DIR, "shots", "%s%s.png" % (ui.slug(args.page), "-" + args.theme if args.theme else ""))
+    try:
+        with ui.SplunkWeb(target, headed=args.headed, timeout_ms=args.timeout * 1000) as web:
+            page = web.new_page()
+            web.open(page, path, ready_selector=args.wait_for, settle_ms=args.settle)
+            web.screenshot(page, out, full_page=not args.viewport_only)
+            result = {"url": web.url(path), "final_url": page.url, "title": page.title(),
+                      "screenshot": os.path.abspath(out)}
+            result.update(web.page_log(page).as_dict())
+    except ui.UiError as exc:
+        log.error("%s", exc)
+        return EXIT_FAILED
+    # The JSON is the command's output (like `splk search`), so it is always printed.
+    print(json.dumps(result, indent=2))
+    errors = len(result["console_errors"]) + len(result["page_errors"])
+    log.info("%s: %d console/page error(s)", result["final_url"], errors)
+    return EXIT_OK
+
+
+def cmd_review(args, log):
+    """Record the outcome of an agent review (e.g. security) in the run log.
+
+    Reviews are done by an agent, not by splk, but recording them here gives
+    them the same evidence trail as every other stage: the Stop hook knows
+    when code was last reviewed, and a review that failed and later passed is
+    a fixed failure the retro picks up like any other.
+    """
+    from splk import runlog
+
+    ok = args.result == "pass"
+    entry = runlog.record("review", args.scope, args.kind, ok, args.summary, args.detail or [])
+    (log.info if ok else log.error)("[%s] %s: %s", args.kind, "PASS" if ok else "FAIL", args.summary)
+    if args.json:
+        print(json.dumps(entry, indent=2))
     return EXIT_OK
 
 
@@ -222,13 +286,27 @@ def build_parser():
     p.add_argument("app", nargs="*", help="app id(s) for live tests")
     p.add_argument("--all", action="store_true", help="live-test every app")
     p.add_argument("--live", action="store_true", help="also run tests/live/<app> on the target")
+    p.add_argument("--ui", action="store_true", help="also run tests/ui/<app> in a browser on Splunk Web")
+    p.add_argument("--headed", action="store_true", help="show the browser window during UI tests")
     p.set_defaults(func=cmd_test)
 
     p = sub.add_parser("dev", help="full loop: build, unit, inspect, deploy, live")
     p.add_argument("app", help="app id under apps/")
     p.add_argument("--skip-inspect", action="store_true", help="skip AppInspect for a faster inner loop")
     p.add_argument("--restart", action="store_true", help="allow a splunkd restart if required")
+    p.add_argument("--headed", action="store_true", help="show the browser window during UI tests")
     p.set_defaults(func=cmd_dev)
+
+    p = sub.add_parser("shot", help="screenshot a Splunk Web page and report its console errors")
+    p.add_argument("page", help="<app>, <app>/<view>, or a Splunk Web path such as /manager/launcher/apps/local")
+    p.add_argument("--theme", choices=("light", "dark"), help="add ?theme= (how Classic dashboards take a theme)")
+    p.add_argument("--wait-for", metavar="SELECTOR", help="CSS selector that appears once the page is ready")
+    p.add_argument("--settle", type=int, default=1500, metavar="MS",
+                   help="extra wait after load for panels to render (default 1500)")
+    p.add_argument("--out", help="PNG path (default build/reports/ui/shots/<page>.png)")
+    p.add_argument("--viewport-only", action="store_true", help="capture the viewport, not the full page")
+    p.add_argument("--headed", action="store_true", help="show the browser window")
+    p.set_defaults(func=cmd_shot)
 
     p = sub.add_parser("search", help="run one SPL query on the target")
     p.add_argument("spl", help="the query")
@@ -236,6 +314,15 @@ def build_parser():
     p.add_argument("--latest", default="now")
     p.add_argument("--limit", type=int, default=50, help="max rows printed")
     p.set_defaults(func=cmd_search)
+
+    p = sub.add_parser("review", help="record an agent review's outcome (e.g. security) in the run log")
+    p.add_argument("kind", choices=("security",), help="which review")
+    p.add_argument("scope", help="app id, path or 'branch' that was reviewed")
+    p.add_argument("result", choices=("pass", "fail"),
+                   help="fail when any finding should be fixed before merging")
+    p.add_argument("--summary", required=True, help="one line, e.g. '2 high, 1 low'")
+    p.add_argument("--detail", action="append", help="one finding per flag: '[HIGH] path:line title'")
+    p.set_defaults(func=cmd_review)
 
     p = sub.add_parser("runs", help="show recent stage results from the run log")
     p.add_argument("--last", type=int, default=40, help="number of entries")

@@ -23,9 +23,12 @@ dependencies = [
 [project.optional-dependencies]
 # AppInspect is large and only needed for `splk inspect` / `splk dev`.
 inspect = ["splunk-appinspect"]
+# Browser tests and `splk shot`. After installing, fetch the browser once:
+#   python -m playwright install chromium
+ui = ["playwright>=1.40"]
 # Everything the local dev loop needs: `pip install -e ".[dev]"`.
-# splk runs pytest for the unit and live stages, so it must be installed.
-dev = ["pytest>=7.4,<9", "splunk-appinspect"]
+# splk runs pytest for the unit, live and UI stages, so it must be installed.
+dev = ["pytest>=7.4,<9", "splunk-appinspect", "playwright>=1.40"]
 
 [project.scripts]
 splk = "splk.cli:main"
