@@ -33,7 +33,8 @@ RULES = [
     # History rewrites and direct pushes to main.
     (r"\bgit\s+push\b.*(--force\b|-f\b|--force-with-lease\b)",
      "deny", "No force pushes. Push a new commit instead."),
-    (r"\bgit\s+push\b.*\b(origin\s+)?(main|master)\b",
+    # Any spelling: `git push origin main`, `git -C . push origin main`, refspecs.
+    (r"\bgit\b[^|;&]*\bpush\b[^|;&]*\b(main|master)\b",
      "deny", "Never push to main; push the branch and open a PR."),
     # PowerShell file writes corrupt UTF-8 (ANSI codepage) or add a BOM (5.1).
     (r"\b(set-content|out-file|add-content)\b",
@@ -47,6 +48,21 @@ RULES = [
 ]
 
 COMPILED = [(re.compile(p, re.IGNORECASE), d, r) for p, d, r in RULES]
+
+# Extra rules for unattended `splk loop` steps, which run with SPLK_LOOP=1.
+# The supervisor does all pushing and PR handling itself; a step that did any
+# of it (steered by text it read, or just "helping") would act as the owner.
+LOOP_REASON = "Unattended loop steps never push, merge, open PRs or call the GitHub API; the supervisor does that."
+# `gh` may be spelt gh.exe or "gh" and take flags (-R owner/repo) before the
+# subcommand. A regex is a speed bump, not the boundary: steps can also run
+# code, so the real limits are their credentials and GitHub's ruleset.
+_GH = r"\bgh(\.exe)?[\"']?\s(?:[^|;&]*\s)?"
+LOOP_RULES = [
+    (r"\bgit\b[^|;&]*\b(push|send-pack)\b", "deny", LOOP_REASON),
+    (_GH + r"pr\s+(merge|create|close|reopen|ready|edit|review|comment)\b", "deny", LOOP_REASON),
+    (_GH + r"(api|repo|release|secret|auth|ruleset|workflow|issue|label|variable)\b", "deny", LOOP_REASON),
+]
+LOOP_COMPILED = [(re.compile(p, re.IGNORECASE), d, r) for p, d, r in LOOP_RULES]
 
 
 # --------------------------------------------------------------- commit author
@@ -137,7 +153,9 @@ def check_commit(command, cwd=None, environ=None, config=None):
 
 def decide(command, cwd=None, environ=None, config=None):
     """Return (decision, reason) for a command, or (None, None) to defer."""
-    for pattern, decision, reason in COMPILED:
+    env = os.environ if environ is None else environ
+    rules = COMPILED + (LOOP_COMPILED if env.get("SPLK_LOOP") == "1" else [])
+    for pattern, decision, reason in rules:
         if pattern.search(command):
             return decision, reason
     return check_commit(command, cwd, environ, config)

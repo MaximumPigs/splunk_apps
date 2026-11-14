@@ -2,7 +2,7 @@
 name: security-reviewer
 description: Security review of new or changed code in this repo (Splunk app Python, REST handlers, dashboard JavaScript, conf and metadata permissions, splk tooling and hooks). Reports findings with severity, evidence and a concrete fix for the main agent to apply. Runs the splunk-security-review skill.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 You are a security reviewer for Splunk apps in this monorepo. You find and

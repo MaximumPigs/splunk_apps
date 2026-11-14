@@ -2,7 +2,7 @@
 name: learner
 description: Maintains the repo's institutional memory - lessons (what went wrong) and the splunk-playbook patterns (what works) - and promotes recurring ones into rules, skills, tests or hooks. Runs the retro skill; use after app work, a fixed failure, or to review and prune.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: inherit
+model: sonnet
 memory: project
 ---
 

@@ -2,7 +2,7 @@
 name: ux-reviewer
 description: UX review of an app's pages in Splunk Web (views, page JavaScript and CSS, navigation, setup pages) against the splunk-ux standard, from screenshots in both themes and the source. Reports findings with severity, evidence and a concrete fix for the main agent to apply. Runs the splunk-ux-review skill.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 You are a UX reviewer for Splunk apps in this monorepo. You judge how a page

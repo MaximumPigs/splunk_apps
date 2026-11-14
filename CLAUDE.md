@@ -22,6 +22,7 @@ deny it, and results outside `splk` are not recorded in the run log.
 | `splk test --ui <app> [--headed]` | Browser tests in `tests/ui/<app>/` (also a stage of `splk dev`). |
 | `splk ux <app> [--view v] [--theme t]` | Every view in light and dark: screenshots, axe-core accessibility scan, JS errors. Report in `build/reports/ux/<app>/`. |
 | `splk review security\|ux <scope> pass\|fail` | Record a security or UX review's outcome in the run log (the reviewer runs it). |
+| `splk loop run\|pause\|resume\|status` | The unattended roadmap loop: next ready ROADMAP.md item to PR, wait for merge, repeat. Prompts in `.claude/loop/prompts/`, models in `config/loop.toml`. |
 
 Add `--json` for machine-readable results and `-v` for debug logs. Target
 config is `config/targets.toml`; the token and the Splunk Web sign-in are in
@@ -60,7 +61,9 @@ config is `config/targets.toml`; the token and the Splunk Web sign-in are in
   denies such commits.
 - Commit messages concise but meaningful.
 - Feature branch, PR, green CI, **squash merge** with an explicit subject and
-  body file. Never push to `main`. **Ask before pushing.**
+  body file. Never push to `main`. **Ask before pushing**, except that
+  `splk loop` pushes feature branches and opens PRs itself (owner's decision,
+  2026-11-15). Only the owner merges; the loop never does.
 - Never write repository files with PowerShell (see the Windows rule).
 
 ## How to work here

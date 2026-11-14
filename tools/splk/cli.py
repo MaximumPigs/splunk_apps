@@ -255,6 +255,32 @@ def cmd_runs(args, log):
     return EXIT_OK
 
 
+def cmd_loop(args, log):
+    """Run, pause, resume or inspect the roadmap loop (see splk.loop)."""
+    from splk import loop
+
+    if args.action == "pause":
+        loop.pause(args.reason or "paused by the owner")
+        log.info("Paused. The running step finishes first; `splk loop resume` to continue.")
+    elif args.action == "resume":
+        loop.resume()
+        log.info("Resumed. Start it with `splk loop run` if it is not running.")
+    elif args.action == "status":
+        state = loop.status()
+        if args.json:
+            print(json.dumps(state, indent=2))
+        else:
+            for key, value in state.items():
+                print("%-13s %s" % (key, value))
+    else:
+        try:
+            return loop.run_loop(loop.load_settings(), once=args.once)
+        except loop.LoopError as exc:
+            log.error("%s", exc)
+            return EXIT_FAILED
+    return EXIT_OK
+
+
 # -------------------------------------------------------------------- parser
 
 def build_parser():
@@ -354,6 +380,12 @@ def build_parser():
     p.add_argument("--summary", required=True, help="one line, e.g. '2 high, 1 low'")
     p.add_argument("--detail", action="append", help="one finding per flag: '[HIGH] path:line title'")
     p.set_defaults(func=cmd_review)
+
+    p = sub.add_parser("loop", help="work through ROADMAP.md unattended, one PR at a time")
+    p.add_argument("action", choices=("run", "pause", "resume", "status"))
+    p.add_argument("reason", nargs="?", help="pause: why (shown by status)")
+    p.add_argument("--once", action="store_true", help="run: one phase, then exit")
+    p.set_defaults(func=cmd_loop)
 
     p = sub.add_parser("runs", help="show recent stage results from the run log")
     p.add_argument("--last", type=int, default=40, help="number of entries")

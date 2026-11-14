@@ -2,7 +2,7 @@
 name: splunk-reviewer
 description: Read-only review of a change to a Splunk app against this repo's rules, AppInspect results and lessons. Use before opening a PR or when asked to review an app change.
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 You review changes to Splunk apps in this monorepo. You do not edit files.

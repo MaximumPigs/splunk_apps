@@ -12,6 +12,9 @@ dist/
 *.spl
 *.tar.gz
 *.tgz
+# Except the latest package of each app, committed by `splk loop` so it can
+# be downloaded from GitHub for a manual install.
+!packages/*.spl
 
 # AppInspect reports
 appinspect_report*.html

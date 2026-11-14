@@ -44,12 +44,48 @@ def run_hook(name, event, project_dir):
     "Get-Content .env",
     "git push --force origin feature",
     "git push origin main",
+    "git -C . push origin main",
+    "git push origin HEAD:main",
     "rm -rf apps",
 ])
 def test_bash_denies_bypasses(command):
-    decision, reason = guard_bash.decide(command)
+    decision, reason = guard_bash.decide(command, environ={})
     assert decision == "deny", command
     assert reason
+
+
+# Unattended loop steps run with SPLK_LOOP=1: the supervisor pushes and handles PRs.
+@pytest.mark.parametrize("command", [
+    "git push -u origin feature/my-branch",
+    "git push",
+    "git -C d:/repo push",
+    "gh pr merge 21 --squash --admin",
+    "gh pr create --fill",
+    "gh pr comment 3 --body hi",
+    "gh api -X PUT repos/o/r/pulls/21/merge",
+    "gh issue create --title x",
+    "gh repo edit --default-branch x",
+    "gh -R maximumpigs/x pr merge 5 --squash",
+    "gh --repo x/y pr merge 5",
+    "gh.exe pr merge 5",
+    "\"gh\" pr merge 5",
+    "git send-pack origin main",
+])
+def test_bash_denies_github_writes_in_loop_steps(command):
+    decision, _ = guard_bash.decide(command, environ={"SPLK_LOOP": "1"})
+    assert decision == "deny", command
+
+
+@pytest.mark.parametrize("command", [
+    "gh pr checks 21",
+    "gh run view 123 --log-failed",
+    "gh pr view 21 --json state",
+    "splk dev easyadmin --restart",
+    "git commit -m x",
+])
+def test_bash_allows_reads_in_loop_steps(command):
+    decision, _ = guard_bash.decide(command, environ={"SPLK_LOOP": "1"})
+    assert decision != "deny", command
 
 
 @pytest.mark.parametrize("command", [
@@ -61,7 +97,7 @@ def test_bash_denies_bypasses(command):
     "rm -rf build/reports",
 ])
 def test_bash_allows_paved_road(command):
-    assert guard_bash.decide(command) == (None, None), command
+    assert guard_bash.decide(command, environ={}) == (None, None), command
 
 
 def test_bash_lets_splk_restart_run():
@@ -86,9 +122,35 @@ def test_bash_hook_end_to_end(tmp_path):
     "apps/fillcontinuous/lib/splunklib/client.py",
     ".env",
     "dist/fillcontinuous-1.0.0.spl",
+    "packages/easyadmin-1.4.0.spl",
+    "PACKAGES/easyadmin-1.4.0.spl",
+    ".agent/runs/2026-11-15.jsonl",
+    ".agent/loop/state.json",
+    ".AGENT/loop/state.json",
+    ".agent/loop/inbox/answers.md",
+    ".agent/loop/steps/20261115-groom.json",
+    ".agent/loop/handoff/../state.json",
+    ".agent/loop/handoff/sub/x.md",
+    "dist/loop/handoff/x.md",
 ])
 def test_files_denied(path):
-    assert guard_files.blocked_reason(path)
+    assert guard_files.blocked_reason(path, environ={})
+
+
+@pytest.mark.parametrize("path", [
+    ".claude/hooks/guard_bash.py",
+    ".claude/settings.json",
+    ".claude/settings.local.json",
+    "config/loop.toml",
+    "tools/splk/loop.py",
+    "tools/splk/loop_core.py",
+    "tools/splk/stages.py",
+    "tools/splk/cli.py",
+    ".claude/loop/prompts/review.md",
+])
+def test_files_denied_only_in_loop_steps(path):
+    assert guard_files.blocked_reason(path, environ={"SPLK_LOOP": "1"})
+    assert guard_files.blocked_reason(path, environ={}) is None
 
 
 @pytest.mark.parametrize("path", [
@@ -96,9 +158,21 @@ def test_files_denied(path):
     "apps/fillcontinuous/bin/fillcontinuous_core.py",
     ".env.example",
     "tools/splk/cli.py",
+    ".agent/loop/handoff/plan.md",
+    ".agent/loop/handoff/pr-body.md",
 ])
 def test_files_allowed(path):
-    assert guard_files.blocked_reason(path) is None
+    assert guard_files.blocked_reason(path, environ={}) is None
+
+
+@pytest.mark.parametrize("path", [
+    ".agent/loop/handoff/plan.md",
+    "apps/easyadmin/bin/easyadmin_core.py",
+    "ROADMAP.md",
+    "tools/splk/ux.py",
+])
+def test_loop_steps_may_write_their_work(path):
+    assert guard_files.blocked_reason(path, environ={"SPLK_LOOP": "1"}) is None
 
 
 # ---------------------------------------------------------------- check_edit

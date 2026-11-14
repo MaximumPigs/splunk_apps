@@ -36,6 +36,8 @@ tests/                 pytest suite covering every app's core logic
 tests/live/<app>/      live tests run against a Splunk target by splk
 tools/splk/            the splk CLI: build, inspect, deploy, live test
 config/targets.toml    Splunk targets for splk (no secrets)
+config/loop.toml       models, limits and notifications for `splk loop`
+packages/              the latest .spl of each app, for a manual install
 .claude/               coding-agent rules, skills, agents, hooks and lessons
 .github/workflows/     CI and release automation
 ```
@@ -232,6 +234,65 @@ stylesheet changed after the last UX review. The `learner` agent writes the less
 twice is promoted into a rule or skill; a pattern confirmed in a second app
 becomes a scaffold step or check; anything that must never recur becomes a
 test or hook check. Those promotions arrive as ordinary diffs in a pull request.
+
+## Roadmap loop: `splk loop`
+
+`splk loop run` works through [ROADMAP.md](ROADMAP.md) unattended, one pull
+request at a time. Merging is the only manual step.
+
+```
+groom -> plan -> implement -> verify -> review -> verify -> retro -> publish -> wait for merge
+      \-> nothing ready: code review -> proposals PR       merged -> groom the next item
+      \-> waiting on answers: poll the question issues     CI red / review comments -> fix -> push
+```
+
+- **Groom** reads the whole roadmap every round, records the owner's answers
+  and adds `- [ ]` questions wherever an implementer would have to guess. An
+  item with an open question never starts. Each blocked item gets a GitHub
+  issue labelled `loop-question`. Answer there (only the owner's comments
+  are read) and the next groom records the answer in the roadmap.
+- The loop takes the **first actionable item**, skipping blocked ones. With
+  nothing actionable, it reviews the code for bugs, security, efficiency and
+  refactoring, then adds up to eight `Status: proposed` items. Each has a
+  "Confirm" question, so nothing is built until the owner agrees. It audits
+  again only once those proposals are answered.
+- A question found mid-work **parks** the item. Its branch is pushed, an
+  issue is opened, and the loop moves on. The item resumes when the owner
+  answers.
+- Each judgement step is a separate headless run of the coding agent, with
+  a fresh context and its own model (`config/loop.toml`). Planning and
+  grooming use the strongest model. Implementing, reviewing and fixing use
+  the efficient one, and implementing moves up to the strong one after two
+  red rounds. `splk dev` decides whether the work is green, not the model.
+- **publish** commits the app's latest `.spl` to `packages/`, pushes the
+  branch, opens the PR and notifies the owner. Only the owner merges.
+- **Pause and resume**: `splk loop pause [reason]` stops after the running
+  step, and `splk loop resume` clears it. Then `splk loop run` again.
+  `splk loop status` shows where it is. All state is in
+  `.agent/loop/state.json` and is saved after each phase. Ctrl+C or a
+  reboot loses at most the running step.
+- **Usage limits**: a step that hits one is retried with backoff (5, 10, 20,
+  40, then every 60 minutes) until the limit resets. The owner is notified
+  after about 35 minutes. Other errors are retried twice. After four red
+  `splk dev` rounds the loop stops, pauses itself and notifies the owner.
+- **Notifications** go to `.agent/loop/notifications.log` and the run log,
+  and also to [ntfy](https://ntfy.sh) when `SPLK_NTFY_TOPIC` is set in `.env`
+  (install the ntfy app and subscribe to the same long random topic).
+
+Steps never push, merge, open PRs or call the GitHub API: the supervisor does
+those. Steps run with `SPLK_LOOP=1`, which turns on stricter hook rules (no
+pushes or GitHub writes; no edits to hooks, settings, prompts, the loop, or
+the `splk` code that decides green). They also run without `.env`'s secrets
+and without git credentials. Hooks are only a client-side check, though, so
+before the first run:
+
+1. Add a ruleset on `main` on GitHub (require a pull request and green CI,
+   block force pushes and deletions). This stops direct pushes. It does not
+   stop a merge made with the owner's own credentials.
+2. Put a read-only fine-grained token for this repo in `.env` as
+   `SPLK_LOOP_GH_TOKEN`. Steps then use it instead of the owner's `gh` login,
+   so GitHub itself refuses a merge from a step. The supervisor keeps using
+   the owner's login to push and open PRs.
 
 ## Packaging
 
