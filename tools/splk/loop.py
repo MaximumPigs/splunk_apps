@@ -252,6 +252,8 @@ def new_branch(name):
     reason (2026-11-15). The branch gets its own upstream on first push.
     """
     git("checkout", "-q", "--no-track", "-B", name)
+    # -B keeps the upstream of a branch that already existed; drop it.
+    git("branch", "--unset-upstream", check=False)
 
 
 def commit_all(message):
