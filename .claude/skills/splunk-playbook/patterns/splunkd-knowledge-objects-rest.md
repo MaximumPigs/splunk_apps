@@ -1,6 +1,6 @@
 ---
-confirmed: 1
-seen: [2026-11-14]
+confirmed: 2
+seen: [2026-11-14, 2026-11-14]
 apps: [easyadmin]
 ---
 # List, move and re-permission knowledge objects through splunkd REST
@@ -28,6 +28,11 @@ Splunk 10.6.1 and is pinned by `tests/live/easyadmin/test_easyadmin_apps_live.py
 4. The namespace is the user part of the entry id
    (`/servicesNS/<ns>/<app>/...`): `nobody` for shared objects, the owner for
    private ones. Admin sees other users' private objects under `/-/-`.
+   A GET of `/servicesNS/<ns>/<app>/<endpoint>/<name>` returns any object
+   **visible** from `<app>`, including global ones from other apps and
+   `etc/system`: accept it only if `acl.app == <app>` (`get_in_app()`), before
+   any move, acl, delete, details or "already exists" check
+   (`lessons/splunkd-namespace-get-returns-visible-objects.md`).
 5. Move: `POST <object>/move` with `app=<target>`, `user=<ns>`. Owner and
    sharing are kept, private objects included.
 6. Permissions: `POST <object>/acl` **always** with `sharing` (HTTP 400
@@ -38,15 +43,31 @@ Splunk 10.6.1 and is pinned by `tests/live/easyadmin/test_easyadmin_apps_live.py
 7. Apps: `GET /services/apps/local?count=0`; `content.core = 1` marks the
    apps Splunk ships. Objects in `etc/system` report `acl.app = system`,
    which is not an app: never offer it as a move target.
-8. Apply edits in order move, then acl, per object, and report a result per
+8. Copy: post only the names in the entry's `fields` (`required`,
+   `optional`, or matching a `wildcard` pattern), plus `eai:data` and no other
+   `eai:*`, booleans and numbers as text, to
+   `/servicesNS/<ns>/<target>/<endpoint>`; then set the ACL. If the ACL
+   fails, delete the copy and report it not copied. Verified live: macros,
+   views (`eai:data`), a `default/` macro; by probe: saved searches, event
+   types, transforms, lookup definitions, workflow actions, times, data
+   models, collections. **Not copyable** (`"copy": None`): props-based
+   objects and tags (`lessons/splunkd-props-tags-copy-unreliable.md`),
+   lookup table files, navigation.
+9. Apply edits in order (copy or move), then acl, per object, and report a result per
    object: after a move the object's path changes, so the acl call uses the
-   new app (`easyadmin_apps_core`).
+   new app; return `copied_to`/`moved_to` even when the acl step fails, so the
+   page keeps only the failed edit staged (`easyadmin_apps_core`).
 
 **Live tests:** never create or delete apps; `DELETE /services/apps/local`
 leaves splunkd needing a restart
 (`lessons/splunkd-app-create-delete-needs-restart.md`). Move throwaway
 `splktest_*` objects between `search` and `launcher` and delete them wherever
 the test left them (fixture `objects`).
+
+**Page:** a staged copy shows as a ghost row in the target app (dashed,
+italic, no tick box, not counted); every path (drag, selection bar, panel)
+stages through one function (`stageTransfer` in `easyadmin_apps.js`), which
+also runs the name-clash check.
 
 **Why this way:** `admin/directory` looked like the one-call answer and was
 incomplete; links are splunkd's own verdict per object, so the page never

@@ -12,10 +12,14 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | Hits | Level | Lesson |
 | --- | --- | --- |
 | 4 | rule | [Unobserved claims shipped wrong](lessons/docs-unobserved-claims.md): makecontinuous, "drops to zero", "9.x compatible", easyadmin dark mode. Check with `splk search`, or `splk shot` / UI tests for UI, before writing it. |
-| 3 | rule | [Persist REST handlers keep old code after deploy](lessons/splunkd-persist-handler-stale-code.md): `--restart` is a no-op for `bin/` changes; wait 2-10 min, prove new code runs. `dev-loop`. |
+| 4 | rule | [Persist REST handlers keep old code after deploy](lessons/splunkd-persist-handler-stale-code.md): requests reset the idle timer; never poll, wait ~7 min idle, run once. `dev-loop`. |
 | 2 | rule | [Splunk Web caches static files by app build](lessons/conf-app-build-static-cache.md): bump `[install] build` per deploy that changes `appserver/static`. Rule `ui-ux`. |
 | 2 | rule | [Evidence before theory](lessons/process-evidence-before-theory.md): stale secret, assumed role-editor modal; open the FAILED.png/log/timestamps first. |
+| 2 | skill | [Heredoc Python edits broke](lessons/process-heredoc-python-edits.md): escapes and quoting; write the script to a scratch file. `dev-loop`. |
 | 2 | rule | [UI `has_text` is a substring match](lessons/splk-ui-has-text-is-substring.md): "default", "pass4SymmKey" matched too much; `:text-is()` on the name. Rule `ui-ux`. |
+| 1 | pattern | [Namespace GET returns any visible object](lessons/splunkd-namespace-get-returns-visible-objects.md): check `acl.app` before acting (`get_in_app`). Playbook `splunkd-knowledge-objects-rest`. |
+| 1 | pattern | [Props and tags cannot be copied by REST](lessons/splunkd-props-tags-copy-unreliable.md): merged views, 409s, writes that never land. |
+| 1 | lesson | [Shell cannot read Splunk etc/](lessons/splk-shell-cannot-read-splunk-etc.md): "permission denied" proves nothing; read through splunkd. |
 | 1 | pattern | [One persist handler class per script](lessons/splunkd-persist-one-handler-class-per-script.md): a second subclass, even imported, 500s every endpoint in it. Playbook `rest-endpoint-behind-page`. |
 | 1 | skill | [Token auth lags a restart](lessons/splk-token-auth-lags-restart.md): 401 for ~30 s after `--restart`; rerun `splk doctor`. `dev-loop`. |
 | 1 | pattern | [Creating/deleting apps needs a restart](lessons/splunkd-app-create-delete-needs-restart.md): live tests move objects between `search` and `launcher`. Playbook `splunkd-knowledge-objects-rest`. |
