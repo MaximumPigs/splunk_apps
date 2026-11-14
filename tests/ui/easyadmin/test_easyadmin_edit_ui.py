@@ -11,13 +11,11 @@ Each test checks the page (what a person sees) and, after a save, splunkd
 itself through the admin REST client (what was really written).
 """
 
-import os
 import re
 
 import pytest
 
 from splk import ui as splk_ui
-from splk.rest import SplunkError
 
 APP = "easyadmin"
 VIEW = "role_management"
@@ -66,7 +64,11 @@ def _save(page, accept=True):
     page.locator(ROOT + " .ea-save").click()
     if accept:
         page.wait_for_selector(ROOT + " .ea-message.ea-success, " + ROOT + " .ea-message.ea-error")
-        # The page reloads the model after a save; wait until the grid is back.
+        # After a save the page shows its message, then calls load(), which
+        # first re-renders the OLD model with "Working..." and only later the
+        # new one. The message alone appears during that intermediate render,
+        # so also wait for "Working..." to go: only then is the new model shown.
+        page.locator(ROOT + " .ea-message.ea-info", has_text="Working...").wait_for(state="detached")
         page.wait_for_selector(READY)
     return seen.get("message")
 
@@ -174,7 +176,7 @@ def test_one_save_covers_every_tab(roles_page, role, sandbox_client):
     _box(page, role, "schedule_search", field="capabilities").check()
     _open_tab(page, "Inheritance")
     _box(page, role, "user", field="imported_roles").check()
-    _open_tab(page, "Search limits")
+    _open_tab(page, "Resources")
     quota = _setting(page, role, "srchJobsQuota")
     quota.fill("7")
     quota.press("Tab")
@@ -200,22 +202,22 @@ def test_show_selector_switches_the_attribute(roles_page, role, sandbox_client):
     assert _as_set(content["srchIndexesAllowed"]) == {"main"}
 
 
-def test_flag_and_list_settings_save(roles_page, role, sandbox_client):
-    """A flag is a checkbox (on is 1); a list is typed comma-separated."""
+def test_text_and_list_settings_save(roles_page, role, sandbox_client):
+    """A text setting is typed as is; a list is typed comma-separated, repeats dropped."""
     page = roles_page
-    _open_tab(page, "Search limits")
-    flag = _setting(page, role, "srchAllowAdvancedCron")
-    was_on = flag.is_checked()
-    flag.set_checked(not was_on)
-    _open_tab(page, "Federated and KV store")
-    exemptions = _setting(page, role, "fieldFilterExemption")
-    exemptions.fill("splktest_a, splktest_b, splktest_a")
-    exemptions.press("Tab")
+    _open_tab(page, "Restrictions")
+    search_filter = _setting(page, role, "srchFilter")
+    search_filter.fill("sourcetype=splktest")
+    search_filter.press("Tab")
+    _open_tab(page, "Providers")
+    providers = _setting(page, role, "srchFederatedProvidersAllowed")
+    providers.fill("splktest_a, splktest_b, splktest_a")
+    providers.press("Tab")
     _save(page)
 
     content = _role(sandbox_client, role)
-    assert str(content["srchAllowAdvancedCron"]) in (("0", "False") if was_on else ("1", "True"))
-    assert _as_set(content["fieldFilterExemption"]) == {"splktest_a", "splktest_b"}
+    assert content["srchFilter"] == "sourcetype=splktest"
+    assert _as_set(content["srchFederatedProvidersAllowed"]) == {"splktest_a", "splktest_b"}
 
 
 def test_add_a_column_by_name(roles_page, role, sandbox_client):
@@ -239,7 +241,7 @@ def test_add_a_column_by_name(roles_page, role, sandbox_client):
 def test_setting_changed_elsewhere_is_refused_and_kept(roles_page, role, sandbox, sandbox_client):
     """If someone changes a setting after the page loaded, the save says so."""
     page = roles_page
-    _open_tab(page, "Search limits")
+    _open_tab(page, "Resources")
     sandbox.update("role", role, srchJobsQuota="5")      # "someone else", after load
     quota = _setting(page, role, "srchJobsQuota")
     quota.fill("9")
@@ -274,10 +276,10 @@ def test_saving_your_own_role_warns_first(roles_page, sandbox):
     """The confirmation names roles the signed-in user holds. Declined, nothing changes."""
     page = roles_page
     # Should the dialog ever be accepted, admin is still put back.
-    sandbox.remember("role", "admin", ["srchIndexesAllowed", "srchIndexesDisallowed"])
-    page.locator(ROOT + " select.ea-field").select_option("srchIndexesDisallowed")
+    sandbox.remember("role", "admin", ["srchIndexesAllowed", "srchIndexesDefault"])
+    page.locator(ROOT + " select.ea-field").select_option("srchIndexesDefault")
     page.wait_for_selector(READY)
-    _box(page, "admin", "_audit", field="srchIndexesDisallowed").check()
+    _box(page, "admin", "_audit", field="srchIndexesDefault").check()
 
     message = _save(page, accept=False)
     assert "This changes role(s) you hold yourself (admin)" in message
@@ -302,12 +304,17 @@ def test_inherited_capability_is_shaded_with_its_reason(open_view, sandbox):
     assert cell.get_attribute("title") == "Inherited from an imported role"
 
 
-def test_imported_value_is_shown_under_a_setting(open_view, sandbox):
+def test_imported_value_is_shown_under_a_setting(open_view, sandbox, shot):
     """Settings tabs show what imported roles provide beneath the role's own value."""
     child = sandbox.create_role(label="easyadmin_ui", srchIndexesAllowed="main",
                                 imported_roles="user")
     page = open_view(APP, VIEW, ready=READY)
-    _open_tab(page, "Search limits")
+    # Evidence of each settings tab's layout, for the UX review.
+    for label in ("Providers", "Restrictions"):
+        _open_tab(page, label)
+        shot(page, "tab-" + label.lower())
+    _open_tab(page, "Resources")
+    shot(page, "tab-resources")
     cell = _cell(_setting(page, child, "srchJobsQuota"))
     assert re.match(r"^imported: \d+$", cell.locator(".ea-imported").inner_text().strip())
 
@@ -320,7 +327,7 @@ def test_filter_narrows_columns_and_roles(roles_page, role):
     page.locator(ROOT + " input.ea-filter").fill("splktest_matches_nothing")
     assert page.locator(ROOT + " .ea-empty").inner_text() == "No columns match the filter."
 
-    _open_tab(page, "Search limits")
+    _open_tab(page, "Resources")
     page.locator(ROOT + " input.ea-filter").fill(role)
     rows = [n.strip() for n in page.locator(ROOT + " th.ea-role").all_inner_texts()]
     assert rows == [role]
@@ -328,7 +335,7 @@ def test_filter_narrows_columns_and_roles(roles_page, role):
 
 # ------------------------------------------------------------- read-only
 
-def test_read_only_user_sees_a_read_only_page(target, sandbox, tmp_path, shot):
+def test_read_only_user_sees_a_read_only_page(web, sandbox, shot):
     """A user without edit_roles sees every value but no Save, and disabled cells."""
     viewer = sandbox.create_role(label="easyadmin_ro", imported_roles="user",
                                  srchIndexesAllowed="main")
@@ -338,17 +345,15 @@ def test_read_only_user_sees_a_read_only_page(target, sandbox, tmp_path, shot):
     readers = list((current.get("perms") or {}).get("read") or [])
     sandbox.set_app_permissions(APP, read=readers + [viewer])
 
-    environ = dict(os.environ)
-    environ[target.web_user_env] = name
-    environ[target.web_password_env] = password
+    # A second context in the session's browser: a second SplunkWeb would
+    # start a second sync Playwright, which Playwright refuses.
     try:
-        with splk_ui.SplunkWeb(target, environ=environ, state_dir=str(tmp_path)) as web:
-            page = web.new_page()
-            web.open_view(page, APP, VIEW, ready_selector=READY)
-            shot(page, "read-only")
-            info = page.locator(ROOT + " .ea-message.ea-info").inner_text()
-            assert "Read-only: your account does not hold the edit_roles" in info
-            assert page.locator(ROOT + " .ea-save").count() == 0
-            assert page.locator(ROOT + " .ea-cell input").first.is_disabled()
-    except (splk_ui.UiError, SplunkError) as exc:
+        page = web.new_user_page(name, password)
+        web.open_view(page, APP, VIEW, ready_selector=READY)
+    except splk_ui.UiError as exc:
         pytest.fail("Read-only session failed: %s" % exc)
+    shot(page, "read-only")
+    info = page.locator(ROOT + " .ea-message.ea-info").inner_text()
+    assert "Read-only: your account does not hold the edit_roles" in info
+    assert page.locator(ROOT + " .ea-save").count() == 0
+    assert page.locator(ROOT + " .ea-cell input").first.is_disabled()

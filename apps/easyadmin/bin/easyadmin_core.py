@@ -56,10 +56,12 @@ logger = logging.getLogger("easyadmin")
 
 # ---------------------------------------------------------------- the tabs
 #
-# Attribute names are the writable fields splunkd 10.6 lists for
-# authorization/roles (its _new endpoint's optionalFields). The labels are the
-# page's wording; each column also shows the attribute name, so nothing is
-# hidden behind a paraphrase.
+# The app changes only what Splunk Web's own role editor (Settings > Roles >
+# Edit Role) can change: an administrator must never be able to do more here
+# than there. The list below was observed in that editor on 10.6.1, tab by tab
+# (see the README's "What the page edits" table). Attribute names are splunkd's
+# authorization/roles fields; each column also shows the name, so nothing is
+# hidden behind a paraphrase. The labels follow the editor's wording.
 
 MATRIX_TABS = (
     {
@@ -69,10 +71,10 @@ MATRIX_TABS = (
         # Index attributes accept * wildcards, which the page explains.
         "wildcards": True,
         "fields": (
-            ("srchIndexesAllowed", "Searchable indexes"),
-            ("srchIndexesDefault", "Indexes searched by default"),
-            ("srchIndexesDisallowed", "Indexes never searchable"),
-            ("deleteIndexesAllowed", "Indexes events can be deleted from"),
+            # The editor's "Included" and "Default" columns. Kept short: the
+            # Show selector also shows the attribute name and is not wide.
+            ("srchIndexesAllowed", "Included"),
+            ("srchIndexesDefault", "Default"),
         ),
     },
     {
@@ -87,48 +89,42 @@ MATRIX_TABS = (
         "label": "Inheritance",
         "columns": "roles",
         "wildcards": False,
-        "fields": (
-            ("imported_roles", "Inherits from roles"),
-            ("grantable_roles", "Roles it can grant"),
-        ),
+        "fields": (("imported_roles", "Inherits from roles"),),
     },
 )
 
-# kind: "int" (whole number, may be negative), "flag" (0 or 1), "text" (any
-# string, may be empty) or "list" (several values, edited comma-separated).
+# kind: "int" (whole number, may be negative), "text" (any string, may be
+# empty) or "list" (several values, edited comma-separated).
 SETTINGS_TABS = (
     {
-        "id": "limits",
-        "label": "Search limits",
+        "id": "providers",
+        "label": "Providers",
         "fields": (
-            ("srchJobsQuota", "Search jobs quota", "int"),
-            ("rtSrchJobsQuota", "Real-time search jobs quota", "int"),
-            ("cumulativeSrchJobsQuota", "Cumulative search jobs quota", "int"),
-            ("cumulativeRTSrchJobsQuota", "Cumulative real-time search jobs quota", "int"),
-            ("queuedSearchQuota", "Queued search quota", "int"),
-            ("srchDiskQuota", "Search disk quota", "int"),
-            ("srchTimeWin", "Search time window", "int"),
-            ("srchTimeEarliest", "Earliest search time", "int"),
-            ("srchMinScheduleInterval", "Minimum schedule interval", "int"),
-            ("srchAllowAdvancedCron", "Advanced cron allowed", "flag"),
-            ("srchFilter", "Search filter", "text"),
-            ("defaultApp", "Default app", "text"),
+            # The editor's "Included" and "Default" columns for federated
+            # providers; a new role gets * in both.
+            ("srchFederatedProvidersAllowed", "Included federated providers", "list"),
+            ("srchFederatedProvidersDefault", "Default federated providers", "list"),
         ),
     },
     {
-        "id": "federated",
-        "label": "Federated and KV store",
+        "id": "restrictions",
+        "label": "Restrictions",
         "fields": (
-            ("federatedProviders", "Federated providers", "list"),
-            ("srchFederatedProvidersAllowed", "Searchable federated providers", "list"),
-            ("srchFederatedProvidersDefault", "Federated providers searched by default", "list"),
-            ("fieldFilterExemption", "Field filter exemptions", "list"),
-            ("kvstore_create.deny_list", "KV store create deny list", "list"),
-            ("kvstore_create.implicit_deny_list", "KV store create implicit deny list", "list"),
-            ("kvstore_update.deny_list", "KV store update deny list", "list"),
-            ("kvstore_update.implicit_deny_list", "KV store update implicit deny list", "list"),
-            ("kvstore_delete.deny_list", "KV store delete deny list", "list"),
-            ("kvstore_delete.implicit_deny_list", "KV store delete implicit deny list", "list"),
+            ("srchFilter", "Search filter", "text"),
+        ),
+    },
+    {
+        "id": "resources",
+        "label": "Resources",
+        "fields": (
+            ("defaultApp", "Default app", "text"),
+            ("cumulativeSrchJobsQuota", "Standard role search limit", "int"),
+            ("cumulativeRTSrchJobsQuota", "Real-time role search limit", "int"),
+            ("srchJobsQuota", "Standard user search limit", "int"),
+            ("rtSrchJobsQuota", "Real-time user search limit", "int"),
+            ("srchTimeWin", "Role search time window limit (seconds)", "int"),
+            ("srchTimeEarliest", "Earliest searchable event time (seconds)", "int"),
+            ("srchDiskQuota", "Standard search limit, in megabytes", "int"),
         ),
     },
 )
@@ -137,14 +133,6 @@ MATRIX_FIELDS = OrderedDict(
     (name, tab) for tab in MATRIX_TABS for name, _label in tab["fields"])
 SETTING_KINDS = OrderedDict(
     (name, kind) for tab in SETTINGS_TABS for name, _label, kind in tab["fields"])
-
-# List settings splunkd's authorization/roles endpoint only ever adds to.
-# Observed on 10.6.1: posting fieldFilterExemption appends the posted values
-# to the stored list (posting "" stores an empty entry beside the old ones),
-# so nothing can be removed through it. The app writes only the new entries
-# and refuses a change that would remove one, rather than report a removal as
-# saved when nothing changed.
-APPEND_ONLY_SETTINGS = ("fieldFilterExemption",)
 
 # Holding either capability lets a user edit roles. Splunk Cloud administrators
 # (sc_admin) have edit_roles_grantable rather than edit_roles.
@@ -456,8 +444,6 @@ def _clean_setting(value, kind, field, position):
     text = _clean_string(value, field, position, allow_empty=(kind == "text"))
     if kind == "int" and not INT_RE.match(text):
         raise EasyAdminError("Change %d: %s must be a whole number." % (position, field))
-    if kind == "flag" and text not in ("0", "1"):
-        raise EasyAdminError("Change %d: %s must be 0 or 1." % (position, field))
     return text
 
 
@@ -521,6 +507,8 @@ def parse_changes(raw):
                 raise EasyAdminError("Change %d sets %s on role %s twice." % (position, field, role))
             per_role["settings"][field] = (value, previous)
         else:
+            # Includes attributes splunkd accepts but Splunk Web's role
+            # editor does not offer: the app never does more than the editor.
             raise EasyAdminError("Change %d: %r is not a role attribute this app edits."
                                  % (position, field))
 
@@ -544,15 +532,13 @@ def apply_delta(current, grant, revoke):
 
 
 def _plan_role_update(content, entry):
-    """Work out the fields to write for one role, or raise on a stale setting.
+    """Work out the fields to write for one role, or report stale settings.
 
-    Returns (update, conflicts, refusals): ``update`` maps field -> new value
-    for every field that actually changes, ``conflicts`` lists settings
-    changed by someone else since the page loaded, and ``refusals`` explains
-    changes splunkd cannot make (removing from an append-only setting).
+    Returns (update, conflicts): ``update`` maps field -> new value for every
+    field that actually changes, and ``conflicts`` lists settings changed by
+    someone else since the page loaded.
     """
     update = OrderedDict()
-    refusals = []
     for field, delta in entry["matrix"].items():
         current = as_list(content.get(field))
         wanted = apply_delta(current, delta["grant"], delta["revoke"])
@@ -565,16 +551,6 @@ def _plan_role_update(content, entry):
             current = as_list(content.get(field))
             if set(current) != set(previous):
                 conflicts.append(field)
-            elif field in APPEND_ONLY_SETTINGS:
-                removed = [item for item in current if item not in value]
-                if removed:
-                    refusals.append("Splunk cannot remove %s entries through its REST API "
-                                    "(%s); nothing on this role was written."
-                                    % (field, ", ".join(removed)))
-                added = [item for item in value if item not in current]
-                if added:
-                    # Only the new entries: splunkd appends whatever is posted.
-                    update[field] = added
             elif set(value) != set(current):
                 update[field] = value
         else:
@@ -583,7 +559,7 @@ def _plan_role_update(content, entry):
                 conflicts.append(field)
             elif value != current:
                 update[field] = value
-    return update, conflicts, refusals
+    return update, conflicts
 
 
 def submit_changes(gateway, raw_changes, user="unknown"):
@@ -603,15 +579,11 @@ def submit_changes(gateway, raw_changes, user="unknown"):
     for role, entry in plan.items():
         try:
             content = gateway.get_role(role)
-            update, conflicts, refusals = _plan_role_update(content, entry)
+            update, conflicts = _plan_role_update(content, entry)
             if conflicts:
                 results.append({"role": role, "status": "error", "message":
                                 "Changed elsewhere since the page loaded: %s. Reload and try again."
                                 % ", ".join(conflicts)})
-                continue
-            if refusals:
-                # Held back whole, like a conflict: a role is never half-written.
-                results.append({"role": role, "status": "error", "message": " ".join(refusals)})
                 continue
             if not update:
                 results.append({"role": role, "status": "unchanged",

@@ -65,12 +65,13 @@ edit-and-save round trips. Nothing shows the whole picture, so access tends to
 be granted by copying whatever a similar role has, and reviewed rarely.
 
 Role management lays the whole picture out as grids, with the roles down the
-side. The Indexes tab has a checkbox for every index, covering the indexes a
-role can search, searches by default, can never search and can delete from.
-The Capabilities tab has a checkbox for every capability Splunk defines. The
-Inheritance tab shows which roles each role imports and which it can grant.
-Two further tabs hold every other role setting - search quotas, time windows,
-search filter, default app, federated providers and KV store deny lists - as
+side. Its tabs match Splunk's own role editor, and it changes exactly what
+that editor can change, nothing more. The Indexes tab has a checkbox for every
+index, covering the indexes a role can search and searches by default. The
+Capabilities tab has a checkbox for every capability Splunk defines. The
+Inheritance tab shows which roles each role imports. The Providers,
+Restrictions and Resources tabs hold the federated providers, the search
+filter, the default app, search job limits, time windows and disk quota as
 editable fields. Change as many cells as you need, on as many tabs as you
 need, and submit them together.
 
@@ -108,8 +109,8 @@ Summary instead." Must stand alone beside the title.
 -------------------------------------------------------------------------------
 
 Manage every Splunk role from one page. Tabs show all roles against every
-index, capability and inherited role as checkboxes, and every other role
-setting as editable fields. Change as many as you need and save them all at
+index, capability and inherited role as checkboxes, and the role editor's
+other settings as editable fields. Change as many as you need and save them all at
 once. Runs with the logged-in user's own permissions.
 
 
@@ -123,15 +124,17 @@ you change any number of settings in one save.
 
 ### The tabs
 
-Every tab lists the roles down the side.
+Every tab lists the roles down the side. The tabs match Splunk Web's own
+role editor (Settings > Roles), and the app changes only what that editor can.
 
 | Tab | Shows |
 | --- | --- |
-| **Indexes** | A checkbox per index for `srchIndexesAllowed`, `srchIndexesDefault`, `srchIndexesDisallowed` and `deleteIndexesAllowed`. |
+| **Indexes** | A checkbox per index for `srchIndexesAllowed` and `srchIndexesDefault`. |
 | **Capabilities** | A checkbox per capability Splunk defines. |
-| **Inheritance** | A checkbox per role for `imported_roles` and `grantable_roles`. |
-| **Search limits** | Fields for the search quotas, `srchTimeWin`, `srchTimeEarliest`, `srchMinScheduleInterval`, `srchAllowAdvancedCron`, `srchFilter` and `defaultApp`. |
-| **Federated and KV store** | Fields for the federated provider lists, `fieldFilterExemption` and the KV store deny lists. |
+| **Inheritance** | A checkbox per role for `imported_roles`. |
+| **Providers** | Fields for `srchFederatedProvidersAllowed` and `srchFederatedProvidersDefault`. |
+| **Restrictions** | A field for the search filter, `srchFilter`. |
+| **Resources** | Fields for `defaultApp`, the role and user search job limits, `srchTimeWin`, `srchTimeEarliest` and `srchDiskQuota`. |
 
 Each column shows the `authorize.conf` attribute name beside its label. A tab
 with unsaved changes shows how many on its label.
@@ -204,12 +207,13 @@ index=_internal source=*easyadmin.log
 - The index list is what the search head knows. Where indexes are defined only
   on indexers, add columns by name.
 - Roles cannot be created or deleted here.
+- Role attributes the role editor does not offer, such as
+  `srchIndexesDisallowed` or the KV store deny lists, are not edited here.
 
 ### Compatibility
 
 - Splunk Enterprise 9.3 or later, including 10.x, and Splunk Cloud Platform.
-  Tested on Splunk Enterprise 10.6.1; some role attributes, such as the KV
-  store deny lists, may not exist on older versions.
+  Tested on Splunk Enterprise 10.6.1, whose role editor the tabs match.
 - Runs on Python 3.9 and Python 3.13.
 - Search head only. No indexer or forwarder installation.
 - Collects no data and opens no outbound network connections.

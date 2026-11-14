@@ -579,15 +579,10 @@ require([
                 var pending = state.settingsPending[cellKey];
                 var value = pending ? pending.value : loaded.value;
                 var $td = el('td', 'ea-cell ea-setting-cell');
-                var $input;
-                if (field.kind === 'flag') {
-                    $input = el('input').attr('type', 'checkbox').prop('checked', value === '1');
-                } else {
-                    $input = el('input').attr({ type: 'text', spellcheck: 'false' })
-                        .val(displayValue(field, value));
-                    if (field.kind === 'list') {
-                        $input.attr('placeholder', 'comma-separated');
-                    }
+                var $input = el('input').attr({ type: 'text', spellcheck: 'false' })
+                    .val(displayValue(field, value));
+                if (field.kind === 'list') {
+                    $input.attr('placeholder', 'comma-separated');
                 }
                 $input.attr({
                     'data-role': role.name,
@@ -682,10 +677,7 @@ require([
         var loaded = settingValue(role, fieldName);
         var value;
         var same;
-        if (kind === 'flag') {
-            value = this.checked ? '1' : '0';
-            same = value === loaded;
-        } else if (kind === 'list') {
+        if (kind === 'list') {
             value = parseList(this.value);
             same = sameList(value, loaded);
         } else {

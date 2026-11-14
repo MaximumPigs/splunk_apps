@@ -120,11 +120,11 @@ def test_model_reports_the_callers_theme_preference(splunk):
 
 
 def test_model_has_every_tab(splunk):
-    """GET returns the five tabs, and the caller (an admin) can edit."""
+    """GET returns the six tabs, and the caller (an admin) can edit."""
     model = splunk.request("GET", ENDPOINT)
     assert [(t["id"], t["type"]) for t in model["tabs"]] == [
         ("indexes", "matrix"), ("capabilities", "matrix"), ("inheritance", "matrix"),
-        ("limits", "settings"), ("federated", "settings"),
+        ("providers", "settings"), ("restrictions", "settings"), ("resources", "settings"),
     ]
     assert model["can_edit"] is True
     assert "admin" in model["user_roles"]
@@ -201,8 +201,8 @@ def test_settings_tab_reads_back_what_was_written(splunk, scratch_role):
     previous = _text(splunk, scratch_role, "srchJobsQuota")
     _submit(splunk, [_setting(scratch_role, "srchJobsQuota", "9", previous),
                      _grant(scratch_role, "user", field="imported_roles")])
-    limits = _tab(splunk.request("GET", ENDPOINT), "limits")
-    value = limits["values"][scratch_role]["srchJobsQuota"]
+    resources = _tab(splunk.request("GET", ENDPOINT), "resources")
+    value = resources["values"][scratch_role]["srchJobsQuota"]
     assert value["value"] == "9"
     assert value["imported"] == _text(splunk, "user", "srchJobsQuota")
 

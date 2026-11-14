@@ -16,18 +16,26 @@ Nothing shows the whole picture.
 
 ## The tabs
 
-| Tab | Columns | Role attributes |
-| --- | --- | --- |
-| **Indexes** | every index, one checkbox each | `srchIndexesAllowed`, `srchIndexesDefault`, `srchIndexesDisallowed`, `deleteIndexesAllowed` |
-| **Capabilities** | every capability Splunk defines, one checkbox each | `capabilities` |
-| **Inheritance** | every role, one checkbox each | `imported_roles`, `grantable_roles` |
-| **Search limits** | one field per setting | `srchJobsQuota`, `rtSrchJobsQuota`, `cumulativeSrchJobsQuota`, `cumulativeRTSrchJobsQuota`, `queuedSearchQuota`, `srchDiskQuota`, `srchTimeWin`, `srchTimeEarliest`, `srchMinScheduleInterval`, `srchAllowAdvancedCron`, `srchFilter`, `defaultApp` |
-| **Federated and KV store** | one field per setting | `federatedProviders`, `srchFederatedProvidersAllowed`, `srchFederatedProvidersDefault`, `fieldFilterExemption`, and the `kvstore_create`, `kvstore_update` and `kvstore_delete` deny lists |
+The app changes exactly what Splunk Web's own role editor (**Settings >
+Roles**, then a role's name) can change, and nothing more. Its tabs follow
+the editor's: each attribute below was matched to the editor's control on
+Splunk Enterprise 10.6.1.
 
-Between them they cover every role attribute Splunk lets you write, except the
-per-pattern `srchMinScheduleInterval.<pattern>` family. Each column header
-shows the attribute's name as well as its label, so you can look it up in
-`authorize.conf`.
+| Tab | Columns | Role attributes | Editor tab and control |
+| --- | --- | --- | --- |
+| **Indexes** | every index, one checkbox each | `srchIndexesAllowed`, `srchIndexesDefault` | Indexes: *Included*, *Default* (and its wildcard box) |
+| **Capabilities** | every capability Splunk defines, one checkbox each | `capabilities` | Capabilities |
+| **Inheritance** | every role, one checkbox each | `imported_roles` | Inheritance |
+| **Providers** | one field per setting | `srchFederatedProvidersAllowed`, `srchFederatedProvidersDefault` | Providers: *Included*, *Default* (and its wildcard box) |
+| **Restrictions** | one field | `srchFilter` | Restrictions: *Search filter* |
+| **Resources** | one field per setting | `defaultApp`, `cumulativeSrchJobsQuota`, `cumulativeRTSrchJobsQuota`, `srchJobsQuota`, `rtSrchJobsQuota`, `srchTimeWin`, `srchTimeEarliest`, `srchDiskQuota` | Resources: *Default app*, *Standard* and *Real-time role search limit*, *Standard* and *Real-time user search limit*, *Role search time window limit*, *earliest searchable event time*, *Disk space limit* |
+
+Role attributes Splunk's REST API accepts but the editor does not offer are
+neither shown nor accepted: `srchIndexesDisallowed`, `deleteIndexesAllowed`,
+`grantable_roles`, `queuedSearchQuota`, `srchMinScheduleInterval`,
+`srchAllowAdvancedCron`, `federatedProviders`, `fieldFilterExemption` and the
+KV store deny lists. Each column header shows the attribute's name as well as
+its label, so you can look it up in `authorize.conf`.
 
 A tab with several attributes has a **Show** selector to switch between them.
 A tab with unsaved changes shows how many on its label.
@@ -84,8 +92,9 @@ be seen and removed:
 Each field holds the value set on the role itself. Beneath it, **imported**
 shows the value the role's imported roles provide, where there is one. List
 settings are edited comma-separated. Whole-number settings accept negative
-numbers, since Splunk uses `-1` in some (a stock `user` role has
-`srchTimeWin = -1`). The advanced cron setting is a checkbox (on is `1`).
+numbers, since Splunk uses `-1` for "unset" (a stock `user` role has
+`srchTimeWin = -1`). The editor shows the time window and earliest event
+time as drop-down lists; here they are typed as a number of seconds.
 
 ## How a save is applied
 
@@ -102,11 +111,8 @@ numbers, since Splunk uses `-1` in some (a stock `user` role has
   and stay marked as unsaved, while the others are applied.
 - **Effective immediately**, as with any role edit, for every user holding the
   role.
-- A malformed request is rejected whole and changes nothing.
-- **Field filter exemptions can only be added.** Splunk's roles API appends
-  whatever is written to `fieldFilterExemption` and offers no way to remove
-  an entry, so the app writes only new entries and refuses a save that
-  removes one, saying which entries and writing nothing on that role.
+- A malformed request, or one naming an attribute the app does not edit, is
+  rejected whole and changes nothing.
 
 ## Permissions and security
 
@@ -142,7 +148,7 @@ POST /services/easyadmin/roles
 (`"type": "matrix"`) has `fields`, `columns` and, per role and attribute,
 `explicit` entries and an `effective` map of other items to the reason. A
 settings tab (`"type": "settings"`) has `fields` (with a `kind` of `int`,
-`flag`, `text` or `list`) and, per role and attribute, `value` and `imported`.
+`text` or `list`) and, per role and attribute, `value` and `imported`.
 
 `POST` takes a JSON body (or a form field `changes` holding the same list):
 
@@ -160,15 +166,12 @@ per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 
 ## Limitations
 
-- **Indexes events can be deleted from** (`deleteIndexesAllowed`) can only be
-  set on a role that itself holds the `delete_by_keyword` capability; on
-  other roles Splunk refuses the save (HTTP 403), and the page reports it.
-- On Splunk Enterprise 10.6.1 with no federated providers defined, Splunk
-  refuses an administrator's write to **Federated providers**
-  (`federatedProviders`) with HTTP 403; the page reports it. Other
-  federated settings save normally.
-- Field filter exemptions cannot be removed here (see above).
-
+- Only what the role editor can change (see [The tabs](#the-tabs)). For
+  the other attributes, such as `srchIndexesDisallowed` or the KV store deny
+  lists, edit `authorize.conf`.
+- The Providers tab takes provider names as text; it does not list the
+  federated providers defined on the instance or check that a name is a
+  transparent-mode provider, as the editor does.
 - The index list is what the search head knows. In a distributed deployment
   whose indexes are defined only on indexers, add columns by name.
 - Roles cannot be created or deleted here; use **Settings > Roles**.
@@ -177,9 +180,8 @@ per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 
 - Splunk Enterprise 9.3 or later, including 10.x, and Splunk Cloud Platform.
   9.3 is the floor because it is where Python 3.9 became the default
-  interpreter. Tested on Splunk Enterprise 10.6.1 only. The tabs list the role
-  attributes 10.6.1 accepts; some, such as the KV store deny lists, may not
-  exist on older versions.
+  interpreter. Tested on Splunk Enterprise 10.6.1 only. The tabs match the
+  10.6.1 role editor; older versions' editors may offer fewer attributes.
 - Runs on Python 3.9 and Python 3.13. `restmap.conf` declares both
   `python.version = python3` and `python.required = 3.9, 3.13`.
 - Search head only. Uses the Python modules Splunk ships (`splunk.rest`,

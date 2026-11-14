@@ -43,8 +43,10 @@ def test_role_grid_renders(open_view, shot, page_log):
     shot(page, "role_management")
     roles = [name.strip() for name in page.locator(ROOT + " th.ea-role").all_inner_texts()]
     assert "admin" in roles
-    # Matrix tabs (indexes, capabilities, inheritance) plus settings tabs.
-    assert page.locator(ROOT + " .ea-tab").count() >= 2
+    # The same areas as Splunk Web's own role editor, and nothing more.
+    labels = [t.strip() for t in page.locator(ROOT + " .ea-tab").all_inner_texts()]
+    assert labels == ["Indexes", "Capabilities", "Inheritance", "Providers", "Restrictions",
+                      "Resources"]
     assert page_log(page).page_errors == []
 
 
