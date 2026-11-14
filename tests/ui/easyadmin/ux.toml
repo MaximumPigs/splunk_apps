@@ -1,0 +1,14 @@
+# UX audit settings for easyadmin (read by `splk ux easyadmin` and the ux
+# stage of `splk dev easyadmin`). See the splunk-ux skill.
+#
+# role_management follows the signed-in user's theme preference and reloads
+# itself out of the other ?theme=, so one run audits one theme: the report
+# says which was not covered. Switch the preference in Splunk Web and run
+# again to audit the other.
+
+[views.role_management]
+# The grid exists only once the role model has loaded and rendered.
+ready = "#easyadmin-roles table.ea-table"
+# The app's own content; Splunk Web's header and dashboard chrome are not ours to fix.
+scope = "#easyadmin-roles"
+settle_ms = 1500

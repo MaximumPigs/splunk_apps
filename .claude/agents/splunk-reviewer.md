@@ -27,6 +27,9 @@ Check, in this order:
 - **Security**: whether `splk runs` shows a `security` review `pass` newer
   than the code. If not, say so; the `splunk-security-review` skill does the
   security review, not you.
+- **UX**: for a change to a view, page script or stylesheet, whether `splk
+  runs` shows a green `ux` audit and a `ux-review` pass newer than the change.
+  If not, say so; the `splunk-ux-review` skill does the UX review, not you.
 - **Repo standards**: logging instead of print, comments that explain why,
   README updated.
 - **Known lessons and patterns**: anything in the lesson index this change

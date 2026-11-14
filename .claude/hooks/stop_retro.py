@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stop hook: don't let a session end with its learning or security review undone.
 
-Before Claude finishes, this checks the session for three follow-ups and, if
+Before Claude finishes, this checks the session for four follow-ups and, if
 any is due, blocks the stop once with one message asking for them:
 
 * **retro (fix)**: a splk stage failed and later passed for the same app and
@@ -14,6 +14,10 @@ any is due, blocks the stop once with one message asking for them:
   iteration worth a pattern.
 * **security review**: code changed this session after the last
   `splunk-security-review` result was recorded (`splk review security ...`).
+* **UX review**: something a person sees (a view, page script or stylesheet)
+  changed this session after the last `splunk-ux-review` result was recorded
+  (`splk review ux ...`). The automated `ux` stage catches accessibility and
+  errors; layout, wording and states need the reviewer's eyes.
 
 The file keeps the name stop_retro.py because .claude/settings.json refers to
 it, and changing that file is a safety change made only by the person.
@@ -24,6 +28,7 @@ and never when Claude Code says a Stop hook is already driving the continuation.
 
 import json
 import os
+import re
 import subprocess
 
 from _common import AGENT_DIR, REPO_ROOT, SESSIONS_DIR, emit, get_logger, read_event, run_safely
@@ -35,8 +40,9 @@ LEARNING_DIRS = (
     os.path.join(REPO_ROOT, ".claude", "agent-memory", "learner"),
     os.path.join(REPO_ROOT, ".claude", "skills", "splunk-playbook"),
 )
-# The run log stage that `splk review security` records.
+# The run log stages that `splk review security` and `splk review ux` record.
 SECURITY_STAGE = "security"
+UX_REVIEW_STAGE = "ux-review"
 
 # Deploys of one app in one session that suggest iteration worth a pattern.
 ITERATION_THRESHOLD = 3
@@ -45,6 +51,10 @@ ITERATION_THRESHOLD = 3
 # verified by hash when vendored, not reviewed line by line.
 CODE_PREFIXES = ("apps/", "tools/", "scripts/", ".claude/hooks/", ".github/workflows/")
 CODE_EXTENSIONS = (".py", ".js", ".conf", ".meta", ".xml", ".html", ".yml", ".yaml", ".toml", ".sh", ".ps1")
+
+# What a person sees in Splunk Web: views and navigation, and the static files
+# (page JavaScript, CSS, images, templates) that draw them.
+UI_PATH_RE = re.compile(r"^apps/[^/]+/(appserver/|default/data/ui/)")
 
 
 # ------------------------------------------------------------ pure decisions
@@ -79,6 +89,16 @@ def deploys_by_app(entries):
     return counts
 
 
+def is_ui(path):
+    """True for app files that change what a person sees in Splunk Web."""
+    return bool(UI_PATH_RE.match(path.replace("\\", "/")))
+
+
+def unreviewed_ui(changed, mtimes, started, reviewed_at):
+    """Changed UI files edited this session after the last UX review."""
+    return sorted(p for p in changed if is_ui(p) and mtimes.get(p, 0) > max(started, reviewed_at))
+
+
 def is_code(path):
     """True for repository files a security review should look at."""
     path = path.replace("\\", "/")
@@ -92,7 +112,7 @@ def unreviewed_code(changed, mtimes, started, reviewed_at):
     return sorted(p for p in changed if is_code(p) and mtimes.get(p, 0) > max(started, reviewed_at))
 
 
-def followups(fixed, entries, learned_at, started, unreviewed):
+def followups(fixed, entries, learned_at, started, unreviewed, ui_unreviewed=()):
     """Return [(key, sentence)] for every follow-up due. Keys dedupe the nag."""
     due = []
     fixes = pending_fixes(fixed, learned_at)
@@ -115,6 +135,12 @@ def followups(fixed, entries, learned_at, started, unreviewed):
         shown = ", ".join(unreviewed[:8]) + (" and %d more" % (len(unreviewed) - 8) if len(unreviewed) > 8 else "")
         due.append(("security:" + ",".join(unreviewed),
                     "Code changed since the last security review (%s). Run the `splunk-security-review` "
+                    "skill and fix what it reports, or tell the person which findings remain." % shown))
+    if ui_unreviewed:
+        shown = ", ".join(ui_unreviewed[:8]) + (
+            " and %d more" % (len(ui_unreviewed) - 8) if len(ui_unreviewed) > 8 else "")
+        due.append(("ux:" + ",".join(ui_unreviewed),
+                    "What users see changed since the last UX review (%s). Run the `splunk-ux-review` "
                     "skill and fix what it reports, or tell the person which findings remain." % shown))
     return due
 
@@ -167,12 +193,14 @@ def main():
     entries = runlog.read_since(started, runs_dir=os.path.join(AGENT_DIR, "runs"))
     changed = changed_files()
     reviewed_at = last_review(entries)
+    mtimes = file_mtimes(changed)
     due = followups(
         fixed=runlog.fixed_failures(entries),
         entries=entries,
         learned_at=newest_mtime(LEARNING_DIRS),
         started=started,
-        unreviewed=unreviewed_code(changed, file_mtimes(changed), started, reviewed_at),
+        unreviewed=unreviewed_code(changed, mtimes, started, reviewed_at),
+        ui_unreviewed=unreviewed_ui(changed, mtimes, started, last_review(entries, UX_REVIEW_STAGE)),
     )
     prompted = set(state.get("followups_prompted_for") or [])
     new = [(key, text) for key, text in due if key not in prompted]

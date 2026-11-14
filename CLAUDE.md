@@ -12,15 +12,16 @@ deny it, and results outside `splk` are not recorded in the run log.
 | Command | What it does |
 | --- | --- |
 | `splk doctor` | Target reachable? Token valid? Splunk version. Run first if anything fails. |
-| `splk dev <app>` | Full loop: build, unit tests, AppInspect, deploy, live tests, UI tests (if `tests/ui/<app>/` exists). Stops at the first red stage. |
+| `splk dev <app>` | Full loop: build, unit tests, AppInspect, deploy, live tests, UI tests (if `tests/ui/<app>/` exists), UX audit (if the app has views). Stops at the first red stage. |
 | `splk dev <app> --skip-inspect` | Faster inner loop while iterating on SPL or conf. |
 | `splk test` / `splk test --live <app>` | Unit tests only / plus live tests on the target. |
 | `splk inspect <app>` | Build and run AppInspect alone. |
 | `splk deploy <app> [--restart]` | Build and install on the target. `--restart` always asks the person. |
 | `splk search "<spl>"` | Exploratory search. Assertions belong in `tests/live/`, not here. |
 | `splk shot <app>/<view> [--theme dark]` | Screenshot a Splunk Web page and list its JS errors. Open the PNG to look. Assertions belong in `tests/ui/`. |
-| `splk test --ui <app> [--headed]` | Browser tests in `tests/ui/<app>/` (also the last stage of `splk dev`). |
-| `splk review security <scope> pass\|fail` | Record a security review's outcome in the run log (the reviewer runs it). |
+| `splk test --ui <app> [--headed]` | Browser tests in `tests/ui/<app>/` (also a stage of `splk dev`). |
+| `splk ux <app> [--view v] [--theme t]` | Every view in light and dark: screenshots, axe-core accessibility scan, JS errors. Report in `build/reports/ux/<app>/`. |
+| `splk review security\|ux <scope> pass\|fail` | Record a security or UX review's outcome in the run log (the reviewer runs it). |
 
 Add `--json` for machine-readable results and `-v` for debug logs. Target
 config is `config/targets.toml`; the token and the Splunk Web sign-in are in
@@ -35,7 +36,9 @@ config is `config/targets.toml`; the token and the Splunk Web sign-in are in
 4. README of the app reflects the change.
 5. `splunk-security-review` recorded `pass` for the change, or the person was
    told which findings remain and why.
-6. `retro` ran: lessons for what went wrong, playbook patterns for what worked.
+6. For a change users see: the `ux` audit is green and `splunk-ux-review`
+   recorded `pass`, or the person was told which findings remain and why.
+7. `retro` ran: lessons for what went wrong, playbook patterns for what worked.
 
 ## Conventions
 
@@ -84,7 +87,9 @@ Path-scoped rules in `.claude/rules/` load when you touch matching files.
 `dev-loop` (iterate on an app), `splunk-playbook` (proven recipes: read before
 building), `new-app` (scaffold), `write-live-test`, `write-ui-test`,
 `appinspect-fix`, `splunk-security-review` (forked `security-reviewer` agent),
-`release-app` (person-invoked), `retro` (debrief: lessons and patterns).
+`splunk-ux` (the UX standard for pages), `splunk-ux-review` (forked
+`ux-reviewer` agent), `release-app` (person-invoked), `retro` (debrief:
+lessons and patterns).
 
 ## Learning loop
 
@@ -99,7 +104,9 @@ Three stores, each with one job:
 `splk` records every stage and review result in `.agent/runs/`. The Stop hook
 asks for `retro` when a failure was fixed, **and after any session that
 deployed an app** (naming apps that took 3+ deploys), and asks for
-`splunk-security-review` when code changed after the last review. A lesson hit
+`splunk-security-review` when code changed after the last review, and
+`splunk-ux-review` when a view, page script or stylesheet changed after the
+last UX review. A lesson hit
 twice becomes a rule or skill; a pattern confirmed in two apps becomes a
 scaffold step or check. Promotions are ordinary diffs in a PR, reviewed by the
 person.

@@ -130,14 +130,15 @@ in Splunk Web).
 
 | Command | What it does |
 | --- | --- |
-| `splk dev <app>` | Build, unit tests, AppInspect, install on the target, live tests, then UI tests for apps that have them. Stops at the first red stage. |
+| `splk dev <app>` | Build, unit tests, AppInspect, install on the target, live tests, then UI tests and the UX audit for apps that have them. Stops at the first red stage. |
 | `splk dev <app> --skip-inspect` | The same without AppInspect, for a faster inner loop. |
 | `splk test [--live] [--ui] <app>` | Unit tests; with `--live`, also `tests/live/<app>/` on the target; with `--ui`, also `tests/ui/<app>/` in a browser (`--headed` to watch). |
 | `splk inspect <app>` | Build and run the full AppInspect check set. |
 | `splk deploy <app> [--restart]` | Build and install via `POST /services/apps/local`, verify the installed version, reload. Restarts only with `--restart` on a target that allows it. |
 | `splk search "<spl>"` | Run one query on the target and print rows as JSON. |
 | `splk shot <app>[/<view>] [--theme dark]` | Open a Splunk Web page in a browser, save a screenshot to `build/reports/ui/shots/`, and print the final URL and any JavaScript errors as JSON. |
-| `splk review security <scope> pass\|fail --summary ...` | Record the outcome of a security review in the run log. |
+| `splk ux <app> [--view <v>] [--theme <t>]` | Open every view of the app in light and dark, save screenshots, scan them for accessibility problems (axe-core) and record JavaScript errors. Report in `build/reports/ux/<app>/report.md`. |
+| `splk review security\|ux <scope> pass\|fail --summary ...` | Record the outcome of a security or UX review in the run log. |
 | `splk runs` | Recent stage results from the run log. |
 
 `--json` gives machine-readable results; `-v` gives debug output. Every run
@@ -168,6 +169,35 @@ trace you can replay with `python -m playwright show-trace <file>.zip`.
 Fixtures in [`tests/ui/conftest.py`](tests/ui/conftest.py): `open_view`,
 `shot`, `page_log`, `page`, `web`.
 
+### UX audit
+
+`splk ux <app>`, also the last stage of `splk dev`, opens every view under
+`apps/<app>/default/data/ui/views/` in both themes. For each it saves a
+screenshot, reads the theme the page actually drew, runs an
+[axe-core](https://github.com/dequelabs/axe-core) scan of the app's own
+content against the WCAG 2.2 A and AA rules, and records uncaught exceptions
+and console errors. The stage fails on:
+
+- an uncaught exception, or a console error from the app's own static files
+  (Splunk Web logs errors of its own, which are reported but do not fail it);
+- a view that never shows its ready selector;
+- an accessibility violation of serious or critical impact that is not waived.
+
+Lesser findings are reported for review. Each app sets, per view, a `ready`
+selector and a `scope` (its root element, so Splunk Web's own header is not
+scanned) in `tests/ui/<app>/ux.toml`, which can also waive a finding with a
+written reason. A page that follows the user's theme preference may refuse the
+other theme; the report then says that theme was not audited.
+
+The audit catches what a machine can. Layout, wording, loading, empty and
+error states are judged by the `ux-reviewer` agent against the
+[`splunk-ux`](.claude/skills/splunk-ux/SKILL.md) standard, from the
+screenshots and the source.
+
+axe-core is vendored in `tools/splk/vendor/axe-core/` (MPL-2.0, licence
+alongside) by `python scripts/vendor_axe.py`, which checks the npm registry's
+SHA-512 before writing anything.
+
 ### Coding agent configuration
 
 The repository carries configuration for the coding agent described under
@@ -176,11 +206,11 @@ The repository carries configuration for the coding agent described under
 | Path | Role |
 | --- | --- |
 | [`CLAUDE.md`](CLAUDE.md) | Always-loaded project instructions: the `splk` commands and the definition of done. |
-| `.claude/rules/` | Path-scoped rules (Python, conf files, search commands, inputs/props, searches/dashboards, Splunkbase listings, CI and release) that load only when matching files are touched, plus always-on Windows environment rules. |
-| `.claude/skills/` | `dev-loop`, `splunk-playbook`, `write-live-test`, `write-ui-test`, `appinspect-fix`, `splunk-security-review`, `new-app`, `release-app`, `retro`. |
+| `.claude/rules/` | Path-scoped rules (Python, conf files, search commands, inputs/props, searches/dashboards, pages in Splunk Web, Splunkbase listings, CI and release) that load only when matching files are touched, plus always-on Windows environment rules. |
+| `.claude/skills/` | `dev-loop`, `splunk-playbook`, `write-live-test`, `write-ui-test`, `appinspect-fix`, `splunk-security-review`, `splunk-ux` (the UX standard), `splunk-ux-review`, `new-app`, `release-app`, `retro`. |
 | `.claude/skills/splunk-playbook/` | What works: proven recipes per feature (custom pages, REST endpoints behind a page, theme support, search commands, checking UI in a browser), with the approaches that failed. |
-| `.claude/agents/` | `splunk-reviewer` (read-only review), `security-reviewer` (read-only security review) and `learner` (maintains lessons and the playbook). |
-| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited file (Python 3.9 grammar, conf syntax, BOMs and mojibake, ASCII-only listings), inject target status at session start, and before a session ends ask for a retro (after a fix, or after any app deploy) and a security review (after code changes). |
+| `.claude/agents/` | `splunk-reviewer` (read-only review), `security-reviewer` (read-only security review), `ux-reviewer` (read-only UX review from screenshots) and `learner` (maintains lessons and the playbook). |
+| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited file (Python 3.9 grammar, conf syntax, BOMs and mojibake, ASCII-only listings), inject target status at session start, and before a session ends ask for a retro (after a fix, or after any app deploy), a security review (after code changes) and a UX review (after changes to what users see). |
 | `.claude/agent-memory/learner/` | Lessons learned, committed and reviewed like code. |
 
 Hooks run `python`, so a Python 3.9+ interpreter must be on PATH under that
@@ -196,8 +226,9 @@ red, so a failure-only loop would have learned nothing from it.
 Every `splk` stage result, and every security review outcome, is recorded.
 Before a session ends, the Stop hook asks the agent to run `retro` when a
 failure was fixed or an app was deployed (naming apps that needed three or
-more deploys), and to run `splunk-security-review` when code changed after the
-last review. The `learner` agent writes the lessons and patterns. A lesson seen
+more deploys), to run `splunk-security-review` when code changed after the
+last review, and to run `splunk-ux-review` when a view, page script or
+stylesheet changed after the last UX review. The `learner` agent writes the lessons and patterns. A lesson seen
 twice is promoted into a rule or skill; a pattern confirmed in a second app
 becomes a scaffold step or check; anything that must never recur becomes a
 test or hook check. Those promotions arrive as ordinary diffs in a pull request.
@@ -388,7 +419,9 @@ Two honest limits on how far that protects us:
 
 **The vendored SDK is verified.** `vendor_splunklib.py` checks the SHA-256 that
 PyPI publishes alongside the download, because that code is committed and then
-ships inside every app.
+ships inside every app. `vendor_axe.py` does the same for axe-core with the
+npm registry's SHA-512; that file is developer tooling only and never ships in
+an app.
 
 ## AI assistance
 

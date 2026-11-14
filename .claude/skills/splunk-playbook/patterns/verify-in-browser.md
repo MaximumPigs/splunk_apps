@@ -19,7 +19,9 @@ and four published claims were wrong because nobody looked
    and page errors. **Open the PNG with Read and check it shows what you
    meant.** A non-empty `page_errors` means the page's JavaScript threw.
 3. Encode what you saw as a UI test in `tests/ui/<app>/` (`write-ui-test`
-   skill), so it stays checked by `splk dev`.
+   skill), so it stays checked by `splk dev`. `splk ux <app>` screenshots
+   every view in both themes and scans it for accessibility problems; the
+   `splunk-ux-review` skill judges the result against the `splunk-ux` standard.
 4. Document the behaviour only after steps 2 and 3. Ask the person to look
    only for judgement calls (does it look right, is it readable), and say what
    you already checked.

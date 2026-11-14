@@ -274,6 +274,20 @@ class SplunkWeb(object):
         self.context.storage_state(path=self.state_path)
         log.debug("Cached Splunk Web session in %s", self.state_path)
 
+    def _goto(self, page, url):
+        """page.goto, turning a network failure into one clear UiError.
+
+        Playwright raises its own Error with a multi-line call log for a
+        refused connection; callers (and the run log) need one line naming
+        the address, which is almost always Splunk Web not running.
+        """
+        try:
+            page.goto(url, wait_until="load")
+        except Exception as exc:  # noqa: BLE001 - Playwright's Error/TimeoutError
+            first = (str(exc).strip().splitlines() or ["unknown error"])[0]
+            raise UiError("Could not load %s (%s). Is Splunk Web running at %s?"
+                          % (url, first, self.target.web_url))
+
     def open(self, page, path, ready_selector=None, settle_ms=0):
         """Navigate to a Splunk Web path, signing in first if Splunk asks.
 
@@ -285,13 +299,13 @@ class SplunkWeb(object):
         target_url = self.url(path)
         log.debug("Opening %s", target_url)
         self.page_log(page).clear()
-        page.goto(target_url, wait_until="load")
+        self._goto(page, target_url)
         if is_login_url(page.url):
             self.login(page)
             # Splunk's return_to redirect already loaded the page once; only
             # errors from the load below should be reported.
             self.page_log(page).clear()
-            page.goto(target_url, wait_until="load")
+            self._goto(page, target_url)
             if is_login_url(page.url):
                 raise UiError("Signed in, but Splunk Web sent %s back to the login page" % path)
         if ready_selector:
