@@ -19,7 +19,7 @@ log = get_logger("guard_bash")
 # a/main, but allowing heads/ and refs/heads/ before it. Python lookbehinds
 # must be fixed width, hence three of them.
 _MAIN_REF = r"(?:(?<![\w./-])|(?<=refs/heads/)|(?<=heads/))(main|master)(?![\w/.-])"
-_ORIGIN_MAIN = r"(refs/)?(remotes/)?origin/(main|master)(?![\w/.-])"
+_ORIGIN_MAIN = r"[\"']?(refs/)?(remotes/)?origin/(main|master)(?![\w/.-])"
 _TRACK_REASON = ("This branch would track main, so an editor Sync could push it to main. "
                  "Add --no-track: `git checkout --no-track -b <branch> origin/main`.")
 
@@ -51,14 +51,14 @@ RULES = [
     # main: VS Code ran `git push origin <branch>:main` for exactly that
     # (2026-11-15). Branching from origin/main is fine with --no-track.
     # The server-side ruleset is the boundary; these stop accidents.
-    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+-[bB]|switch\s+(-[cC]|--create|--force-create))\b"
-     r"[^|;&]*\s" + _ORIGIN_MAIN,
+    (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\b(checkout\s+(-[bBt]|--track)|switch\s+(-[cC]|--create|--force-create)"
+     r"|worktree\s+add)\b[^|;&]*[\s=]" + _ORIGIN_MAIN,
      "deny", _TRACK_REASON),
     (r"\bgit\b(?![^|;&]*--no-track)[^|;&]*\bbranch\s+((--track|-t)\s+)?(?!-)\S+\s+((--track|-t)\s+)?"
      + _ORIGIN_MAIN, "deny", _TRACK_REASON),
     (r"\bgit\b[^|;&]*\bbranch\b[^|;&]*(--set-upstream-to[=\s]*|\s-u\s*)" + _ORIGIN_MAIN,
      "deny", _TRACK_REASON),
-    (r"\bgit\b[^|;&]*\bconfig\b[^|;&]*\bbranch\.\S+\.merge\s+(refs/heads/)?(main|master)(?![\w/.-])",
+    (r"\bgit\b[^|;&]*\bconfig\b[^|;&]*\bbranch\.\S+\.merge\s+[\"']?(refs/heads/)?(main|master)(?![\w/.-])",
      "deny", _TRACK_REASON),
     # PowerShell file writes corrupt UTF-8 (ANSI codepage) or add a BOM (5.1).
     (r"\b(set-content|out-file|add-content)\b",
