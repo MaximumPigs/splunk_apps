@@ -9,6 +9,7 @@
       "Bash(splk search*)",
       "Bash(splk dev*)",
       "Bash(splk deploy*)",
+      "Bash(splk shot*)",
       "Bash(python -m pytest*)",
       "Bash(pytest*)",
       "Bash(python scripts/package_app.py*)",
@@ -18,7 +19,8 @@
     ],
     "deny": [
       "Read(./.env)",
-      "Edit(./.env)"
+      "Edit(./.env)",
+      "Read(./.agent/ui/**)"
     ]
   },
   "hooks": {
