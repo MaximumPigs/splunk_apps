@@ -3,9 +3,15 @@
 App ID `easyadmin`. An administration page for Splunk Enterprise and Splunk
 Cloud Platform that makes bulk changes to settings quick and visible.
 
-Its page, **Role management**, shows every role's configuration in one place,
-split into tabs. Every tab lists the roles down the side. Change as many cells
-as you like, on as many tabs as you like, then save them all at once.
+It has two pages:
+
+- **Role management** shows every role's configuration in one place, split
+  into tabs. Every tab lists the roles down the side. Change as many cells as
+  you like, on as many tabs as you like, then save them all at once.
+- **App management** shows every app as a box holding its knowledge objects.
+  Drag objects between apps, or select several and move, re-permission or
+  delete them, then apply all the changes at once. See
+  [App management](#app-management).
 
 ## The problem
 
@@ -115,6 +121,80 @@ editor says, a search job limit of `0` means no limit.
 - A malformed request, or one naming an attribute the app does not edit, is
   rejected whole and changes nothing.
 
+## App management
+
+Open **Easy Admin > App management**. Every app is a box, in alphabetical
+order of the name in its title. Each box lists the app's knowledge objects,
+grouped by type, each with an icon for its type. The legend above the boxes
+names every icon. An object shows its sharing, colour-coded and in words:
+**Private** (purple), **This app** (blue), **All apps** (green), or **System**
+for objects in `etc/system`. It also shows whether it is disabled.
+
+Objects of these types are listed: reports and alerts, dashboards, navigation
+menus, prebuilt panels, search macros, event types, tags, field extractions,
+field aliases, calculated fields, automatic lookups, source type renaming,
+field transformations, lookup definitions, lookup table files, workflow
+actions, time ranges, data models, KV store collections and alert actions.
+Private objects are listed under their app, for every user whose objects your
+account can see. Objects in `$SPLUNK_HOME/etc/system` appear in a
+**System (etc/system)** box, which cannot take objects.
+
+Splunk's own apps (Home, the Monitoring Console and the like) are hidden
+until you tick **Show Splunk's built-in apps**. Search & Reporting and
+Enterprise Security (`SplunkEnterpriseSecuritySuite`) are always shown with
+the installed apps, since that is where users keep their objects.
+
+At first the page shows the types users create day to day: reports and
+alerts, dashboards, search macros, event types, tags, field extractions,
+field aliases, calculated fields, automatic lookups, lookup definitions,
+lookup table files, workflow actions and data models. The administrator's
+types (navigation menus, prebuilt panels, source type renaming, field
+transformations, time ranges, KV store collections and alert actions) are
+added from the **Types** menu.
+
+| Control | What it does |
+| --- | --- |
+| **Filter objects by name** and **Types** | Narrow the objects in every box. **Types** is a drop-down of every type, with shortcuts for the common types, all and none. Every app stays on show, so you can filter for an object and then drag it to any app. |
+| **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. |
+| The tick box in an app's title | Selects every object shown in that app (after the filters). It is half-ticked when only some are selected. |
+| Drag an object onto another app's box | Stages a move. Dragging a ticked object moves every ticked object. |
+| Tick objects, then **Move to app...** and **Move** | Stages a move without dragging. |
+| **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |
+| **Delete** | Stages the ticked objects for deletion. |
+| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable) and every one of its settings (read-only). |
+| **Apply N changes** | Applies every staged change, after a confirmation that says how many objects are moved, re-permissioned and deleted. |
+| **Discard changes** | Drops every staged change. |
+
+A staged change is outlined and labelled on the object (`moving from search`,
+`permissions changed`, `will be deleted`), and a moved object shows in the
+box it is moving to. Nothing is written until **Apply**. Leaving the page
+with staged changes asks first.
+
+### Objects in an app's default folder
+
+An object that ships in an app's `default/` folder shows a lock and the
+`default` badge. Splunk cannot move or delete such an object, so the page
+cannot either. Its permissions can still be changed. Whether an object is locked comes from Splunk itself
+for each object, not from a list kept by this app.
+
+Lookup table files are not split into default and local folders, and Splunk
+lets them be moved and deleted.
+
+### How changes are applied
+
+- Each object is re-read just before it is changed. If it is no longer where
+  the page saw it (someone moved, renamed or deleted it meanwhile), it is not
+  touched, the page says so, and a reload shows where it is now.
+- A move keeps the object's owner and sharing. A private object stays private
+  to its owner.
+- When one object is moved and re-permissioned, the move happens first and
+  the permissions are set in the new app. If the move works but the
+  permissions are refused, the page says so and keeps the permission change
+  staged to retry.
+- Not atomic across objects. Every object is attempted; any that Splunk
+  refuses are listed with its reason and stay staged, while the others are
+  applied.
+
 ## Permissions and security
 
 The app never elevates. Every read and write is made to splunkd with the
@@ -128,17 +208,23 @@ capabilities:
 - The app is visible to `admin` and `sc_admin` by default. To open it to
   another role, change the app's read permission in **Apps > Manage Apps**.
 
-Role edits made through the app are logged to
-`$SPLUNK_HOME/var/log/splunk/easyadmin.log`, with the user, the role and the
-attributes written:
+On the App management page, what you can move, re-permission or delete is
+what Splunk lets your account do in **Settings > Knowledge**. Anything it
+refuses is listed with Splunk's reason.
+
+Role edits, and object moves, permission changes and deletions, are logged to
+`$SPLUNK_HOME/var/log/splunk/easyadmin.log`, with the user, the role or
+object, and what was written:
 
 ```
 index=_internal source=*easyadmin.log
 ```
 
-## REST endpoint
+## REST endpoints
 
-The page is backed by one endpoint, which can also be scripted:
+Each page is backed by one endpoint, which can also be scripted.
+
+### Role management
 
 ```
 GET  /services/easyadmin/roles
@@ -165,6 +251,39 @@ settings tab (`"type": "settings"`) has `fields` (with a `kind` of `int`,
 per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 `unchanged` and `failed` counts. At most 5000 changes per request.
 
+### App management
+
+```
+GET  /services/easyadmin/apps
+GET  /services/easyadmin/apps?type=macro&ns=nobody&app=search&name=my_macro
+POST /services/easyadmin/apps
+```
+
+`GET` returns `types`, `apps` (with `label`, `builtin` and `target`, whether
+objects can be moved into it), `objects`, `roles`, `users` and `warnings`
+(object types your account cannot list). Each object has `type`, `name`,
+`app`, `ns` (the namespace it lives in: its owner for a private object,
+`nobody` otherwise), `owner`, `sharing`, `read`, `write`, `movable`,
+`removable` and `can_change_perms`. With `type`, `ns`, `app` and `name`, it
+returns that one object with its `settings`.
+
+`POST` takes one entry per object, addressed where the page saw it:
+
+```json
+{"changes": [
+  {"type": "macro", "ns": "nobody", "app": "search", "name": "my_macro", "move_to": "my_app"},
+  {"type": "savedsearch", "ns": "nobody", "app": "search", "name": "Errors",
+   "acl": {"sharing": "global", "owner": "nobody", "read": ["*"], "write": ["admin"]}},
+  {"type": "view", "ns": "alice", "app": "search", "name": "old_dashboard", "delete": true}
+]}
+```
+
+`acl` always carries `sharing` and `owner`; `read` and `write` are ignored for
+`"sharing": "user"`. An empty `write` list leaves no write roles. The response
+has one result per object with `status` of `applied` or `error`, its
+`message`, and `moved_to` when it was moved, plus `applied` and `failed`
+counts. At most 2000 objects per request.
+
 ## Limitations
 
 - Only what the role editor can change (see [The tabs](#the-tabs)). For
@@ -176,6 +295,12 @@ per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 - The index list is what the search head knows. In a distributed deployment
   whose indexes are defined only on indexers, add columns by name.
 - Roles cannot be created or deleted here; use **Settings > Roles**.
+- App management lists the knowledge object types above. Inputs, indexes and
+  search commands are not listed.
+- Objects in an app's `default/` folder cannot be moved or deleted (see
+  [Objects in an app's default folder](#objects-in-an-apps-default-folder)).
+- Creating and cloning apps, the configuration precedence view and JSON
+  export and import are not in this version.
 
 ## Compatibility
 
@@ -192,8 +317,9 @@ per role with `status` of `updated`, `unchanged` or `error`, plus `updated`,
 ## Installation
 
 Install the `.spl` through **Apps > Manage Apps > Install app from file** on
-the search head. On a search head cluster, deploy it with the deployer. If the
-page reports that its endpoint was not found, restart Splunk once.
+the search head. On a search head cluster, deploy it with the deployer. If a
+page reports that its endpoint was not found, restart Splunk once. Upgrading
+to 1.2.0 adds the App management endpoint, which also needs one restart.
 
 ## Author
 

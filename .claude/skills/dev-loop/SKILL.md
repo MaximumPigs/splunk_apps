@@ -54,7 +54,7 @@ deploy) has two known causes. Check them before debugging the fix:
 | build | Version mismatch between `[launcher]` and `[id]`, or a missing `default/app.conf`. |
 | unit | `build/reports/unit-*.xml`; rerun one test with `pytest tests/<file>::<name> -q`. |
 | inspect | `build/reports/appinspect-<app>.json`; use the `appinspect-fix` skill. |
-| deploy | `splk doctor` first. "Installed version is X, expected Y" means the overwrite did not apply. |
+| deploy | `splk doctor` first. "Installed version is X, expected Y" means the overwrite did not apply. Right after `--restart`, token calls can fail with HTTP 401 "call not properly authenticated" for about 30 s: rerun `splk doctor` until it passes, then the stage (`lessons/splk-token-auth-lags-restart.md`). |
 | live | `build/reports/live-<app>.xml`; reproduce the SPL with `splk search "<spl>"`. |
 | ui | `build/reports/ui/<app>/<test>-FAILED.png` (open it) and `<test>-trace.zip` (`python -m playwright show-trace <zip>`). Sign-in failures: ask the person to check `SPLUNK_WEB_*` in `.env`. |
 | ux | `build/reports/ux/<app>/report.md` and the screenshots it lists (open them). An axe finding names the rule, a selector and a help link; fix the app, or set `scope` in `tests/ui/<app>/ux.toml` if it is in Splunk's own chrome. Rerun one view with `splk ux <app> --view <view>`. |

@@ -12,3 +12,9 @@ ready = "#easyadmin-roles table.ea-table"
 # The app's own content; Splunk Web's header and dashboard chrome are not ours to fix.
 scope = "#easyadmin-roles"
 settle_ms = 1500
+
+[views.app_management]
+# The app boxes exist only once the app model has loaded and rendered.
+ready = "#easyadmin-apps .ea-grid"
+scope = "#easyadmin-apps"
+settle_ms = 1500

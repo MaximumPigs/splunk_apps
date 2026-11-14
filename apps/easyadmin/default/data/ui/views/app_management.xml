@@ -1,0 +1,18 @@
+<!--
+  Simple XML hosting the page script, like role_management: the page is an
+  interactive editor (drag and drop between app boxes, a details panel, one
+  bulk apply), which Dashboard Studio cannot express. version="1.1" selects
+  the current jQuery, which AppInspect requires of a dashboard with custom
+  JavaScript. ASCII only, and no XML declaration (both break dark mode).
+-->
+<dashboard version="1.1" script="easyadmin_apps.js" stylesheet="easyadmin_apps.css" hideEdit="true">
+  <label>App management</label>
+  <description>Every app and the knowledge objects in it. Move objects between apps, change their permissions or delete them, then apply all the changes at once.</description>
+  <row>
+    <panel>
+      <html>
+        <div id="easyadmin-apps">Loading apps and knowledge objects...</div>
+      </html>
+    </panel>
+  </row>
+</dashboard>
