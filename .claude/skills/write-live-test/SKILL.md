@@ -44,6 +44,14 @@ teardown, naming each difference. A killed run is swept at the next start,
 and repaired from its saved snapshot if that is under an hour old. Changing an existing user's password is refused: it cannot be
 read back.
 
+**Confirm the target is clean** after a session of live or UI tests (and say
+so in the report):
+
+- `splk search "| rest /services/authorization/roles splunk_server=local | search title=splktest_* | stats count"`
+  and the same over `/services/authentication/users`: both `0`.
+- No `.agent/sandbox-<target>-pending.json` (written during a test, removed
+  when its cleanup finishes; one left behind means a run died mid-test).
+
 ## Choose the input
 
 - **Pure search logic** (commands, macros, eval): synthesise input with

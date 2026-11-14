@@ -1,6 +1,6 @@
 ---
-confirmed: 1
-seen: [2026-11-12]
+confirmed: 2
+seen: [2026-11-12, 2026-11-14]
 apps: [easyadmin]
 ---
 # Custom page: Classic dashboard hosting JavaScript
@@ -23,10 +23,16 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
 4. Call the app's endpoint at `splunkUtil.make_url('/splunkd/__raw/services/<path>')`.
    For POST, send the header `X-Splunk-Form-Key: splunkUtil.getFormKey()`.
 5. `default/data/ui/nav/default.xml` with the view as `default="true"`.
-6. Increment `[install] build` in `app.conf` with **every** change under
-   `appserver/static/`.
+6. Increment `[install] build` in `app.conf` for **every deploy** that
+   changes `appserver/static/`, again if the current number was already
+   served (not once per release).
 7. Keep page logic thin: validation and meaning live server-side in
-   `bin/<app>_core.py`, where they are unit-tested.
+   `bin/<app>_core.py`, where they are unit-tested. That includes text that
+   varies by section: a per-tab note is a `note` key on the tab in the core
+   model (unit-tested, `None` when absent), and the JS legend appends
+   `tab.note` only when set and explains lists only when the tab has a list
+   field (`legend()` in `easyadmin_roles.js`; UI test
+   `test_imported_value_is_shown_under_a_setting`). Kept after UX review.
 
 **Why this way:**
 - `version="1.1"` selects the current jQuery, which AppInspect requires of a

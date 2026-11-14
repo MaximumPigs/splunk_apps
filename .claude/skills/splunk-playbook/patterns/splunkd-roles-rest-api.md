@@ -1,5 +1,5 @@
 ---
-confirmed: 1
+confirmed: 2
 seen: [2026-11-13, 2026-11-14]
 apps: [easyadmin]
 ---
@@ -37,6 +37,8 @@ Everything below was observed on Splunk 10.6.1 with throwaway roles.
    fixture (named `splktest_*`); the environment guard snapshots roles, users
    and app permissions around every test and fails one that leaves a change.
    A real role a test might touch is recorded first with `sandbox.remember`.
+   Afterwards confirm the target is clean (`write-live-test`, "Confirm the
+   target is clean"): zero `splktest_*` roles and users, no pending file.
 9. Decide what an app may change by what **Splunk Web's role editor** offers,
    not by what splunkd accepts. The REST API accepts more (table below), and
    some of the extra attributes behave badly:
@@ -77,7 +79,10 @@ test, click each `[role=tab]`, record `body.inner_text()`, every form control
 `aria-label`) and a screenshot per tab, then leave with Cancel. Controls
 without a `name` are mapped by label and by comparing what splunkd reports
 for the role (`| rest /services/authorization/roles`) with what the editor
-shows ticked.
+shows ticked. Do not assume the editor's DOM (it was guessed as a modal
+`[role=dialog]` and failed): take the screenshot first, and read the
+`-FAILED.png` before theorising (`lessons/process-evidence-before-theory.md`).
+Delete the probe test once its findings are recorded here.
 
 **Why this way:** each step is a failed live test, with details in the
 lessons `splunkd-json-numbers-vs-rest-search`,
