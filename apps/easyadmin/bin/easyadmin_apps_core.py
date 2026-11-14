@@ -49,33 +49,44 @@ logger = logging.getLogger("easyadmin")
 
 # Every kind of knowledge object the page lists, in the order its legend shows
 # them. ``endpoint`` is the splunkd collection under /servicesNS/<user>/<app>/.
+# ``copy`` says how a copy is made in another app: "fields" posts the
+# object's writable fields (from its "fields" list) to the same endpoint in
+# the target app. None means it cannot be copied (all observed on 10.6.1):
+# - props-based objects and tags: their endpoints refuse a create with the
+#   source's arguments ("missing: stanza, type"; "already exists"), and the
+#   configs/conf-props and conf-tags fallback is not reliable either: it
+#   answers 409 for a stanza that is only visible from another app, reports
+#   saved/fvtags as belonging to whichever app asks, and a write of a value
+#   equal to the one in effect left nothing on disk;
+# - lookup table files need Splunk's staging folder;
+# - a navigation menu belongs to its app.
 # ``common`` marks what users create day to day (reports, dashboards, lookups,
 # macros...): the page shows those types at first and leaves the
 # administrator's ones (navigation, panels, time ranges...) to be added.
 # admin/directory was not used: on 10.6.1 it omits lookup table files, data
 # models and calculated fields (75 of them on the dev target).
 TYPES = OrderedDict((t["id"], t) for t in (
-    {"id": "savedsearch", "label": "Report or alert", "endpoint": "saved/searches", "common": True},
-    {"id": "view", "label": "Dashboard", "endpoint": "data/ui/views", "common": True},
-    {"id": "nav", "label": "Navigation menu", "endpoint": "data/ui/nav", "common": False},
-    {"id": "panel", "label": "Prebuilt panel", "endpoint": "data/ui/panels", "common": False},
-    {"id": "macro", "label": "Search macro", "endpoint": "admin/macros", "common": True},
-    {"id": "eventtype", "label": "Event type", "endpoint": "saved/eventtypes", "common": True},
-    {"id": "tag", "label": "Tag", "endpoint": "saved/fvtags", "common": True},
-    {"id": "extraction", "label": "Field extraction", "endpoint": "data/props/extractions", "common": True},
-    {"id": "fieldalias", "label": "Field alias", "endpoint": "data/props/fieldaliases", "common": True},
-    {"id": "calcfield", "label": "Calculated field", "endpoint": "data/props/calcfields", "common": True},
-    {"id": "autolookup", "label": "Automatic lookup", "endpoint": "data/props/lookups", "common": True},
+    {"id": "savedsearch", "label": "Report or alert", "endpoint": "saved/searches", "common": True, "copy": "fields"},
+    {"id": "view", "label": "Dashboard", "endpoint": "data/ui/views", "common": True, "copy": "fields"},
+    {"id": "nav", "label": "Navigation menu", "endpoint": "data/ui/nav", "common": False, "copy": None},
+    {"id": "panel", "label": "Prebuilt panel", "endpoint": "data/ui/panels", "common": False, "copy": "fields"},
+    {"id": "macro", "label": "Search macro", "endpoint": "admin/macros", "common": True, "copy": "fields"},
+    {"id": "eventtype", "label": "Event type", "endpoint": "saved/eventtypes", "common": True, "copy": "fields"},
+    {"id": "tag", "label": "Tag", "endpoint": "saved/fvtags", "common": True, "copy": None},
+    {"id": "extraction", "label": "Field extraction", "endpoint": "data/props/extractions", "common": True, "copy": None},
+    {"id": "fieldalias", "label": "Field alias", "endpoint": "data/props/fieldaliases", "common": True, "copy": None},
+    {"id": "calcfield", "label": "Calculated field", "endpoint": "data/props/calcfields", "common": True, "copy": None},
+    {"id": "autolookup", "label": "Automatic lookup", "endpoint": "data/props/lookups", "common": True, "copy": None},
     {"id": "sourcetyperename", "label": "Source type renaming",
-     "endpoint": "data/props/sourcetype-rename", "common": False},
-    {"id": "transform", "label": "Field transformation", "endpoint": "data/transforms/extractions", "common": False},
-    {"id": "lookupdef", "label": "Lookup definition", "endpoint": "data/transforms/lookups", "common": True},
-    {"id": "lookupfile", "label": "Lookup table file", "endpoint": "data/lookup-table-files", "common": True},
-    {"id": "workflow", "label": "Workflow action", "endpoint": "data/ui/workflow-actions", "common": True},
-    {"id": "timerange", "label": "Time range", "endpoint": "data/ui/times", "common": False},
-    {"id": "datamodel", "label": "Data model", "endpoint": "datamodel/model", "common": True},
-    {"id": "collection", "label": "KV store collection", "endpoint": "storage/collections/config", "common": False},
-    {"id": "alertaction", "label": "Alert action", "endpoint": "data/ui/alerts", "common": False},
+     "endpoint": "data/props/sourcetype-rename", "common": False, "copy": None},
+    {"id": "transform", "label": "Field transformation", "endpoint": "data/transforms/extractions", "common": False, "copy": "fields"},
+    {"id": "lookupdef", "label": "Lookup definition", "endpoint": "data/transforms/lookups", "common": True, "copy": "fields"},
+    {"id": "lookupfile", "label": "Lookup table file", "endpoint": "data/lookup-table-files", "common": True, "copy": None},
+    {"id": "workflow", "label": "Workflow action", "endpoint": "data/ui/workflow-actions", "common": True, "copy": "fields"},
+    {"id": "timerange", "label": "Time range", "endpoint": "data/ui/times", "common": False, "copy": "fields"},
+    {"id": "datamodel", "label": "Data model", "endpoint": "datamodel/model", "common": True, "copy": "fields"},
+    {"id": "collection", "label": "KV store collection", "endpoint": "storage/collections/config", "common": False, "copy": "fields"},
+    {"id": "alertaction", "label": "Alert action", "endpoint": "data/ui/alerts", "common": False, "copy": None},
 ))
 
 SHARING = ("user", "app", "global")
@@ -167,6 +178,7 @@ def build_object(type_id, entry):
         # Read from the links splunkd offers for this very object: an object
         # in default/ has neither, and a move or delete of it is refused.
         "movable": "move" in links,
+        "copyable": TYPES[type_id]["copy"] is not None,
         "removable": "remove" in links,
         "can_change_perms": _is_true(acl.get("can_change_perms")),
         "can_share_global": _is_true(acl.get("can_share_global", True)),
@@ -331,8 +343,8 @@ def parse_changes(raw):
     """Validate the page's change list. One entry per object, all of its edits.
 
     Each entry addresses the object where the page last saw it (type, ns,
-    app, name) and carries any of: ``move_to`` (an app name), ``acl``
-    (sharing, owner, read, write) and ``delete`` (true, alone).
+    app, name) and carries any of: ``move_to`` or ``copy_to`` (an app name),
+    ``acl`` (sharing, owner, read, write) and ``delete`` (true, alone).
     """
     if not isinstance(raw, list):
         raise EasyAdminError("'changes' must be a list.")
@@ -350,22 +362,28 @@ def parse_changes(raw):
             raise EasyAdminError("%s repeats an object listed earlier: %s." % (where, name))
         seen.add(key)
         change = {"key": key, "type": type_id, "ns": ns, "app": app, "name": name,
-                  "move_to": None, "acl": None, "delete": False}
+                  "move_to": None, "copy_to": None, "acl": None, "delete": False}
 
         if entry.get("delete") is not None:
             if entry.get("delete") is not True:
                 raise EasyAdminError("%s: 'delete' must be true when present." % where)
-            if entry.get("move_to") is not None or entry.get("acl") is not None:
-                raise EasyAdminError("%s: a deleted object cannot also be moved or changed." % where)
+            if any(entry.get(k) is not None for k in ("move_to", "copy_to", "acl")):
+                raise EasyAdminError("%s: a deleted object cannot also be moved, copied or changed." % where)
             change["delete"] = True
 
-        if entry.get("move_to") is not None:
-            target = _clean_name(entry.get("move_to"), "%s move_to" % where)
+        if entry.get("move_to") is not None and entry.get("copy_to") is not None:
+            raise EasyAdminError("%s: an object is either moved or copied, not both." % where)
+        for field, verb in (("move_to", "moved"), ("copy_to", "copied")):
+            if entry.get(field) is None:
+                continue
+            target = _clean_name(entry.get(field), "%s %s" % (where, field))
             if not APP_NAME_RE.match(target) or target == SYSTEM_APP:
-                raise EasyAdminError("%s: %r is not an app that objects can be moved to." % (where, target))
+                raise EasyAdminError("%s: %r is not an app that objects can be %s to." % (where, target, verb))
             if target == app:
                 raise EasyAdminError("%s: %s is already in %s." % (where, name, app))
-            change["move_to"] = target
+            if field == "copy_to" and TYPES[type_id]["copy"] is None:
+                raise EasyAdminError("%s: %s objects cannot be copied." % (where, TYPES[type_id]["label"]))
+            change[field] = target
 
         if entry.get("acl") is not None:
             acl = entry.get("acl")
@@ -382,7 +400,7 @@ def parse_changes(raw):
                 clean["write"] = _clean_roles(acl.get("write", []), "%s write" % where)
             change["acl"] = clean
 
-        if not (change["delete"] or change["move_to"] or change["acl"]):
+        if not (change["delete"] or change["move_to"] or change["copy_to"] or change["acl"]):
             raise EasyAdminError("%s for %s changes nothing." % (where, name))
         changes.append(change)
     return changes
@@ -402,13 +420,104 @@ def acl_postargs(acl):
     return args
 
 
+def get_in_app(gateway, type_id, ns, app, name, full=False):
+    """The object called ``name`` that lives in ``app``, or GatewayError 404.
+
+    A GET under /servicesNS/<ns>/<app>/ returns any object *visible* from
+    that app, and an object shared with all apps is visible from every app
+    (observed on 10.6.1: the search app's global objects answered under
+    launcher). Acting on what came back could change another app's object,
+    so the answer counts only when its own acl.app is ``app``.
+    """
+    entry = gateway.get_object(object_path(type_id, ns, app, name), full=full)
+    if as_text((entry.get("acl") or {}).get("app")) != app:
+        raise GatewayError("%s is not in %s." % (name, app), status=404)
+    return entry
+
+
+def copy_args(entry):
+    """The form fields that recreate ``entry`` through its endpoint's create.
+
+    splunkd lists, per object, the fields its endpoint accepts: ``required``,
+    ``optional`` and ``wildcard`` patterns (such as ``action\\..*``). Only
+    those are sent; ``eai:*`` metadata is not, except ``eai:data`` (a
+    dashboard's or data model's source). Booleans and numbers go as text.
+    """
+    fields = entry.get("fields") or {}
+    allowed = set(fields.get("required") or []) | set(fields.get("optional") or [])
+    wildcards = []
+    for pattern in fields.get("wildcard") or []:
+        try:
+            wildcards.append(re.compile("^(?:%s)$" % pattern))
+        except re.error:
+            continue
+    args = {}
+    for attr, value in (entry.get("content") or {}).items():
+        if value is None or (attr.startswith("eai:") and attr != "eai:data"):
+            continue
+        if attr not in allowed and not any(w.match(attr) for w in wildcards):
+            continue
+        if isinstance(value, bool):
+            value = "1" if value else "0"
+        elif isinstance(value, (int, float)):
+            value = str(value)
+        elif isinstance(value, dict):
+            continue
+        args[attr] = value
+    args["name"] = as_text(entry.get("name"))
+    return args
+
+
+def _copy_one(gateway, change, entry, user):
+    """Create a copy of the object in ``copy_to``; returns (status, message)."""
+    type_id, ns, name, target = change["type"], change["ns"], change["name"], change["copy_to"]
+    label = TYPES[type_id]["label"].lower()
+    new_path = object_path(type_id, ns, target, name)
+    try:
+        get_in_app(gateway, type_id, ns, target, name)
+        return "error", "%s already exists in %s, so it was not copied." % (name, target)
+    except GatewayError as error:
+        if error.status != 404:
+            raise
+    full = get_in_app(gateway, type_id, ns, change["app"], name, full=True)
+    gateway.create_object("/servicesNS/%s/%s/%s" % (quote(ns, safe=""), quote(target, safe=""),
+                                                     TYPES[type_id]["endpoint"]), copy_args(full))
+    logger.info("user=%s action=copy type=%s app=%s to=%s owner_ns=%s name=%s",
+                user, type_id, change["app"], target, ns, json.dumps(name))
+    # The copy gets the source's sharing, owner and roles. A private copy
+    # already has its owner's namespace, and splunkd keeps it private.
+    acl = entry.get("acl") or {}
+    sharing = as_text(acl.get("sharing")) or "app"
+    if sharing in ("app", "global"):
+        perms = acl.get("perms") or {}
+        try:
+            gateway.set_acl(new_path, acl_postargs({
+                "sharing": sharing, "owner": as_text(acl.get("owner")) or "nobody",
+                "read": as_list(perms.get("read")), "write": as_list(perms.get("write"))}))
+        except GatewayError as error:
+            # A copy left with the owner and sharing splunkd gave it on create
+            # could run (a scheduled report) or be visible as someone else, so
+            # it is removed again rather than kept half-made.
+            try:
+                gateway.delete_object(new_path)
+                undone = "the copy was removed again"
+            except GatewayError as cleanup:
+                logger.warning("user=%s copy of %s in %s left behind: %s", user, json.dumps(name), target, cleanup)
+                undone = "the copy could not be removed and is still in %s: check its permissions" % target
+            logger.warning("user=%s copy of %s to %s: permissions refused: %s", user, json.dumps(name), target, error)
+            return "error", "%s was not copied to %s: its permissions could not be set (%s), so %s." % (
+                name, target, error, undone)
+    change["copied"] = True
+    return "applied", "Copied %s %s to %s." % (label, name, target)
+
+
 def _apply_one(gateway, change, user):
     """Apply one object's edits. Returns (status, message, moved_to)."""
     type_id, ns, app, name = change["type"], change["ns"], change["app"], change["name"]
     label = TYPES[type_id]["label"].lower()
     path = object_path(type_id, ns, app, name)
     try:
-        entry = gateway.get_object(path)
+        entry = get_in_app(gateway, type_id, ns, app, name)
     except GatewayError as error:
         if error.status == 404:
             return ("error", "%s is no longer in %s: it was moved, renamed or deleted elsewhere. "
@@ -423,6 +532,11 @@ def _apply_one(gateway, change, user):
         logger.info("user=%s action=delete type=%s app=%s owner_ns=%s name=%s",
                     user, type_id, app, ns, json.dumps(name))
         return ("applied", "Deleted %s %s from %s." % (label, name, app), None)
+
+    if change["copy_to"]:
+        status, message = _copy_one(gateway, change, entry, user)
+        if status == "error" or not change["acl"]:
+            return status, message, None
 
     moved_to = None
     if change["move_to"]:
@@ -439,21 +553,27 @@ def _apply_one(gateway, change, user):
         path = object_path(type_id, ns, app, name)
 
     if change["acl"]:
+        # Moved or copied already: a refusal now must say that part was done.
+        done = ("Moved to %s" % moved_to if moved_to else
+                "Copied to %s" % change["copy_to"] if change.get("copied") else None)
         acl = entry.get("acl") or {}
         if not _is_true(acl.get("can_change_perms", True)):
             message = "Your account cannot change the permissions of %s." % name
-            return ("error", message if not moved_to else "Moved to %s, but %s" % (
-                moved_to, message[0].lower() + message[1:]), moved_to)
+            return ("error", message if not done else "%s, but %s" % (
+                done, message[0].lower() + message[1:]), moved_to)
         try:
             gateway.set_acl(path, acl_postargs(change["acl"]))
         except GatewayError as error:
-            if not moved_to:
+            if not done:
                 raise
-            return ("error", "Moved to %s, but its permissions were not changed: %s" % (moved_to, error),
-                    moved_to)
+            return ("error", "%s, but %s permissions were not changed: %s" % (
+                done, "the original's" if change.get("copied") else "its", error), moved_to)
         logger.info("user=%s action=acl type=%s app=%s owner_ns=%s name=%s acl=%s",
                     user, type_id, app, ns, json.dumps(name), json.dumps(change["acl"], sort_keys=True))
 
+    if change["copy_to"]:
+        return ("applied", "Copied %s %s to %s and changed the original's permissions." % (
+            label, name, change["copy_to"]), None)
     if moved_to and change["acl"]:
         return ("applied", "Moved %s %s to %s and changed its permissions." % (label, name, moved_to), moved_to)
     if moved_to:
@@ -476,8 +596,10 @@ def submit_changes(gateway, raw_changes, user="unknown"):
             logger.warning("user=%s object=%s change refused: status=%s %s",
                            user, json.dumps(change["key"]), error.status, error)
             status, message, moved_to = "error", "%s: %s" % (change["name"], error), None
+        # copied_to tells the page a copy exists even when a later step of
+        # the same change failed, so it stops staging the copy.
         results.append({"key": change["key"], "status": status, "message": message,
-                        "moved_to": moved_to})
+                        "moved_to": moved_to, "copied_to": change["copy_to"] if change.get("copied") else None})
     return {
         "results": results,
         "applied": sum(1 for r in results if r["status"] == "applied"),
@@ -523,8 +645,7 @@ def handle_request(method, body, query, gateway, user="unknown"):
         if method == "GET":
             if query.get("type") is not None:
                 type_id, ns, app, name = parse_object_ref(query, "Object")
-                return 200, build_details(type_id, gateway.get_object(object_path(type_id, ns, app, name),
-                                                                       full=True))
+                return 200, build_details(type_id, get_in_app(gateway, type_id, ns, app, name, full=True))
             return 200, read_model(gateway)
         if method == "POST":
             document = extract_document(body)

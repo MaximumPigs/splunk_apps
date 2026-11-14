@@ -18,7 +18,7 @@ HOST = "https://127.0.0.1:8089"
 
 
 def entry(type_id, name, app, owner="nobody", sharing="app", ns=None, local=True,
-          read=("*",), write=("admin",), can_change_perms=True, content=None):
+          read=("*",), write=("admin",), can_change_perms=True, content=None, fields=None):
     ns = ns or (owner if sharing == "user" else "nobody")
     links = {"edit": "x", "list": "x"}
     if local:
@@ -31,6 +31,7 @@ def entry(type_id, name, app, owner="nobody", sharing="app", ns=None, local=True
                 "can_change_perms": can_change_perms, "can_share_app": True,
                 "can_share_global": True, "removable": local},
         "links": links,
+        "fields": fields or {},
         "content": dict(content or {"disabled": False}),
     }
 
@@ -93,9 +94,18 @@ class FakeGateway(object):
             raise GatewayError("The following required arguments are missing: sharing.", status=400)
         if path in self.refuse_acl:
             raise GatewayError("Permission denied.", status=403)
+        if path not in self.objects:
+            return   # a copy made through a conf file: nothing to update here
         type_id, item = self.objects[path]
         item["acl"]["sharing"] = postargs["sharing"]
         item["acl"]["owner"] = postargs["owner"]
+
+    def create_object(self, collection, args):
+        self.calls.append(("create", collection, dict(args)))
+        type_id = next(t for t, spec in apps.TYPES.items() if collection.endswith("/" + spec["endpoint"]))
+        ns, app = apps.namespace_of(HOST + collection)
+        item = entry(type_id, args["name"], app, ns=ns)
+        self.objects[apps.object_path(type_id, ns, app, args["name"])] = (type_id, item)
 
     def delete_object(self, path):
         self.calls.append(("delete", path))
@@ -347,3 +357,167 @@ def test_post_rejects_malformed_bodies(body, status):
 
 def test_other_methods_are_refused():
     assert apps.handle_request("DELETE", None, {}, FakeGateway())[0] == 405
+
+
+# ------------------------------------------------------------------- copying
+
+MACRO_FIELDS = {"required": ["definition"], "optional": ["args", "description", "iseval", "disabled"],
+                "wildcard": []}
+
+
+def test_copy_args_send_only_writable_fields_as_text():
+    item = entry("savedsearch", "Report", "search", content={
+        "search": "index=x", "is_scheduled": False, "dispatch.earliest_time": "-1h", "cron_schedule": "",
+        "max_concurrent": 1, "eai:acl": {"app": "search"}, "eai:appName": "search", "next_scheduled_time": "x",
+        "embed.enabled": None}, fields={"required": [], "optional": ["search", "is_scheduled", "cron_schedule",
+                                                                    "max_concurrent", "embed.enabled"],
+                                         "wildcard": ["dispatch\\..*"]})
+    assert apps.copy_args(item) == {"name": "Report", "search": "index=x", "is_scheduled": "0",
+                                    "dispatch.earliest_time": "-1h", "cron_schedule": "",
+                                    "max_concurrent": "1"}
+
+
+def test_copy_args_keep_a_dashboards_source():
+    item = entry("view", "home", "search", content={"eai:data": "<dashboard/>", "isDashboard": True},
+                 fields={"required": ["eai:data"], "optional": [], "wildcard": []})
+    assert apps.copy_args(item) == {"name": "home", "eai:data": "<dashboard/>"}
+
+
+def test_copy_creates_the_object_in_the_target_with_the_sources_permissions():
+    source = entry("macro", "m1", "search", sharing="global", read=("*",), write=("admin", "power"),
+                   content={"definition": "index=x", "disabled": False}, fields=MACRO_FIELDS)
+    gateway = FakeGateway([("macro", source)])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="myapp")], user="admin")
+    assert result["applied"] == 1, result
+    assert "Copied search macro m1 to myapp." == result["results"][0]["message"]
+    create = [c for c in gateway.calls if c[0] == "create"][0]
+    assert create[1] == "/servicesNS/nobody/myapp/admin/macros"
+    assert create[2] == {"name": "m1", "definition": "index=x", "disabled": "0"}
+    acl = [c for c in gateway.calls if c[0] == "acl"][0]
+    assert acl[1] == "/servicesNS/nobody/myapp/admin/macros/m1"
+    assert acl[2] == {"sharing": "global", "owner": "nobody", "perms.read": "*", "perms.write": "admin,power"}
+    # The original stays where it was.
+    assert "/servicesNS/nobody/search/admin/macros/m1" in gateway.objects
+
+
+def test_an_object_in_default_can_be_copied():
+    source = entry("macro", "shipped", "search", local=False, content={"definition": "x"}, fields=MACRO_FIELDS)
+    gateway = FakeGateway([("macro", source)])
+    result = apps.submit_changes(gateway, [change("macro", "shipped", "search", copy_to="myapp")])
+    assert result["applied"] == 1, result
+
+
+def test_private_copy_stays_in_its_owners_namespace():
+    source = entry("macro", "mine", "search", owner="alice", sharing="user", content={"definition": "x"},
+                   fields=MACRO_FIELDS)
+    gateway = FakeGateway([("macro", source)])
+    apps.submit_changes(gateway, [change("macro", "mine", "search", ns="alice", copy_to="myapp")])
+    assert [c[1] for c in gateway.calls if c[0] == "create"] == ["/servicesNS/alice/myapp/admin/macros"]
+    assert not [c for c in gateway.calls if c[0] == "acl"]
+
+
+def test_copy_refuses_to_overwrite_an_object_in_the_target():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search", fields=MACRO_FIELDS)),
+                           ("macro", entry("macro", "m1", "myapp"))])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="myapp")])
+    assert result["failed"] == 1
+    assert "already exists in myapp" in result["results"][0]["message"]
+    assert not [c for c in gateway.calls if c[0] == "create"]
+
+
+def test_copy_and_a_permission_change_on_the_original():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search", content={"definition": "x"},
+                                           fields=MACRO_FIELDS))])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="myapp", acl={
+        "sharing": "global", "owner": "nobody", "read": ["*"], "write": []})])
+    assert result["applied"] == 1
+    assert "changed the original's permissions" in result["results"][0]["message"]
+    assert gateway.objects["/servicesNS/nobody/search/admin/macros/m1"][1]["acl"]["sharing"] == "global"
+
+
+@pytest.mark.parametrize("raw, message", [
+    ([change("macro", "m", "search", copy_to="other", move_to="myapp")], "either moved or copied"),
+    ([change("macro", "m", "search", copy_to="other", delete=True)], "cannot also be moved, copied"),
+    ([change("lookupfile", "a.csv", "search", copy_to="other")], "cannot be copied"),
+    ([change("nav", "default", "search", copy_to="other")], "cannot be copied"),
+    ([change("extraction", "st : EXTRACT-x", "search", copy_to="other")], "cannot be copied"),
+    ([change("tag", "eventtype=web", "search", copy_to="other")], "cannot be copied"),
+    ([change("macro", "m", "search", copy_to="search")], "already in search"),
+    ([change("macro", "m", "search", copy_to="system")], "not an app that objects can be copied to"),
+])
+def test_copy_requests_are_validated(raw, message):
+    with pytest.raises(apps.EasyAdminError) as caught:
+        apps.parse_changes(raw)
+    assert message in str(caught.value)
+
+
+def test_model_says_which_objects_can_be_copied():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search")),
+                           ("lookupfile", entry("lookupfile", "a.csv", "search"))])
+    by_type = {o["type"]: o for o in apps.read_model(gateway)["objects"]}
+    assert by_type["macro"]["copyable"] is True
+    assert by_type["lookupfile"]["copyable"] is False
+
+
+class VisibleGateway(FakeGateway):
+    """splunkd's visibility: a global object answers under every app's namespace."""
+
+    def get_object(self, path, full=False):
+        self.calls.append(("get", path))
+        if path in self.objects:
+            return self.objects[path][1]
+        ns, app = apps.namespace_of(HOST + path)
+        name = path.rsplit("/", 1)[1]
+        for type_id, item in self.objects.values():
+            if item["acl"]["sharing"] == "global" and path.endswith(
+                    "/%s/%s" % (apps.TYPES[type_id]["endpoint"], name)):
+                return item
+        raise GatewayError("Object not found.", status=404)
+
+
+def test_a_global_object_seen_from_the_target_app_is_not_a_clash():
+    source = entry("macro", "m1", "search", sharing="global", content={"definition": "x"}, fields=MACRO_FIELDS)
+    gateway = VisibleGateway([("macro", source)])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="myapp")])
+    assert result["applied"] == 1, result
+
+
+def test_a_change_never_lands_on_another_apps_object_of_the_same_name():
+    # m1 is no longer in myapp; a global m1 in search is still visible from
+    # there, and must not be deleted in its place.
+    gateway = VisibleGateway([("macro", entry("macro", "m1", "search", sharing="global"))])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "myapp", delete=True)])
+    assert result["failed"] == 1 and "no longer in myapp" in result["results"][0]["message"]
+    assert not [c for c in gateway.calls if c[0] == "delete"]
+
+
+def test_details_of_an_object_in_another_app_are_not_returned():
+    gateway = VisibleGateway([("macro", entry("macro", "m1", "search", sharing="global"))])
+    status, _ = apps.handle_request("GET", None, {"type": "macro", "ns": "nobody", "app": "myapp",
+                                                  "name": "m1"}, gateway)
+    assert status == 404
+
+
+def test_a_copy_whose_permissions_cannot_be_set_is_removed_again():
+    source = entry("savedsearch", "Runs as owner", "search", owner="alice", sharing="global",
+                   content={"search": "index=x"}, fields={"required": [], "optional": ["search"], "wildcard": []})
+    gateway = FakeGateway([("savedsearch", source)],
+                          refuse_acl=["/servicesNS/nobody/myapp/saved/searches/Runs%20as%20owner"])
+    result = apps.submit_changes(gateway, [change("savedsearch", "Runs as owner", "search", copy_to="myapp")])
+    outcome = result["results"][0]
+    assert outcome["status"] == "error" and outcome["copied_to"] is None
+    assert "was not copied to myapp" in outcome["message"] and "removed again" in outcome["message"]
+    assert ("delete", "/servicesNS/nobody/myapp/saved/searches/Runs%20as%20owner") in gateway.calls
+    assert "/servicesNS/nobody/myapp/saved/searches/Runs%20as%20owner" not in gateway.objects
+
+
+def test_copy_done_but_original_permissions_refused_reports_the_copy():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search", content={"definition": "x"},
+                                           fields=MACRO_FIELDS))],
+                          refuse_acl=["/servicesNS/nobody/search/admin/macros/m1"])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="myapp", acl={
+        "sharing": "global", "owner": "nobody", "read": ["*"], "write": []})])
+    outcome = result["results"][0]
+    assert outcome["status"] == "error" and outcome["copied_to"] == "myapp"
+    assert outcome["message"].startswith("Copied to myapp, but the original's permissions were not changed")
+    assert "/servicesNS/nobody/myapp/admin/macros/m1" in gateway.objects

@@ -766,3 +766,19 @@
     cursor: pointer;
     color: var(--ea-fg);
 }
+
+/* A staged copy, shown in the app it will be copied into: dashed, not draggable. */
+#easyadmin-apps .ea-object.ea-ghost {
+    border: 1px dashed var(--ea-changed);
+}
+
+#easyadmin-apps .ea-object.ea-ghost .ea-object-name {
+    font-style: italic;
+}
+
+/* Keeps a ghost row's icon in line with the rows that have a tick box. */
+#easyadmin-apps .ea-select-spacer {
+    display: inline-block;
+    width: 13px;
+    flex: none;
+}

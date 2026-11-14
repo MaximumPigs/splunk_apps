@@ -35,6 +35,11 @@ import logging
 import os
 import sys
 
+try:  # Python 3
+    from urllib.parse import quote
+except ImportError:  # pragma: no cover - Splunk no longer ships Python 2
+    from urllib import quote
+
 # splunkd starts persistent handlers with its own working directory, so the
 # app's bin/ is not reliably importable until it is added here.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -57,6 +62,8 @@ class AppsGateway(roles_rest.SplunkdGateway):
         # the links say whether splunkd will move or delete it.
         return [{"name": entry.get("name"), "id": entry.get("id"),
                  "acl": entry.get("acl") or {}, "links": entry.get("links") or {},
+                 # Which fields the endpoint accepts on create: a copy sends these.
+                 "fields": entry.get("fields") or {},
                  "content": entry.get("content") or {}}
                 for entry in document.get("entry") or []]
 
@@ -106,6 +113,10 @@ class AppsGateway(roles_rest.SplunkdGateway):
 
     def delete_object(self, path):
         self._request(path, method="DELETE")
+
+    def create_object(self, collection, args):
+        # simpleRequest needs a dict; list values go as repeated form fields.
+        self._request(collection, method="POST", postargs=dict(args))
 
 
 def _query_dict(request):

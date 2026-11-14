@@ -7,7 +7,7 @@
 -->
 <dashboard version="1.1" script="easyadmin_apps.js" stylesheet="easyadmin_apps.css" hideEdit="true">
   <label>App management</label>
-  <description>Every app and the knowledge objects in it. Move objects between apps, change their permissions or delete them, then apply all the changes at once.</description>
+  <description>Every app and the knowledge objects in it. Move or copy objects between apps, change their permissions or delete them, then apply all the changes at once.</description>
   <row>
     <panel>
       <html>

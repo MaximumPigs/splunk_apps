@@ -214,7 +214,7 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     page.locator(ROOT + " .ea-filter").fill(name)
     # Dropped back on its own app: nothing is staged, and the page says so.
     _object(page, "search", name).drag_to(page.locator(ROOT + ' .ea-app[data-app="search"] .ea-app-head'))
-    assert "Nothing to move" in page.locator(ROOT + " .ea-messages").inner_text()
+    assert "Nothing to do" in page.locator(ROOT + " .ea-messages").inner_text()
     assert page.locator(ROOT + " .ea-apply").is_disabled()
     _object(page, "search", name).drag_to(page.locator(ROOT + ' .ea-app[data-app="launcher"]'))
     assert "Staged a move of 1 object to Home (launcher)" in page.locator(ROOT + " .ea-messages").inner_text()
@@ -230,7 +230,9 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     prompt = _apply(page)
     assert "move 1 object" in prompt
     assert _acl(sandbox_client, "launcher", name)["app"] == "launcher"
-    assert "Applied changes to 1 object." in page.locator(ROOT + " .ea-message.ea-success").inner_text()
+    success = page.locator(ROOT + " .ea-message.ea-success").inner_text()
+    assert "Applied changes to 1 object:" in success
+    assert "Moved search macro %s to launcher." % name in success
     assert "moving from" not in _object(page, "launcher", name).inner_text()
 
 
@@ -298,7 +300,8 @@ def test_object_in_default_cannot_be_moved_or_deleted(open_view):
     page = _open(open_view, builtin=False)
     row = _object(page, "easyadmin", "role_management")
     assert row.locator(".ea-locked").count() == 1
-    assert row.get_attribute("draggable") is None
+    # Still draggable: dropping it on another app stages a copy instead.
+    assert row.get_attribute("draggable") == "true"
     row.locator(".ea-object-name").click()
     panel = page.locator(ROOT + " .ea-panel")
     assert panel.locator("#ea-app").is_disabled()
@@ -343,3 +346,98 @@ def test_bulk_owner_change_is_staged_and_applied(open_view, macro, sandbox_clien
     assert "change the permissions of 2 objects" in prompt
     assert _acl(sandbox_client, "search", first)["owner"] == "nobody"
     assert _acl(sandbox_client, "search", second)["owner"] == "nobody"
+
+
+# ------------------------------------------------------------------- copying
+
+@pytest.fixture
+def cleanup_launcher_macros(sandbox_client):
+    """Names of macros a test copies into launcher; deleted from there afterwards."""
+    names = []
+    yield names
+    for name in names:
+        try:
+            sandbox_client.request("DELETE", "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))
+        except SplunkError:
+            pass
+
+
+def _shipped_search_macro(sandbox_client):
+    """A macro that ships in the search app's default folder (cannot be moved)."""
+    for e in sandbox_client.request("GET", "/servicesNS/nobody/search/admin/macros",
+                                    {"count": 0, "search": "eai:acl.app=search"})["entry"]:
+        if "move" not in (e.get("links") or {}) and e["acl"]["app"] == "search":
+            return e["name"]
+    pytest.skip("no shipped macro in the search app")
+
+
+def test_dragging_a_default_object_stages_a_copy(open_view, sandbox_client, cleanup_launcher_macros, shot):
+    """An object in a default folder cannot be moved, so dropping it on another app stages a copy."""
+    name = _shipped_search_macro(sandbox_client)
+    cleanup_launcher_macros.append(name)
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    source = _object(page, "search", name)
+    assert source.get_attribute("draggable") == "true"
+    source.drag_to(page.locator(ROOT + ' .ea-app[data-app="launcher"]'))
+    text = page.locator(ROOT + " .ea-messages").inner_text()
+    assert "Staged a copy of 1 object into Home (launcher)." in text
+    assert "Objects that cannot be moved (in a default folder" in text and "were copied instead." in text
+    assert "copying to launcher" in _object(page, "search", name).inner_text()
+    ghost = page.locator(ROOT + ' .ea-app[data-app="launcher"] .ea-ghost:has(.ea-object-name:text-is("%s"))' % name)
+    assert ghost.count() == 1 and "copy from search" in ghost.inner_text()
+    shot(page, "app_management_staged_copy")
+    prompt = _apply(page)
+    assert "copy 1 object into another app" in prompt
+    copied = sandbox_client.request("GET", "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))["entry"][0]
+    assert copied["acl"]["app"] == "launcher"
+    assert _object(page, "search", name).count() == 1   # the original is still there
+
+
+def test_copy_from_the_selection_bar(open_view, macro, sandbox_client, cleanup_launcher_macros):
+    """Ticking an object, choosing an app and pressing Copy stages a copy rather than a move."""
+    name = macro()
+    cleanup_launcher_macros.append(name)
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
+    assert "copying to launcher" in _object(page, "search", name).inner_text()
+    _apply(page)
+    assert _acl(sandbox_client, "launcher", name)["app"] == "launcher"
+    assert _acl(sandbox_client, "search", name)["app"] == "search"
+
+
+def test_copy_from_the_panel(open_view, macro, sandbox_client, cleanup_launcher_macros):
+    """The panel's "Copy to app" stages a copy; "Do not copy" takes it back."""
+    name = macro()
+    cleanup_launcher_macros.append(name)
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-object-name").click()
+    panel = page.locator(ROOT + " .ea-panel")
+    panel.locator("#ea-copy").select_option("launcher")
+    assert "copying to launcher" in _object(page, "search", name).inner_text()
+    panel.locator("#ea-copy").select_option("")
+    assert "copying to" not in _object(page, "search", name).inner_text()
+    panel.locator("#ea-copy").select_option("launcher")
+    page.keyboard.press("Escape")
+    _apply(page)
+    assert _acl(sandbox_client, "launcher", name)["app"] == "launcher"
+
+
+def test_copy_to_an_app_that_has_the_name_is_caught_when_staging(open_view, macro, sandbox_client,
+                                                                   cleanup_launcher_macros):
+    """Copying where the target app already has an object of that type and name is refused at once."""
+    name = macro()
+    cleanup_launcher_macros.append(name)
+    sandbox_client.request("POST", "/servicesNS/nobody/launcher/admin/macros",
+                           {"name": name, "definition": "index=_audit"})
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
+    assert "already has an object of the same type and name" in page.locator(ROOT + " .ea-messages").inner_text()
+    assert page.locator(ROOT + " .ea-apply").is_disabled()

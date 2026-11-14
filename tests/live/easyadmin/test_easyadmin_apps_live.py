@@ -218,3 +218,70 @@ def test_form_encoded_changes_are_accepted(splunk, objects):
     obj = find(model(splunk), "macro", name)
     result = splunk.request("POST", ENDPOINT, {"changes": json.dumps([ref(obj, delete=True)])})
     assert result["applied"] == 1
+
+
+# ------------------------------------------------------------------- copying
+
+def _delete_quietly(splunk, path):
+    try:
+        splunk.request("DELETE", path)
+    except SplunkError:
+        pass
+
+
+def test_copy_creates_a_second_object_and_keeps_the_original(splunk, objects):
+    name = objects.macro()
+    obj = find(model(splunk), "macro", name)
+    try:
+        result = apply(splunk, [ref(obj, copy_to="launcher")])
+        assert result["applied"] == 1, result
+        copied = splunk.request("GET", "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))["entry"][0]
+        assert copied["content"]["definition"] == "index=_internal"
+        assert copied["acl"]["app"] == "launcher"
+        assert acl_of(splunk, "nobody", "search", "admin/macros", name)["app"] == "search"
+        # A second copy is refused rather than overwriting the first.
+        again = apply(splunk, [ref(obj, copy_to="launcher")])
+        assert again["failed"] == 1 and "already exists in launcher" in again["results"][0]["message"]
+    finally:
+        _delete_quietly(splunk, "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))
+
+
+def test_copy_keeps_sharing_and_a_dashboards_source(splunk, objects):
+    name = objects.view()
+    splunk.request("POST", "/servicesNS/nobody/search/data/ui/views/%s/acl" % q(name),
+                   {"sharing": "global", "owner": "nobody", "perms.read": "*", "perms.write": "admin"})
+    obj = find(model(splunk), "view", name)
+    try:
+        assert apply(splunk, [ref(obj, copy_to="launcher")])["applied"] == 1
+        copied = splunk.request("GET", "/servicesNS/nobody/launcher/data/ui/views/%s" % q(name))["entry"][0]
+        assert "<label>Live</label>" in copied["content"]["eai:data"]
+        assert copied["acl"]["sharing"] == "global"
+    finally:
+        _delete_quietly(splunk, "/servicesNS/nobody/launcher/data/ui/views/%s" % q(name))
+
+
+def test_an_object_shipped_in_default_can_be_copied(splunk):
+    document = model(splunk)
+    shipped = next(o for o in document["objects"]
+                   if o["type"] == "macro" and o["app"] == "search" and not o["movable"] and o["copyable"])
+    path = "/servicesNS/nobody/launcher/admin/macros/%s" % q(shipped["name"])
+    try:
+        result = apply(splunk, [ref(shipped, copy_to="launcher")])
+        assert result["applied"] == 1, result
+        original = splunk.request("GET", "/servicesNS/nobody/search/admin/macros/%s" % q(shipped["name"]))
+        copied = splunk.request("GET", path)["entry"][0]
+        assert copied["content"]["definition"] == original["entry"][0]["content"]["definition"]
+        assert copied["acl"]["app"] == "launcher"
+    finally:
+        _delete_quietly(splunk, path)
+
+
+def test_props_objects_and_tags_are_not_offered_for_copying(splunk):
+    # splunkd's REST API merges these across apps, so a copy could not be
+    # written reliably; the endpoint refuses rather than half-copying.
+    document = model(splunk)
+    source = next(o for o in document["objects"] if o["type"] == "extraction")
+    assert source["copyable"] is False
+    with pytest.raises(SplunkError) as caught:
+        apply(splunk, [ref(source, copy_to="launcher")])
+    assert caught.value.status == 400 and "cannot be copied" in str(caught.value)
