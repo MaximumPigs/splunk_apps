@@ -827,3 +827,14 @@
     justify-content: flex-end;
     margin-left: auto;
 }
+
+/* Where an object's own setting is set: default, local or private. */
+#easyadmin-apps .ea-setting-layer {
+    margin-left: 6px;
+    font-family: inherit;
+    font-weight: normal;
+}
+
+#easyadmin-apps .ea-show-all {
+    padding-left: 0;
+}

@@ -156,6 +156,7 @@ require([
         pending: newMap(),     // object key -> {moveTo, acl, del}
         selected: newMap(),    // object key -> true
         details: newMap(),     // object key -> settings from the server, or 'loading' / {error}
+        showAllSettings: newMap(),  // object key -> true to list inherited settings too
         filter: '',            // object name filter
         appFilter: '',         // app name or label filter
         types: null,           // type id -> true for the types on show (set on first load)
@@ -282,9 +283,14 @@ require([
     }
 
     // An app as people see it: its label, with the directory name when different.
+    // In quotes, so a name reads as a name inside a message.
     function appText(name) {
         var app = state.apps[name];
-        return app && app.label !== name ? app.label + ' (' + name + ')' : name;
+        return app && app.label !== name ? '"' + app.label + '" (' + name + ')' : '"' + name + '"';
+    }
+
+    function quoted(text) {
+        return '"' + text + '"';
     }
 
     // "1 object ships in its app's..." / "2 objects ship in their apps'...".
@@ -304,7 +310,7 @@ require([
     function targetFree(obj, app) {
         if (clashFree(obj, app)) { return true; }
         state.message = { kind: 'info', lines: [appText(app) + ' already has an object of the same type and ' +
-            'name, so ' + obj.name + ' was not staged.'] };
+            'name, so ' + quoted(obj.name) + ' was not staged.'] };
         render();
         return false;
     }
@@ -348,7 +354,7 @@ require([
         if (clash.length) {
             lines.push(appText(app) + ' already has ' + (clash.length === 1 ? 'an object' : 'objects') + ' of the same ' +
                 'type and name, so ' + (clash.length === 1 ? 'it was' : 'they were') + ' not staged: ' +
-                clash.slice(0, 5).join(', ') + (clash.length > 5 ? ' and ' + (clash.length - 5) + ' more' : '') + '.');
+                $.map(clash.slice(0, 5), quoted).join(', ') + (clash.length > 5 ? ' and ' + (clash.length - 5) + ' more' : '') + '.');
         }
         if (same && !moved && !copied && !refused) {
             lines.push('Nothing to do: ' + (same === 1 ? 'the object is' : 'the objects are') +
@@ -514,6 +520,8 @@ require([
             }
         }).done(function (body) {
             var failures = [];
+            var copiesInstead = 0;
+            var aclOnOriginal = [];
             $.each(body.results || [], function (i, result) {
                 var obj = state.byKey[result.key];
                 var pending = state.pending[result.key];
@@ -522,7 +530,19 @@ require([
                     delete state.selected[result.key];
                     return;
                 }
-                failures.push(result.message);
+                // The move was refused (the object ships in a default
+                // folder) and it can be copied: stage a copy to the same app.
+                // The page does this itself, so the server's advice to copy
+                // it is left out of the message.
+                if (result.copy_instead && pending && pending.moveTo) {
+                    pending.copyTo = pending.moveTo;
+                    pending.moveTo = null;
+                    copiesInstead += 1;
+                    if (pending.acl) { aclOnOriginal.push(obj ? obj.name : result.key); }
+                    failures.push(result.message.replace(/ Copy it instead\.$/, ''));
+                } else {
+                    failures.push(result.message);
+                }
                 // Copied, but a later step failed: the copy exists, so stop
                 // staging it and keep only what is left to retry.
                 if (result.copied_to && pending) {
@@ -542,7 +562,12 @@ require([
             if (body.failed) {
                 state.message = { kind: 'error', lines: ['Applied ' + plural(body.applied, 'change') + '; ' +
                     plural(body.failed, 'object') + ' could not be changed and still show as staged:']
-                    .concat(failures) };
+                    .concat(failures).concat(copiesInstead ? [plural(copiesInstead, 'move was', 'moves were') +
+                        ' staged as a copy instead, because ' + (copiesInstead === 1 ? 'that object' : 'those objects') +
+                        ' cannot be moved. Apply again to copy ' + (copiesInstead === 1 ? 'it.' : 'them.')] : [])
+                    .concat(aclOnOriginal.length ? ['The staged permission change of ' +
+                        $.map(aclOnOriginal, quoted).join(', ') + ' now applies to the original, which stays where ' +
+                        'it is; set the copy\'s permissions after applying.'] : []) };
             } else {
                 // Say what was done, object by object (the server words each one).
                 var done = $.map($.grep(body.results || [], function (r) { return r.status !== 'error'; }),
@@ -752,18 +777,19 @@ require([
                 state.message = null;
                 load();
             }));
-        $actions.append(el('button', 'btn ea-discard', count ? 'Discard ' + plural(count, 'change') : 'Discard changes')
+        $actions.append(el('button', 'btn ea-discard', count ? 'Discard changes to ' + plural(count, 'object') : 'Discard changes')
             .attr({ type: 'button', 'data-fid': 'discard' })
             .prop('disabled', state.busy || !count).on('click', function () {
                 // Staged work can be large and is not recoverable: ask first.
-                if (!window.confirm('Discard ' + plural(count, 'staged change') + '? Nothing has been applied yet.')) {
+                if (!window.confirm('Discard the staged changes to ' + plural(count, 'object') +
+                        '? Nothing has been applied yet.')) {
                     return;
                 }
                 state.pending = newMap();
-                state.message = { kind: 'info', lines: ['Discarded ' + plural(count, 'staged change') + '.'] };
+                state.message = { kind: 'info', lines: ['Discarded the staged changes to ' + plural(count, 'object') + '.'] };
                 render();
             }));
-        $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply ' + plural(count, 'change') : 'Apply changes')
+        $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply changes to ' + plural(count, 'object') : 'Apply changes')
             .attr({ type: 'button', 'data-fid': 'apply' })
             .prop('disabled', state.busy || !count).on('click', apply));
         $bar.append($actions);
@@ -838,7 +864,9 @@ require([
                         render();
                         return;
                     }
-                    stageTransfer(keys(state.selected), app, action[1]);
+                    // Move works as a drop does: objects that cannot be
+                    // moved (a default folder) are copied instead, and said so.
+                    stageTransfer(keys(state.selected), app, action[1] === 'move' ? 'auto' : 'copy');
                     render();
                 }));
         });
@@ -931,7 +959,7 @@ require([
         setPending(obj, edits);
         var left = changeParts(obj).length;
         state.message = { kind: 'info', lines: ['Discarded the staged change "' + (part ? part.text : kind) +
-            '" for ' + obj.name + '.' + (left ? ' Its other staged ' + (left === 1 ? 'change is' : 'changes are') +
+            '" for ' + quoted(obj.name) + '.' + (left ? ' Its other staged ' + (left === 1 ? 'change is' : 'changes are') +
             ' kept.' : '')] };
         render();
         // Keep the keyboard where it was: on this object's name. A filter can
@@ -1262,22 +1290,74 @@ require([
         }
         $panel.append($actions);
 
-        $panel.append(el('h3', null, 'Settings'));
         var details = state.details[obj.key];
         if (!details || details === 'loading') {
+            $panel.append(el('h3', null, 'Settings'));
             $panel.append(el('p', 'ea-muted', 'Loading settings...'));
             loadDetails(obj);
         } else if (details.error) {
+            $panel.append(el('h3', null, 'Settings'));
             $panel.append(el('p', 'ea-message ea-error', 'Could not load the settings. ' + details.error));
-        } else if (!details.settings.length) {
-            $panel.append(el('p', 'ea-muted', 'This object has no settings to show.'));
         } else {
-            var $dl = el('dl', 'ea-settings');
-            $.each(details.settings, function (i, setting) {
-                $dl.append(el('dt', null, setting.name));
-                $dl.append(el('dd', null, setting.value + (setting.truncated ? ' ... (shortened)' : '')));
-            });
-            $panel.append($dl);
+            renderSettings($panel, obj, details);
+        }
+    }
+
+    var LAYER_TEXT = { 'default': 'default', local: 'local', user: 'private' };
+
+    function settingsList(settings, withLayer) {
+        var $dl = el('dl', 'ea-settings');
+        $.each(settings, function (i, setting) {
+            var $dt = el('dt', null, setting.name);
+            if (withLayer) {
+                $dt.append(el('span', 'ea-badge ea-setting-layer', LAYER_TEXT[setting.layer] || setting.layer)
+                    .attr('title', setting.layer === 'user' ? 'Set in the owner\'s private folder' :
+                        'Set in the app\'s ' + setting.layer + ' folder'));
+            }
+            $dl.append($dt);
+            $dl.append(el('dd', null, setting.value + (setting.truncated ? ' ... (shortened)' : '')));
+        });
+        return $dl;
+    }
+
+    // The object's own settings first (read from its stanza in its app's
+    // default and local files, as btool does); everything it inherits
+    // (from [default] stanzas and etc/system/default) only on request.
+    function renderSettings($panel, obj, details) {
+        var showAll = state.showAllSettings[obj.key];
+        var explicit = details.explicit;
+        if (explicit) {
+            $panel.append(el('h3', null, 'Settings set in this object'));
+            $panel.append(el('p', 'ea-muted', 'From its [' + obj.name + '] stanza in ' + details.explicit_conf +
+                '.conf. Settings it inherits from defaults are not listed.'));
+            if (explicit.length) {
+                $panel.append(settingsList(explicit, true));
+            } else {
+                $panel.append(el('p', 'ea-muted', 'None: every setting of this object comes from defaults.'));
+            }
+        } else {
+            $panel.append(el('h3', null, 'Settings'));
+            $panel.append(el('p', 'ea-muted', details.explicit_note === 'capability' ?
+                'All settings, including inherited defaults: telling the object\'s own settings apart needs the ' +
+                'admin_all_objects capability, as it reads the configuration files.' :
+                'All of this object\'s settings are its own.'));
+            $panel.append(details.settings.length ? settingsList(details.settings, false) :
+                el('p', 'ea-muted', 'This object has no settings to show.'));
+            return;
+        }
+        if (details.settings.length <= explicit.length) { return; }   // nothing more to show
+        $panel.append(el('button', 'btn btn-link ea-show-all', showAll ? 'Hide the inherited settings' :
+            'Show all ' + plural(details.settings.length, 'setting') + ', including inherited defaults').attr({
+            type: 'button', 'data-fid': 'show-all:' + obj.key, 'aria-expanded': showAll ? 'true' : 'false'
+        }).on('click', function () {
+            if (state.showAllSettings[obj.key]) { delete state.showAllSettings[obj.key]; } else {
+                state.showAllSettings[obj.key] = true;
+            }
+            renderPanel();
+        }));
+        if (showAll) {
+            $panel.append(el('h3', null, 'All settings, as splunkd reports them'));
+            $panel.append(settingsList(details.settings, false));
         }
     }
 

@@ -183,7 +183,7 @@ def test_stale_location_is_reported(splunk, objects):
                    {"app": "launcher", "user": "nobody"})
     result = apply(splunk, [ref(obj, delete=True)])
     assert result["failed"] == 1
-    assert "no longer in search" in result["results"][0]["message"]
+    assert 'no longer in "search"' in result["results"][0]["message"]
 
 
 def test_user_without_rights_cannot_change_others_objects(splunk, sandbox, objects):
@@ -241,7 +241,7 @@ def test_copy_creates_a_second_object_and_keeps_the_original(splunk, objects):
         assert acl_of(splunk, "nobody", "search", "admin/macros", name)["app"] == "search"
         # A second copy is refused rather than overwriting the first.
         again = apply(splunk, [ref(obj, copy_to="launcher")])
-        assert again["failed"] == 1 and "already exists in launcher" in again["results"][0]["message"]
+        assert again["failed"] == 1 and 'already exists in "launcher"' in again["results"][0]["message"]
     finally:
         _delete_quietly(splunk, "/servicesNS/nobody/launcher/admin/macros/%s" % q(name))
 
@@ -285,3 +285,58 @@ def test_props_objects_and_tags_are_not_offered_for_copying(splunk):
     with pytest.raises(SplunkError) as caught:
         apply(splunk, [ref(source, copy_to="launcher")])
     assert caught.value.status == 400 and "cannot be copied" in str(caught.value)
+
+
+# -------------------------------------------------------- explicit settings
+
+def _details(client, obj):
+    return client.request("GET", ENDPOINT, {k: obj[k] for k in ("type", "ns", "app", "name")})
+
+
+def test_details_list_only_the_settings_set_in_the_object(splunk, objects):
+    name = objects.macro()
+    details = _details(splunk, find(model(splunk), "macro", name))
+    # Created with only a definition: that is all its own stanza holds,
+    # however many settings splunkd reports for it.
+    assert details["explicit_conf"] == "macros"
+    assert [(s["name"], s["value"], s["layer"]) for s in details["explicit"]] == [
+        ("definition", "index=_internal", "local")]
+    assert len(details["settings"]) > len(details["explicit"])
+
+
+def test_a_shipped_objects_own_settings_come_from_default(splunk):
+    shipped = next(o for o in model(splunk)["objects"]
+                   if o["type"] == "macro" and o["app"] == "search" and not o["movable"])
+    details = _details(splunk, shipped)
+    assert details["explicit"], "a shipped macro sets at least its definition"
+    assert {s["layer"] for s in details["explicit"]} <= {"default", "local"}
+    assert "definition" in [s["name"] for s in details["explicit"]]
+
+
+def test_a_private_objects_own_settings_come_from_the_owners_folder(splunk, objects):
+    name = objects.macro(owner="admin")
+    details = _details(splunk, find(model(splunk), "macro", name))
+    assert [(s["name"], s["layer"]) for s in details["explicit"]] == [("definition", "user")]
+
+
+def test_without_admin_all_objects_the_full_list_is_returned(splunk, sandbox, objects):
+    name = objects.macro()
+    user, password = sandbox.create_user(roles=["user"], label="easyadmin_explicit_ro")
+    client = splunk.as_user(user, password)
+    details = _details(client, find(model(client), "macro", name))
+    assert details["explicit"] is None and details["explicit_note"] == "capability"
+    assert details["settings"]
+
+
+def test_shipped_reports_are_not_offered_as_movable(splunk):
+    # A saved search in a default folder still lists move and remove links,
+    # but splunkd refuses the move ("cannot be deleted and thus it cannot be
+    # moved"); the model must not offer it. Seen with the search app's
+    # "Bucket Merge Retrieve Conf Settings".
+    shipped = [o for o in model(splunk)["objects"] if o["type"] == "savedsearch" and o["app"] == "search"]
+    assert shipped, "the search app ships saved searches"
+    entry = splunk.request("GET", "/servicesNS/nobody/search/saved/searches/%s" % q(shipped[0]["name"]))["entry"][0]
+    if not entry["acl"].get("removable"):
+        assert "move" in entry["links"]   # the misleading link is still there
+        assert shipped[0]["movable"] is False and shipped[0]["removable"] is False
+        assert shipped[0]["copyable"] is True

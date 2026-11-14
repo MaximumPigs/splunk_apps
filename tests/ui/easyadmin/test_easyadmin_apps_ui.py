@@ -217,12 +217,12 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     assert "Nothing to do" in page.locator(ROOT + " .ea-messages").inner_text()
     assert page.locator(ROOT + " .ea-apply").is_disabled()
     _object(page, "search", name).drag_to(page.locator(ROOT + ' .ea-app[data-app="launcher"]'))
-    assert "Staged a move of 1 object to Home (launcher)" in page.locator(ROOT + " .ea-messages").inner_text()
+    assert 'Staged a move of 1 object to "Home" (launcher)' in page.locator(ROOT + " .ea-messages").inner_text()
     moved = _object(page, "launcher", name)
     assert moved.count() == 1
     assert "moving from search" in moved.inner_text()
     assert "ea-changed" in moved.get_attribute("class")
-    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply 1 change"
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 object"
     shot(page, "app_management_staged_move")
     # Nothing is written until Apply.
     assert _acl(sandbox_client, "search", name)["app"] == "search"
@@ -232,7 +232,7 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     assert _acl(sandbox_client, "launcher", name)["app"] == "launcher"
     success = page.locator(ROOT + " .ea-message.ea-success").inner_text()
     assert "Applied changes to 1 object:" in success
-    assert "Moved search macro %s to launcher." % name in success
+    assert 'Moved search macro "%s" to "launcher".' % name in success
     assert "moving from" not in _object(page, "launcher", name).inner_text()
 
 
@@ -289,7 +289,7 @@ def test_delete_is_staged_and_discard_drops_it(open_view, macro, sandbox_client)
         dialog.accept()
     page.once("dialog", answer)
     page.locator(ROOT + " .ea-discard").click()
-    assert seen["message"] == "Discard 1 staged change? Nothing has been applied yet."
+    assert seen["message"] == "Discard the staged changes to 1 object? Nothing has been applied yet."
     assert "will be deleted" not in _object(page, "search", name).inner_text()
     assert page.locator(ROOT + " .ea-apply").is_disabled()
     assert _acl(sandbox_client, "search", name)["app"] == "search"
@@ -381,7 +381,7 @@ def test_dragging_a_default_object_stages_a_copy(open_view, sandbox_client, clea
     assert source.get_attribute("draggable") == "true"
     source.drag_to(page.locator(ROOT + ' .ea-app[data-app="launcher"]'))
     text = page.locator(ROOT + " .ea-messages").inner_text()
-    assert "Staged a copy of 1 object into Home (launcher)." in text
+    assert 'Staged a copy of 1 object into "Home" (launcher).' in text
     assert "Objects that cannot be moved (in a default folder" in text and "were copied instead." in text
     assert "copying to launcher" in _object(page, "search", name).inner_text()
     ghost = page.locator(ROOT + ' .ea-app[data-app="launcher"] .ea-ghost:has(.ea-object-name:text-is("%s"))' % name)
@@ -467,7 +467,7 @@ def test_each_staged_change_can_be_discarded_on_its_own(open_view, macro, shot):
     back = _object(page, "search", name)
     assert "moving from" not in back.inner_text()
     assert "permissions changed" in back.inner_text()
-    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply 1 change"
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 object"
     assert "Its other staged change is kept." in page.locator(ROOT + " .ea-messages").inner_text()
     # The keyboard stays on the object.
     assert page.evaluate("document.activeElement.getAttribute('data-fid')").startswith("open:")
@@ -492,3 +492,57 @@ def test_a_staged_copy_can_be_discarded_from_its_dashed_row(open_view, macro):
     assert page.locator(ROOT + ' .ea-app[data-app="launcher"] .ea-ghost').count() == 0
     assert "copying to" not in _object(page, "search", name).inner_text()
     assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_panel_shows_the_objects_own_settings_first(open_view, macro, shot):
+    """The panel lists only the settings set in the object; inherited ones come on request."""
+    name = macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-object-name").click()
+    panel = page.locator(ROOT + " .ea-panel")
+    panel.locator(".ea-settings").first.wait_for()
+    assert "Settings set in this object" in panel.inner_text()
+    names = [t.strip() for t in panel.locator(".ea-settings dt").all_inner_texts()]
+    # The macro was created with only a definition (the badge text follows the name).
+    assert len(names) == 1 and names[0].startswith("definition")
+    assert panel.locator(".ea-setting-layer").inner_text() == "local"
+    shot(page, "app_management_own_settings")
+    show = panel.locator(".ea-show-all")
+    assert show.get_attribute("aria-expanded") == "false"
+    show.click()
+    assert page.locator(ROOT + " .ea-panel .ea-settings").count() == 2
+    # The full list (as splunkd reports it, inherited settings included) is longer.
+    lists = page.locator(ROOT + " .ea-panel .ea-settings")
+    assert lists.nth(1).locator("dt").count() > lists.nth(0).locator("dt").count()
+    page.locator(ROOT + " .ea-panel .ea-show-all").click()
+    assert page.locator(ROOT + " .ea-panel .ea-settings").count() == 1
+
+
+@pytest.fixture
+def cleanup_launcher_reports(sandbox_client):
+    names = []
+    yield names
+    for name in names:
+        try:
+            sandbox_client.request("DELETE", "/servicesNS/nobody/launcher/saved/searches/%s" % q(name))
+        except SplunkError:
+            pass
+
+
+def test_move_button_copies_what_cannot_be_moved(open_view, sandbox_client, cleanup_launcher_reports):
+    """Move on an object that ships in a default folder stages a copy instead, and says so."""
+    shipped = next(e["name"] for e in sandbox_client.request(
+        "GET", "/servicesNS/nobody/search/saved/searches", {"count": 0, "search": "eai:acl.app=search"})["entry"]
+        if e["acl"]["app"] == "search" and not e["acl"].get("removable"))
+    cleanup_launcher_reports.append(shipped)
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(shipped)
+    row = _object(page, "search", shipped)
+    assert row.locator(".ea-locked").count() == 1
+    row.locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="move-selected"]').click()
+    text = page.locator(ROOT + " .ea-messages").inner_text()
+    assert 'Staged a copy of 1 object into "Home" (launcher).' in text and "were copied instead" in text
+    assert "copying to launcher" in _object(page, "search", shipped).inner_text()

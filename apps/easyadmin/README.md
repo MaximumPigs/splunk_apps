@@ -161,10 +161,10 @@ added from the **Types** menu.
 | **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. |
 | The tick box in an app's title | Selects every object shown in that app (after the filters). It is half-ticked when only some are selected. |
 | Drag an object onto another app's box | Stages a move, or a copy for an object that ships in a default folder (which cannot be moved). Hold Ctrl (Cmd on a Mac) while dropping to copy instead. Dragging a ticked object takes every ticked object. |
-| Tick objects, then **To app...** and **Move** or **Copy** | Stages a move or a copy without dragging. |
+| Tick objects, then **To app...** and **Move** or **Copy** | Stages a move or a copy without dragging. **Move** copies the objects that cannot be moved, as a drop does, and says so. |
 | **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |
 | **Delete** | Stages the ticked objects for deletion. |
-| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and every one of its settings (read-only). |
+| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings (read-only): see [Settings in the panel](#settings-in-the-panel). |
 | **Apply N changes** | Applies every staged change, after a confirmation that says how many objects are moved, re-permissioned and deleted. |
 | The × on a staged-change badge | Drops that one change (a move, a copy, a permission change or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
 | **Discard changes** | Drops every staged change, after asking. |
@@ -173,6 +173,24 @@ A staged change is outlined and labelled on the object (`moving from search`,
 `copying to launcher`, `permissions changed`, `will be deleted`). A moved
 object shows in the box it is moving to; a staged copy shows there as a
 dashed `copy from` row, and the original stays where it is.
+
+### Settings in the panel
+
+The panel lists the settings set in the object itself: those in its
+`[<name>]` stanza in its app's `default` and `local` files, or in the owner's
+folder for a private object, each marked `default`, `local` or `private`.
+Settings it only inherits, from `[default]` stanzas and `etc/system/default`,
+are left out; **Show all N settings, including inherited defaults** lists
+everything splunkd reports for it.
+
+Like the precedence tab, this reads the configuration files, so it needs the
+`admin_all_objects` capability; without it the panel lists every setting, as
+splunkd reports them. It applies to objects kept as a stanza: reports and
+alerts, search macros, event types, tags, field transformations, lookup
+definitions, workflow actions, time ranges, data models, KV store
+collections and alert actions. Dashboards, navigation menus and prebuilt
+panels are XML files whose settings are all their own, and props-based
+objects are a single setting each.
 
 ### Copying objects
 
@@ -196,7 +214,10 @@ with staged changes asks first.
 
 An object that ships in an app's `default/` folder shows a lock and the
 `default` badge. Splunk cannot move or delete such an object, so the page
-cannot either. It can be copied to another app (dragging it there stages a
+cannot either. (Splunk still lists move and delete actions for a report in
+a default folder, then refuses them; the page goes by Splunk's `removable`
+flag instead. Should Splunk refuse a move anyway, the page stages a copy in
+its place and asks you to apply again.) It can be copied to another app (dragging it there stages a
 copy), and its permissions can still be changed. Whether an object is locked comes from Splunk itself
 for each object, not from a list kept by this app.
 

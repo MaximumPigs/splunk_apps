@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from splunk.persistconn.application import PersistentServerConnectionApplication  # noqa: E402
 
 import easyadmin_apps_core as apps_core  # noqa: E402
+import easyadmin_conf_rest as conf_rest  # noqa: E402  (a module: its handler class stays out of this one)
 import easyadmin_core as core  # noqa: E402
 import easyadmin_rest as roles_rest  # noqa: E402  (a module, so its handler class stays out of this one)
 
@@ -88,8 +89,14 @@ class AppsGateway(roles_rest.SplunkdGateway):
 
     def current_context(self):
         entries = self._entries(self._request("/services/authentication/current-context"))
-        username = entries[0]["content"].get("username") if entries else None
-        return {"username": username, "theme": self._user_theme(username)}
+        content = entries[0]["content"] if entries else {}
+        username = content.get("username")
+        return {"username": username, "theme": self._user_theme(username),
+                "capabilities": core.as_list(content.get("capabilities"))}
+
+    def read_own_conf(self, conf, app, user):
+        """The object's own layers of <conf>.conf: app default and local, owner's folder."""
+        return conf_rest.ConfFileReader(os.environ["SPLUNK_HOME"]).read_own_layers(conf, app, user)
 
     def get_object(self, path, full=False):
         # The path is built by easyadmin_apps_core.object_path from a known
