@@ -26,6 +26,8 @@ LOGGER_NAME = "splk"
 _SECRET_PATTERNS = [
     re.compile(r"(Bearer|Splunk)\s+[A-Za-z0-9._\-+/=]{16,}"),
     re.compile(r"eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"),
+    # GitHub tokens: `splk loop` handles the owner's and a read-only one.
+    re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})"),
 ]
 
 

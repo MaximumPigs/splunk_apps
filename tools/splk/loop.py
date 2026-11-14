@@ -157,9 +157,14 @@ def step_environment():
     env["SPLK_LOOP"] = "1"
     # Steps never push, so git gets no stored credentials (fetching a public
     # repo needs none). Without this a step could push as the owner.
-    env["GIT_CONFIG_COUNT"] = "1"
-    env["GIT_CONFIG_KEY_0"] = "credential.helper"
-    env["GIT_CONFIG_VALUE_0"] = ""
+    # Appended after any GIT_CONFIG_* entries already set, not replacing them.
+    try:
+        index = int(env.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        index = 0
+    env["GIT_CONFIG_COUNT"] = str(index + 1)
+    env["GIT_CONFIG_KEY_%d" % index] = "credential.helper"
+    env["GIT_CONFIG_VALUE_%d" % index] = ""
     # With a read-only token (fine-grained: this repo, read access), steps
     # can read CI results but GitHub itself refuses any merge or write.
     # Without one they use the owner's gh login and only the hooks stand

@@ -291,8 +291,15 @@ before the first run:
    stop a merge made with the owner's own credentials.
 2. Put a read-only fine-grained token for this repo in `.env` as
    `SPLK_LOOP_GH_TOKEN`. Steps then use it instead of the owner's `gh` login,
-   so GitHub itself refuses a merge from a step. The supervisor keeps using
-   the owner's login to push and open PRs.
+   so a step that *accidentally* runs a GitHub write is refused by GitHub.
+   It is not a hard boundary: steps run as the owner's OS user, whose
+   credential store still holds the owner's login. Only a separate OS user
+   or container for the loop (planned with the move to a server) closes that.
+   The supervisor keeps using the owner's login to push and open PRs.
+
+Repo-wide Tooling items that change `tools/splk/` or the packager cannot be
+built by the loop (steps may not edit what verifies and packages their own
+work); the step finishes blocked and the item is done interactively.
 
 ## Packaging
 

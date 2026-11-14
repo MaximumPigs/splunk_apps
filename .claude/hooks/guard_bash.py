@@ -56,11 +56,15 @@ LOOP_REASON = "Unattended loop steps never push, merge, open PRs or call the Git
 # `gh` may be spelt gh.exe or "gh" and take flags (-R owner/repo) before the
 # subcommand. A regex is a speed bump, not the boundary: steps can also run
 # code, so the real limits are their credentials and GitHub's ruleset.
-_GH = r"\bgh(\.exe)?[\"']?\s(?:[^|;&]*\s)?"
+# Separators also cover quoted and list forms: gh pr "merge", ['gh','pr','merge'].
+_GH = r"\bgh(\.exe)?[\"']?[\s,]+(?:[^|;&]*[\s,])?"
+_SEP = r"[\"',\s]+[\"']?"
 LOOP_RULES = [
     (r"\bgit\b[^|;&]*\b(push|send-pack)\b", "deny", LOOP_REASON),
-    (_GH + r"pr\s+(merge|create|close|reopen|ready|edit|review|comment)\b", "deny", LOOP_REASON),
-    (_GH + r"(api|repo|release|secret|auth|ruleset|workflow|issue|label|variable)\b", "deny", LOOP_REASON),
+    (_GH + r"[\"']?pr" + _SEP + r"(merge|create|close|reopen|ready|edit|review|comment)\b", "deny", LOOP_REASON),
+    # alias: `gh alias set m "pr merge"` would rename a denied command.
+    (_GH + r"[\"']?(api|repo|release|secret|auth|ruleset|workflow|issue|label|variable|alias|extension)\b",
+     "deny", LOOP_REASON),
 ]
 LOOP_COMPILED = [(re.compile(p, re.IGNORECASE), d, r) for p, d, r in LOOP_RULES]
 

@@ -70,6 +70,9 @@ def test_bash_denies_bypasses(command):
     "gh.exe pr merge 5",
     "\"gh\" pr merge 5",
     "git send-pack origin main",
+    "gh pr \"merge\" 5",
+    "python -c \"import subprocess; subprocess.run(['gh','pr','merge','5'])\"",
+    "gh alias set m \"pr merge\"",
 ])
 def test_bash_denies_github_writes_in_loop_steps(command):
     decision, _ = guard_bash.decide(command, environ={"SPLK_LOOP": "1"})
@@ -146,6 +149,8 @@ def test_files_denied(path):
     "tools/splk/loop_core.py",
     "tools/splk/stages.py",
     "tools/splk/cli.py",
+    "tools/splk/sandbox.py",
+    "scripts/package_app.py",
     ".claude/loop/prompts/review.md",
 ])
 def test_files_denied_only_in_loop_steps(path):
@@ -169,7 +174,7 @@ def test_files_allowed(path):
     ".agent/loop/handoff/plan.md",
     "apps/easyadmin/bin/easyadmin_core.py",
     "ROADMAP.md",
-    "tools/splk/ux.py",
+    "tests/test_easyadmin_core.py",
 ])
 def test_loop_steps_may_write_their_work(path):
     assert guard_files.blocked_reason(path, environ={"SPLK_LOOP": "1"}) is None

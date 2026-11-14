@@ -38,8 +38,11 @@ PROTECTED = [
 LOOP_PROTECTED = [
     # Also what decides "green" (cli, stages, testing: `splk dev`'s exit code
     # is the loop's verdict) and the prompts later steps run under.
+    # All of tools/splk/ (the supervisor runs it from this tree) and the
+    # packager (it decides what goes into the committed .spl). Tooling items
+    # that need these are done in an interactive session.
     (r"^\.claude/(hooks/|loop/|settings[^/]*\.json$)|^config/loop\.toml$|"
-     r"^tools/splk/(loop|loop_core|cli|stages|testing)\.py$",
+     r"^tools/splk/|^scripts/package_app\.py$",
      "Unattended loop steps may not change the hooks, settings, prompts, the loop or what "
      "decides green; finish blocked and say what needs changing."),
 ]

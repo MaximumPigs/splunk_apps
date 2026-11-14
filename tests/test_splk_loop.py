@@ -210,6 +210,24 @@ def test_step_environment_drops_env_file_secrets_and_marks_the_loop(monkeypatch,
     assert "GH_TOKEN" not in env
 
 
+def test_step_environment_appends_to_existing_git_config_entries(monkeypatch, tmp_path):
+    monkeypatch.setattr(loop.paths, "ENV_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.autocrlf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "false")
+    env = loop.step_environment()
+    assert env["GIT_CONFIG_COUNT"] == "2"
+    assert env["GIT_CONFIG_KEY_0"] == "core.autocrlf"
+    assert env["GIT_CONFIG_KEY_1"] == "credential.helper"
+
+
+def test_github_tokens_are_masked_in_logs():
+    from splk import logs
+    record = logs.logging.LogRecord("splk", 20, __file__, 1, "token ghp_" + "a" * 36, None, None)
+    logs.SecretMaskingFilter().filter(record)
+    assert "ghp_" not in record.getMessage()
+
+
 def test_step_environment_uses_read_only_github_token(monkeypatch, tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text("SPLK_LOOP_GH_TOKEN=ro-token\n", encoding="utf-8")
