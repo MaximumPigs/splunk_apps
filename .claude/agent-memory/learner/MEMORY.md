@@ -48,5 +48,10 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | rule | [sc_admin beside admin](lessons/appinspect-sc-admin.md): `check_kos_are_accessible` on Cloud. |
 | 1 | rule | [AppInspect actions take app_path oppositely](lessons/ci-appinspect-action-paths.md): CLI wants a file, API a directory. |
 | 1 | rule | [SDK metadata overstated its Python floor](lessons/vendoring-sdk-python-metadata.md): vendor without `ai/`. |
+| 1 | lesson | [Branch tracking main pushed by editor Sync](lessons/git-branch-tracking-main-editor-push.md): use `checkout --no-track`; ruleset is the real guard. Candidate rule. |
+| 1 | lesson | [Unattended agent escape routes](lessons/security-unattended-agent-escape-routes.md): spelling variants, inherited env, own comments read as owner. Test variants. |
+| 1 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): cannot prompt; reload after permission change. |
+| 1 | pattern | [Probe guards before designing on them](lessons/process-probe-guards-before-designing-on-them.md): `.agent/` write denied. Playbook `observe-tool-behaviour-first`. |
+| 1 | lesson | [PowerShell mangled JSON argument](lessons/windows-powershell-json-arguments.md): spawn from Python with an arg list. |
 | 1 | hook | [AI commit author became a co-author trailer](lessons/git-ai-commit-author.md): squash merge credits every commit author; the bash guard checks the author. |
 | 1 | hook | [PowerShell corrupted UTF-8](lessons/windows-powershell-encoding.md): never write repo files with PowerShell. |
