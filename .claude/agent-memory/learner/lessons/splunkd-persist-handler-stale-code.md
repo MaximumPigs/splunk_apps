@@ -1,8 +1,8 @@
 ---
 hits: 1
 seen: [2026-11-12]
-area: splk
-level: lesson
+area: splunkd
+level: pattern
 ---
 **Symptom:** easyadmin: after the `update_role` fix, live stayed red with the
 old error for about 5 minutes. Runs at 06:26, 06:27 and 06:28 still failed
@@ -23,3 +23,5 @@ code was running by 06:34).
 wait. Then check the app's log or `index=_internal` to confirm which code is
 running before you debug a fix that seems not to work. Candidate check:
 `splk deploy` warns when `bin/` changed and `restmap.conf` has `scripttype = persist`.
+
+**Pattern:** the working recipe is in playbook `rest-endpoint-behind-page`.

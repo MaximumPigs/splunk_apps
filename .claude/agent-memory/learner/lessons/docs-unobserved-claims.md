@@ -24,6 +24,6 @@ the owner in a browser.
 
 **Catch earlier:** Promoted to `CLAUDE.md` ("never assert behaviour you have
 not observed") and `write-live-test`. Settle claims with `splk search` first.
-The rule held for SPL but not for UI behaviour, which `splk` cannot observe:
-for anything only visible in a browser, write the docs after the person has
-seen it work.
+The rule held for SPL but not for UI behaviour, which `splk` could not
+observe then. It can now: playbook pattern `verify-in-browser` (`splk shot`,
+`tests/ui/`). Write UI docs only after a screenshot or UI test shows it working.

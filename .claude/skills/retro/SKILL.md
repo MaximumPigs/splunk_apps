@@ -69,7 +69,7 @@ answer, but say which question it answers.
    sorted by hits, most first.
 5. **Promote** when `hits >= 2` (or the person asks): edit a
    `.claude/rules/*.md` file or skill, or add a test or hook check. Set
-   `level:` to `rule`, `skill`, `test` or `hook`.
+   `level:` to `rule`, `skill`, `test`, `hook` or `pattern`.
 
 ### Patterns (what works)
 
@@ -84,6 +84,10 @@ skill's `SKILL.md`. Follow the format there.
 - When the same pattern is confirmed in a second app, consider promoting
   it: a scaffold step in `new-app`, a template file, or a hook check.
 - Update the table in `splunk-playbook/SKILL.md` (pattern, use when, confirmed count).
+- When a lesson's **Fix** is really a recipe for building something, put the
+  recipe in a pattern and keep the lesson as evidence: shorten its Fix to a
+  pointer, add a `**Pattern:**` line, set `level: pattern`, and link the
+  lesson from the pattern's **Why this way**. Hits still count on the lesson.
 
 ## Review (`--review`)
 

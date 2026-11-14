@@ -33,14 +33,15 @@ conf) through the app's own Python, with the signed-in user's permissions.
 - `persist` handlers keep their process alive. After changing `bin/`, a green
   deploy can serve the old code for minutes: restart (ask the person) or
   wait, and confirm which code is running from the app's log
-  (`lessons/splk-persist-handler-stale-code.md`). A new endpoint needs one
+  (`lessons/splunkd-persist-handler-stale-code.md`). A new endpoint needs one
   restart before it is registered at all.
 - `simpleRequest` calls `.items()` on `postargs`
   (`lessons/python-simplerequest-postargs-dict.md`).
 - splunkd returns numbers in REST JSON where `| rest` gives strings, and stores
   role lists sorted: normalise at the boundary and compare lists as sets
   (`lessons/splunkd-json-numbers-vs-rest-search.md`,
-  `lessons/splunkd-role-index-lists-sorted.md`).
+  `lessons/splunkd-role-index-lists-sorted.md`). For roles specifically, follow
+  `splunkd-roles-rest-api`.
 
 **Verify:** unit tests over `<app>_core` with a fake gateway; live tests that
 call the endpoint through `splunk.request` and touch only throwaway objects

@@ -2,7 +2,7 @@
 hits: 1
 seen: [2026-11-12]
 area: conf
-level: lesson
+level: pattern
 ---
 **Symptom:** easyadmin: after changing `appserver/static/*.js` and `*.css`, a
 green `splk dev` deployed the new package, but Splunk Web still served the old
@@ -24,3 +24,5 @@ clears the cache without a restart.
 **Catch earlier:** increment `[install] build` in the same change as any edit
 under `appserver/static/`. Candidate check: `splk build` warns when files under
 `appserver/static/` changed against `main` and `build` did not.
+
+**Pattern:** the working recipe is in playbook `custom-page-classic-js`.

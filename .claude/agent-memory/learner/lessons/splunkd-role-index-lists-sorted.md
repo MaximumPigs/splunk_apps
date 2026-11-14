@@ -2,7 +2,7 @@
 hits: 1
 seen: [2026-11-12]
 area: splunkd
-level: lesson
+level: pattern
 ---
 **Symptom:** easyadmin live `test_unknown_role_is_reported_without_failing_the_rest`
 failed at 06:34: `assert ['_internal', 'main'] == ['main', '_internal']`.
@@ -15,3 +15,5 @@ sets (the `_indexes()` helper).
 
 **Catch earlier:** in live tests, compare multi-value role attributes read
 back from splunkd as sets, not ordered lists.
+
+**Pattern:** the working recipe is in playbook `splunkd-roles-rest-api`.

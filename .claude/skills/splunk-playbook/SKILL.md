@@ -27,6 +27,7 @@ finally worked instead of rediscovering it.
 | [Custom page: Classic dashboard hosting JavaScript](patterns/custom-page-classic-js.md) | An app needs an interactive page (forms, grids, bulk edits) that Dashboard Studio cannot express. | 1 (easyadmin) |
 | [REST endpoint behind a page](patterns/rest-endpoint-behind-page.md) | The page reads or writes splunkd state through the app's own Python. | 1 (easyadmin) |
 | [Follow the user's light/dark theme](patterns/follow-user-theme.md) | Any app view, especially Classic dashboards with custom CSS. | 1 (easyadmin) |
+| [Read and write roles through splunkd REST](patterns/splunkd-roles-rest-api.md) | Code or live tests touching `authorization/roles`: types, ordering, capabilities, throwaway roles. | 1 (easyadmin) |
 | [Custom search command](patterns/search-command.md) | Adding an SPL command with splunklib. | 1 (fillcontinuous) |
 | [See it in a browser before claiming it works](patterns/verify-in-browser.md) | Any change whose effect is only visible in Splunk Web. | 0 (new) |
 
