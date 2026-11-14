@@ -313,8 +313,13 @@ def test_imported_value_is_shown_under_a_setting(open_view, sandbox, shot):
     for label in ("Providers", "Restrictions"):
         _open_tab(page, label)
         shot(page, "tab-" + label.lower())
+    legend = page.locator(ROOT + " .ea-legend")
+    # Only a tab with list fields explains lists.
+    assert "comma-separated" not in legend.inner_text()
     _open_tab(page, "Resources")
     shot(page, "tab-resources")
+    assert "A search job limit of 0 means no limit. A time limit of -1 is unset." in legend.inner_text()
+    assert "comma-separated" not in legend.inner_text()
     cell = _cell(_setting(page, child, "srchJobsQuota"))
     assert re.match(r"^imported: \d+$", cell.locator(".ea-imported").inner_text().strip())
 

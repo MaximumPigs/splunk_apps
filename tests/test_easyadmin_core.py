@@ -231,6 +231,12 @@ def test_settings_tab_reports_value_and_imported_value():
     assert restrictions["values"]["power"]["srchFilter"] == {"value": "", "imported": None}
 
 
+def test_resources_tab_explains_its_sentinel_values():
+    m = model({"user": {}})
+    assert tab(m, "resources")["note"] ==         "A search job limit of 0 means no limit. A time limit of -1 is unset."
+    assert tab(m, "providers")["note"] is None
+
+
 def test_list_settings_are_lists():
     t = tab(model({"admin": {"srchFederatedProvidersAllowed": "*",
                              "imported_srchFederatedProvidersAllowed": ["a", "b"]}}), "providers")

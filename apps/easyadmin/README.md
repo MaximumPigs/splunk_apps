@@ -94,7 +94,8 @@ shows the value the role's imported roles provide, where there is one. List
 settings are edited comma-separated. Whole-number settings accept negative
 numbers, since Splunk uses `-1` for "unset" (a stock `user` role has
 `srchTimeWin = -1`). The editor shows the time window and earliest event
-time as drop-down lists; here they are typed as a number of seconds.
+time as drop-down lists; here they are typed as a number of seconds. As the
+editor says, a search job limit of `0` means no limit.
 
 ## How a save is applied
 

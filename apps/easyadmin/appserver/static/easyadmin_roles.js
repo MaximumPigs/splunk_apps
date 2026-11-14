@@ -624,8 +624,10 @@ require([
                 'effective through an imported role or a wildcard (hover for the reason). ' +
                 'An outlined cell is an unsaved change.';
         }
+        var hasList = $.grep(tab.fields, function (field) { return field.kind === 'list'; }).length;
         return 'Each field is the value set on the role itself; "imported" shows what its ' +
-            'imported roles provide. Lists are comma-separated. An outlined cell is an unsaved change.';
+            'imported roles provide. ' + (hasList ? 'Lists are comma-separated. ' : '') +
+            (tab.note ? tab.note + ' ' : '') + 'An outlined cell is an unsaved change.';
     }
 
     function render() {

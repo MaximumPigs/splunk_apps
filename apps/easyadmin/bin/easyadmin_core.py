@@ -116,6 +116,10 @@ SETTINGS_TABS = (
     {
         "id": "resources",
         "label": "Resources",
+        # Both observed in the 10.6.1 editor: its Resources tab says "Enter 0
+        # for no search job limits", and shows a time field holding -1 (what
+        # a new role gets) as "Unset".
+        "note": "A search job limit of 0 means no limit. A time limit of -1 is unset.",
         "fields": (
             ("defaultApp", "Default app", "text"),
             ("cumulativeSrchJobsQuota", "Standard role search limit", "int"),
@@ -124,7 +128,9 @@ SETTINGS_TABS = (
             ("rtSrchJobsQuota", "Real-time user search limit", "int"),
             ("srchTimeWin", "Role search time window limit (seconds)", "int"),
             ("srchTimeEarliest", "Earliest searchable event time (seconds)", "int"),
-            ("srchDiskQuota", "Standard search limit, in megabytes", "int"),
+            # The editor's section is "Disk space limit"; its field label
+            # ("Standard search limit") reads like a job count out of context.
+            ("srchDiskQuota", "Disk space limit (MB)", "int"),
         ),
     },
 )
@@ -354,6 +360,8 @@ def _settings_tab(tab, roles):
         "id": tab["id"],
         "label": tab["label"],
         "type": "settings",
+        # Optional: how to read the tab's values, shown in its legend.
+        "note": tab.get("note"),
         "fields": [{"name": name, "label": label, "kind": kind}
                    for name, label, kind in tab["fields"]],
         "values": values,

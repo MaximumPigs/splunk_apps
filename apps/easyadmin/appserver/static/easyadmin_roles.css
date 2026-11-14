@@ -116,6 +116,8 @@
  * options ("Included (srchIndexesAllowed)") short; size it to its options. */
 #easyadmin-roles .ea-toolbar select.ea-field {
     width: auto;
+    /* As a flex item it still shrank when the Save label grew. */
+    flex: none;
 }
 
 #easyadmin-roles .ea-label {
