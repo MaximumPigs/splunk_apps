@@ -15,7 +15,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-from splk import paths, runlog
+from splk import paths, runlog, ux
 from splk.logs import get_logger
 from splk.rest import SplunkClient, SplunkError
 
@@ -178,6 +178,34 @@ def ui_tests(app, target, headed=False, command="test"):
     if headed:
         env["SPLK_UI_HEADED"] = "1"
     return _pytest("ui", app, [os.path.join(paths.UI_TESTS_DIR, app)], command, env=env)
+
+
+def ux_audit(app, target, headed=False, views=None, themes=None, command="ux"):
+    """Audit every view of ``app`` in both themes (see splk.ux) and record the result.
+
+    The report (build/reports/ux/<app>/report.md) and its screenshots are the
+    ux-reviewer's input; the stage itself fails only on what a machine can
+    judge: uncaught exceptions, the app's own console errors, views that never
+    render, and serious or critical accessibility violations.
+    """
+    if not ux.has_views(app):
+        return _finish(command, StageResult("ux", app, True, "no views in apps/%s/default/data/ui/views" % app))
+    if importlib.util.find_spec("playwright") is None:
+        from splk import ui
+        return _finish(command, StageResult("ux", app, False, ui.INSTALL_HINT))
+    if not target.web_url:
+        return _finish(command, StageResult(
+            "ux", app, False, "Target %s has no web_url in config/targets.toml" % target.name))
+    from splk import ui
+    try:
+        ok, summary, details, report = ux.run_audit(app, target, headed=headed, views=views,
+                                                    themes=themes or ux.THEMES)
+    except ux.UxConfigError as exc:
+        return _finish(command, StageResult("ux", app, False, str(exc)))
+    except ui.UiError as exc:
+        # Sign-in failures and a missing browser land here: one clear line.
+        return _finish(command, StageResult("ux", app, False, str(exc)))
+    return _finish(command, StageResult("ux", app, ok, summary, details, artifact=report))
 
 
 # ---------------------------------------------------------------- AppInspect

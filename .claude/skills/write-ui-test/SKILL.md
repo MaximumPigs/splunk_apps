@@ -70,3 +70,12 @@ def test_role_grid_renders(open_view, shot, page_log):
 
 See `tests/ui/easyadmin/test_easyadmin_ui.py` for theme assertions that read
 the user's preference and skip when it does not apply.
+
+## UX audit settings
+
+Every view also gets the `splk ux` audit (screenshots in both themes,
+accessibility scan, errors) without a test. Tell it how to read each view in
+`tests/ui/<app>/ux.toml`: `ready` (the same selector the tests wait for) and
+`scope` (the app's root element, so Splunk Web's own chrome is not scanned).
+See `tests/ui/easyadmin/ux.toml` and the `splunk-ux` skill. UI tests cover
+what the audit cannot: states, validation and flows the standard asks for.

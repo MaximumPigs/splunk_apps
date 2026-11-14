@@ -35,3 +35,7 @@ splk = "splk.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["tools"]
+
+[tool.setuptools.package-data]
+# axe-core, injected into pages by `splk ux` (scripts/vendor_axe.py writes it).
+splk = ["vendor/axe-core/*"]

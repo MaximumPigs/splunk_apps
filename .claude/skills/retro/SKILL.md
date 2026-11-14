@@ -25,13 +25,15 @@ answer that holds evidence becomes a file change; "nothing new" is a valid
 answer, but say which question it answers.
 
 1. **What failed and was fixed?** Every (app, stage) that went red then green
-   above, plus any fixed `splunk-security-review` finding, and every time the
-   person reported something did not work. Record a **lesson** (below).
+   above, plus any fixed `splunk-security-review` or `splunk-ux-review`
+   finding, and every time the person reported something did not work.
+   Record a **lesson** (below).
 2. **What took more than one attempt, or worked better than expected?**
    Several deploys of the same app, a feature redone after the person looked,
    a technique found after reading SDK or Splunk source. Record or update a
    **pattern** in the playbook (below). This is how agents get better, not
-   just safer: the next session starts from the approach that worked.
+   just safer: the next session starts from the approach that worked. A
+   `splunk-ux-review` report's "Patterns worth keeping" are candidates too.
 3. **Did an existing pattern, rule or skill hold?** If you followed a
    pattern and it worked, add 1 to its `confirmed` count and the date. If it
    was wrong or incomplete, correct it now, citing the evidence.
@@ -55,7 +57,7 @@ answer, but say which question it answers.
    ---
    hits: 1
    seen: [YYYY-MM-DD]
-   area: <app id, or conf | spl | appinspect | python | splk | splunkd | splunkweb | security>
+   area: <app id, or conf | spl | appinspect | python | splk | splunkd | splunkweb | security | ux>
    level: lesson
    ---
    **Symptom:** what failed, quoting the check name, test id or the person's

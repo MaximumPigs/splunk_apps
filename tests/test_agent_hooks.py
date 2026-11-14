@@ -248,6 +248,33 @@ def test_last_review_reads_security_entries():
     assert stop_retro.last_review([]) == 0
 
 
+@pytest.mark.parametrize("path, expected", [
+    ("apps/easyadmin/appserver/static/easyadmin_roles.css", True),
+    ("apps/easyadmin/default/data/ui/views/role_management.xml", True),
+    ("apps/easyadmin/default/data/ui/nav/default.xml", True),
+    ("apps\\easyadmin\\appserver\\static\\easyadmin_roles.js", True),
+    ("apps/easyadmin/bin/easyadmin_rest.py", False),
+    ("apps/easyadmin/default/restmap.conf", False),
+    ("tests/ui/easyadmin/ux.toml", False),
+])
+def test_ux_review_covers_what_users_see(path, expected):
+    assert stop_retro.is_ui(path) is expected
+
+
+def test_ux_review_is_due_for_ui_changed_after_the_last_ux_review():
+    changed = ["apps/a/appserver/static/a.js", "apps/a/bin/a.py"]
+    mtimes = {"apps/a/appserver/static/a.js": 500, "apps/a/bin/a.py": 500}
+    assert stop_retro.unreviewed_ui(changed, mtimes, started=100, reviewed_at=0) == ["apps/a/appserver/static/a.js"]
+    assert stop_retro.unreviewed_ui(changed, mtimes, started=100, reviewed_at=600) == []
+    # The automated audit (stage "ux") is not a review; only "ux-review" counts.
+    entries = [{"epoch": 700, "stage": "ux", "ok": True}, {"epoch": 300, "stage": "ux-review", "ok": True}]
+    assert stop_retro.last_review(entries, stop_retro.UX_REVIEW_STAGE) == 300
+    due = stop_retro.followups([], [], learned_at=0, started=100, unreviewed=[],
+                               ui_unreviewed=["apps/a/appserver/static/a.js"])
+    assert [key for key, _ in due] == ["ux:apps/a/appserver/static/a.js"]
+    assert "splunk-ux-review" in due[0][1]
+
+
 # ------------------------------------------------- encoding and 3.9 checks
 
 def test_text_lint_rejects_bom_and_mojibake():

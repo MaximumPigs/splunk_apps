@@ -11,7 +11,7 @@ import argparse
 import json
 import sys
 
-from splk import __version__, config, stages
+from splk import __version__, config, stages, ux
 from splk.logs import setup_logging
 from splk.rest import SplunkClient, SplunkError
 
@@ -111,9 +111,10 @@ def cmd_test(args, log):
 def cmd_dev(args, log):
     """The full loop for one app, stopping at the first failing stage.
 
-    build -> unit tests -> AppInspect -> deploy -> live tests -> UI tests
+    build -> unit tests -> AppInspect -> deploy -> live tests -> UI tests -> UX audit
 
-    The UI stage runs only for apps that have tests/ui/<app>.
+    The UI stage runs only for apps that have tests/ui/<app>, and the UX
+    audit only for apps that ship views.
     """
     _check_app(args.app)
     target = config.resolve_target(args.target)
@@ -131,6 +132,10 @@ def cmd_dev(args, log):
     ok = ok and run(stages.live_tests(app, target, command="dev"))
     if stages.has_ui_tests(app):
         ok = ok and run(stages.ui_tests(app, target, headed=args.headed, command="dev"))
+    if ux.has_views(app):
+        # Last: the audit screenshots every view, which is only worth doing
+        # once the functional tests say the pages work.
+        ok = ok and run(stages.ux_audit(app, target, headed=args.headed, command="dev"))
     log.info("dev %s: %s", app, "GREEN" if ok else "RED (see the failing stage above)")
     return _emit(args, results)
 
@@ -190,6 +195,22 @@ def cmd_shot(args, log):
     return EXIT_OK
 
 
+def cmd_ux(args, log):
+    """Audit an app's views in a browser: screenshots in both themes, accessibility, errors.
+
+    Writes build/reports/ux/<app>/report.md for the ux-reviewer. Fails on what
+    a machine can judge (see splk.ux); the rest is for review.
+    """
+    _check_app(args.app)
+    target = config.resolve_target(args.target, require_token=False)
+    themes = (args.theme,) if args.theme else None
+    return _emit(args, [stages.ux_audit(args.app, target, headed=args.headed, views=args.view, themes=themes)])
+
+
+# Run-log stage for each kind of agent review (read by the Stop hook).
+REVIEW_STAGES = {"security": "security", "ux": "ux-review"}
+
+
 def cmd_review(args, log):
     """Record the outcome of an agent review (e.g. security) in the run log.
 
@@ -201,7 +222,10 @@ def cmd_review(args, log):
     from splk import runlog
 
     ok = args.result == "pass"
-    entry = runlog.record("review", args.scope, args.kind, ok, args.summary, args.detail or [])
+    # "ux" alone is the automated audit's stage, so the reviewer's verdict is
+    # recorded as "ux-review"; security keeps its original stage name.
+    stage = REVIEW_STAGES[args.kind]
+    entry = runlog.record("review", args.scope, stage, ok, args.summary, args.detail or [])
     (log.info if ok else log.error)("[%s] %s: %s", args.kind, "PASS" if ok else "FAIL", args.summary)
     if args.json:
         print(json.dumps(entry, indent=2))
@@ -290,7 +314,7 @@ def build_parser():
     p.add_argument("--headed", action="store_true", help="show the browser window during UI tests")
     p.set_defaults(func=cmd_test)
 
-    p = sub.add_parser("dev", help="full loop: build, unit, inspect, deploy, live")
+    p = sub.add_parser("dev", help="full loop: build, unit, inspect, deploy, live, ui, ux")
     p.add_argument("app", help="app id under apps/")
     p.add_argument("--skip-inspect", action="store_true", help="skip AppInspect for a faster inner loop")
     p.add_argument("--restart", action="store_true", help="allow a splunkd restart if required")
@@ -308,6 +332,13 @@ def build_parser():
     p.add_argument("--headed", action="store_true", help="show the browser window")
     p.set_defaults(func=cmd_shot)
 
+    p = sub.add_parser("ux", help="audit every view: screenshots in both themes, accessibility, JS errors")
+    p.add_argument("app", help="app id under apps/")
+    p.add_argument("--view", action="append", help="only this view (repeatable; default every view)")
+    p.add_argument("--theme", choices=("light", "dark"), help="only this theme (default both)")
+    p.add_argument("--headed", action="store_true", help="show the browser window")
+    p.set_defaults(func=cmd_ux)
+
     p = sub.add_parser("search", help="run one SPL query on the target")
     p.add_argument("spl", help="the query")
     p.add_argument("--earliest", default="-24h")
@@ -315,8 +346,8 @@ def build_parser():
     p.add_argument("--limit", type=int, default=50, help="max rows printed")
     p.set_defaults(func=cmd_search)
 
-    p = sub.add_parser("review", help="record an agent review's outcome (e.g. security) in the run log")
-    p.add_argument("kind", choices=("security",), help="which review")
+    p = sub.add_parser("review", help="record an agent review's outcome (security or ux) in the run log")
+    p.add_argument("kind", choices=("security", "ux"), help="which review")
     p.add_argument("scope", help="app id, path or 'branch' that was reviewed")
     p.add_argument("result", choices=("pass", "fail"),
                    help="fail when any finding should be fixed before merging")

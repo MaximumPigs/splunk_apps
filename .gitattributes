@@ -28,3 +28,7 @@
 *.tgz   binary
 *.tar.gz binary
 *.gz    binary
+
+# Vendored, minified third-party code: keep it byte-for-byte as the vendoring
+# script wrote it, and out of diffs and language stats.
+tools/splk/vendor/** -text -diff linguist-vendored
