@@ -61,6 +61,7 @@ APPS_CONTRAST_PAIRS = [
     ("--ea-private-edge", "--ea-bg", 3.0),
     ("--ea-app-edge", "--ea-bg", 3.0),
     ("--ea-global-edge", "--ea-bg", 3.0),
+    ("--ea-count-fg", "--ea-count-bg", 4.5),
 ]
 
 # (stylesheet, light palette selector, contrast pairs) for each page.

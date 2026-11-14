@@ -22,8 +22,9 @@ Current state of the target and recent runs:
 3. Inner loop: `splk dev <app> --skip-inspect`. Read the first red stage only;
    later stages did not run.
 4. When the inner loop is green, run the full `splk dev <app>` (adds AppInspect).
-5. If deploy says a restart is required, stop and ask the person before
-   `splk dev <app> --restart`. Index-time changes (props line breaking,
+5. If deploy says a restart is required, run `splk dev <app> --restart`. On
+   the default (dev) target the person allows restarts whenever needed, so do
+   not stop to ask; for any other target, ask first. Index-time changes (props line breaking,
    timestamps, transforms) need it; search-time changes usually do not.
 6. Behaviour change? Add or extend a live test (use the `write-live-test` skill)
    *before* calling the work done. Visible in Splunk Web? Look with

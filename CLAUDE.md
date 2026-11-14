@@ -16,7 +16,7 @@ deny it, and results outside `splk` are not recorded in the run log.
 | `splk dev <app> --skip-inspect` | Faster inner loop while iterating on SPL or conf. |
 | `splk test` / `splk test --live <app>` | Unit tests only / plus live tests on the target. |
 | `splk inspect <app>` | Build and run AppInspect alone. |
-| `splk deploy <app> [--restart]` | Build and install on the target. `--restart` always asks the person. |
+| `splk deploy <app> [--restart]` | Build and install on the target. The default target (`local`) is a dev instance: use `--restart` whenever needed, without asking the person first (the guard hook still shows its own confirmation). Ask before restarting any other target. |
 | `splk search "<spl>"` | Exploratory search. Assertions belong in `tests/live/`, not here. |
 | `splk shot <app>/<view> [--theme dark]` | Screenshot a Splunk Web page and list its JS errors. Open the PNG to look. Assertions belong in `tests/ui/`. |
 | `splk test --ui <app> [--headed]` | Browser tests in `tests/ui/<app>/` (also a stage of `splk dev`). |

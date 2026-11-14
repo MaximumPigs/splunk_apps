@@ -1,6 +1,6 @@
 ---
-confirmed: 3
-seen: [2026-11-12, 2026-11-14, 2026-11-14]
+confirmed: 4
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14]
 apps: [easyadmin]
 ---
 # Custom page: Classic dashboard hosting JavaScript
@@ -41,7 +41,14 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
    - filters narrow items, never the containers that are drop or move
      targets (`lessons/ux-filter-hides-drop-target.md`);
    - a button whose state depends on an input is updated from that input's
-     handler, not only at render (`lessons/ux-every-control-needs-a-ui-test.md`).
+     handler, not only at render (`lessons/ux-every-control-needs-a-ui-test.md`);
+   - when a status's meaning changes, change its badges, colours and
+     strikethrough with the words, and assert `getComputedStyle` in a UI test
+     (`lessons/ux-label-meaning-needs-matching-style.md`);
+   - tabs: `role=tablist/tab/tabpanel` with `aria-controls`, roving tabindex
+     and arrow keys; a `#hash` deep link kept with `history.replaceState`;
+     explanations in a `<details>` whose open state is kept in page state so
+     it survives re-renders (`easyadmin_apps.js`, precedence tab).
 9. Bulk or destructive edits: stage, then one Apply that reports a result per
    object; keep failed items staged for retry, and re-key staged edits for an
    object whose location changed in a partial apply.

@@ -43,6 +43,8 @@
     --ea-app-edge: #1a6fc4;
     --ea-global-bg: #ddf1df;
     --ea-global-edge: #2e7d32;
+    --ea-count-bg: #f0a030;
+    --ea-count-fg: #1a1c20;
     color-scheme: light;
 }
 
@@ -78,6 +80,8 @@
     --ea-app-edge: #5aa9f5;
     --ea-global-bg: #1e3a24;
     --ea-global-edge: #6cc070;
+    --ea-count-bg: #f0a030;
+    --ea-count-fg: #1a1c20;
     color-scheme: dark;
 }
 
@@ -115,6 +119,7 @@
     color: var(--ea-danger);
 }
 
+#easyadmin-apps summary:focus-visible,
 #easyadmin-apps button:focus-visible,
 #easyadmin-apps input:focus-visible,
 #easyadmin-apps select:focus-visible,
@@ -610,4 +615,154 @@
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-top: 5px solid var(--ea-fg);
+}
+
+/* Tabs: Apps and Configuration precedence, as on the role page. */
+#easyadmin-apps .ea-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    border-bottom: 2px solid var(--ea-border);
+    margin-bottom: 10px;
+}
+
+#easyadmin-apps .ea-tab {
+    border: 1px solid var(--ea-border);
+    border-bottom: none;
+    background: var(--ea-head);
+    color: var(--ea-fg);
+    padding: 6px 14px;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+}
+
+#easyadmin-apps .ea-tab.ea-tab-active {
+    background: var(--ea-bg);
+    font-weight: 600;
+    position: relative;
+    top: 2px;
+}
+
+#easyadmin-apps .ea-tab-count {
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    background: var(--ea-count-bg);
+    color: var(--ea-count-fg);
+}
+
+/* Configuration precedence: one expandable section per stanza. */
+#easyadmin-apps .ea-prec-note {
+    font-size: 12px;
+    max-width: 960px;
+}
+
+#easyadmin-apps .ea-prec-order {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-stanza {
+    border: 1px solid var(--ea-border);
+    margin-bottom: 6px;
+    background: var(--ea-bg);
+}
+
+#easyadmin-apps .ea-stanza-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 6px 8px;
+    background: var(--ea-head);
+    cursor: pointer;
+}
+
+#easyadmin-apps .ea-stanza-name {
+    font-weight: 600;
+    color: var(--ea-fg);
+    background: none;
+    border: none;
+    word-break: break-all;
+}
+
+#easyadmin-apps .ea-stanza-apps {
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-prec {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-prec th,
+#easyadmin-apps .ea-prec td {
+    text-align: left;
+    vertical-align: top;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--ea-grid);
+    color: var(--ea-fg);
+}
+
+#easyadmin-apps .ea-prec-name {
+    width: 28%;
+    font-weight: normal;
+    word-break: break-all;
+}
+
+#easyadmin-apps .ea-prec-name code,
+#easyadmin-apps .ea-prec-value {
+    color: var(--ea-fg);
+    background: none;
+    border: none;
+    padding: 0;
+}
+
+#easyadmin-apps .ea-prec-name .ea-badge {
+    margin-left: 6px;
+}
+
+#easyadmin-apps .ea-prec-sources {
+    margin: 0;
+    padding-left: 20px;
+}
+
+#easyadmin-apps .ea-prec-sources li {
+    margin: 2px 0;
+}
+
+#easyadmin-apps .ea-prec-sources li.ea-prec-overridden .ea-prec-value {
+    color: var(--ea-muted);
+    text-decoration: line-through;
+}
+
+#easyadmin-apps .ea-prec-layer {
+    display: inline-block;
+    min-width: 200px;
+    margin: 0 8px;
+    color: var(--ea-muted);
+}
+
+#easyadmin-apps .ea-prec-value {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+#easyadmin-apps .ea-prec-more {
+    margin: 4px 8px;
+}
+
+#easyadmin-apps .ea-prec-how {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-prec-how summary {
+    cursor: pointer;
+    color: var(--ea-fg);
 }
