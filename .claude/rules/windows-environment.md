@@ -12,6 +12,10 @@ No `paths` frontmatter: this loads every session.
 - `MAX_PATH`: long paths break `python -m venv` (`ensurepip` fails with
   "Non-UTF-8 code starting with '\x90'") and `git commit -F`. Create venvs and
   commit-message files under `C:\Temp\`.
+- Multi-line Python edit scripts: write them to a scratchpad file and run
+  `python <file>` (or use the Edit tool), never `python - <<EOF` in Bash: the
+  heredoc mangled `\n`, `\u0000` and quotes three times
+  (`agent-memory/learner/lessons/process-heredoc-python-edits.md`).
 - Do not pass multi-line messages to `git commit -m` via PowerShell
   here-strings: quotes and parentheses are re-tokenised into pathspecs. Use
   `git commit -F <short path>`.

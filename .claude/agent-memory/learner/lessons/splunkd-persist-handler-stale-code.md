@@ -44,6 +44,8 @@ never observed and was wrong.
 last request, so every test run, `splk shot` or page load against the
 endpoint resets it. Earlier hits looked like "2 to 10 minutes" because the
 waits happened to be quiet; polling kept the old code alive for 18+ minutes.
+Confirmed 2026-11-15: the 7-minute idle wait then a single run worked three
+times out of three (not counted as new hits: the rule held).
 
 **Catch earlier:** after changing `bin/` behind a persist handler, prove which
 code is running before trusting any run: make a change only the new code

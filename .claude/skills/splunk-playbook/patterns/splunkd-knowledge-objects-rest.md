@@ -1,6 +1,6 @@
 ---
-confirmed: 2
-seen: [2026-11-14, 2026-11-14]
+confirmed: 3
+seen: [2026-11-14, 2026-11-14, 2026-11-15]
 apps: [easyadmin]
 ---
 # List, move and re-permission knowledge objects through splunkd REST
@@ -20,11 +20,14 @@ Splunk 10.6.1 and is pinned by `tests/live/easyadmin/test_easyadmin_apps_live.py
    `apps/easyadmin/bin/easyadmin_apps_core.py`.
 2. Do **not** use `admin/directory` for a complete list: it omits
    `data/lookup-table-files`, `datamodel/model` and `data/props/calcfields`.
-3. Read what splunkd allows from each entry's `links`, not from the user's
-   role: no `move` link means it cannot be moved, no `remove` link means it
-   cannot be deleted. Objects in an app's `default/` have neither, and a move
-   of one is refused with HTTP 400 "cannot be deleted and thus it cannot be
-   moved". Lookup table files do have both.
+3. Read what splunkd allows from each entry's `links` **and**
+   `acl.removable`: movable = `move` link and `removable`; deletable =
+   `remove` link and `removable`. Most `default/` objects lack both links,
+   but **saved searches in `default/` keep the links with `removable = 0`**,
+   and the move is refused with HTTP 400 "cannot be deleted and thus it
+   cannot be moved" (`lessons/splunkd-links-not-enough-check-acl-removable.md`).
+   Map that refusal to a plain message and offer a copy instead
+   (`copy_instead`). Lookup table files have both links.
 4. The namespace is the user part of the entry id
    (`/servicesNS/<ns>/<app>/...`): `nobody` for shared objects, the owner for
    private ones. Admin sees other users' private objects under `/-/-`.
@@ -64,20 +67,23 @@ leaves splunkd needing a restart
 `splktest_*` objects between `search` and `launcher` and delete them wherever
 the test left them (fixture `objects`).
 
-**Page:** a staged copy shows as a ghost row in the target app (dashed,
+**Own settings** (not inherited ones): read the files, see
+`conf-precedence-from-files`. **Page:** a staged copy shows as a ghost row in the target app (dashed,
 italic, no tick box, not counted); every path (drag, selection bar, panel)
 stages through one function (`stageTransfer` in `easyadmin_apps.js`), which
-also runs the name-clash check.
+also runs the name-clash check; the Move button uses the same mixed mode as
+a drop (move what can move, copy what cannot).
 
 **Why this way:** `admin/directory` looked like the one-call answer and was
-incomplete; links are splunkd's own verdict per object, so the page never
-offers an action splunkd will refuse; the `['']` read-back failed
-`test_empty_write_list_clears_write_roles` before normalising. Calls go
-through the caller's session (`rest-endpoint-behind-page`).
+incomplete. Links alone were trusted as splunkd's verdict and were wrong for
+`default/` saved searches (the owner hit the refusal at Apply); together
+with the visibility trap in step 4, that is two wrong assumptions about what
+an entry says: check every type's refusal live. The `['']` read-back failed
+`test_empty_write_list_clears_write_roles` before normalising.
 
 **Verify:** live tests that read back app, owner, sharing and perms after
-each write, a refused move of a `default/` object, a private object moved
-and shared, and a user without rights refused.
+each write, a refused move of a `default/` object **per type**, a private
+object moved and shared, and a user without rights refused.
 
 **Reference:** `apps/easyadmin/bin/easyadmin_apps_core.py`,
 `apps/easyadmin/bin/easyadmin_apps_rest.py` (gateway),

@@ -96,7 +96,9 @@ green.
   label when admins will look it up (`Search jobs quota (srchJobsQuota)`).
 - **W3** Buttons are verbs that say what happens ("Save changes", not "OK").
 - **W4** Messages are short, specific and blame-free; they tell the user
-  what to do next.
+  what to do next. Quote object and app names inside sentences
+  (`"Bucket Merge" ships in the "search" app's default folder`), so a name
+  with spaces or ordinary words reads as a name (owner's request, 1.4.0).
 - **W5** Numbers, sizes and times are formatted for people (`1,024 MB`,
   relative or ISO times), units always shown.
 
