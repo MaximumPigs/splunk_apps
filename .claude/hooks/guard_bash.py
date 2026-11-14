@@ -34,7 +34,9 @@ RULES = [
     (r"\bgit\s+push\b.*(--force\b|-f\b|--force-with-lease\b)",
      "deny", "No force pushes. Push a new commit instead."),
     # Any spelling: `git push origin main`, `git -C . push origin main`, refspecs.
-    (r"\bgit\b[^|;&]*\bpush\b[^|;&]*\b(main|master)\b",
+    # main as a whole ref only (`main`, `HEAD:main`, `refs/heads/main`), so a
+    # branch named feature/x-main or a/main is not mistaken for it.
+    (r"\bgit\b[^|;&]*\bpush\b[^|;&]*(\s|:|\brefs/heads/)(main|master)(?=\s|$|[|;&])",
      "deny", "Never push to main; push the branch and open a PR."),
     # A branch that tracks origin/main is one editor Sync away from pushing to
     # main: VS Code ran `git push origin <branch>:main` for exactly that
