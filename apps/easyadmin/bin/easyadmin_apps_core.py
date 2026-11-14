@@ -49,33 +49,41 @@ logger = logging.getLogger("easyadmin")
 
 # Every kind of knowledge object the page lists, in the order its legend shows
 # them. ``endpoint`` is the splunkd collection under /servicesNS/<user>/<app>/.
+# ``common`` marks what users create day to day (reports, dashboards, lookups,
+# macros...): the page shows those types at first and leaves the
+# administrator's ones (navigation, panels, time ranges...) to be added.
 # admin/directory was not used: on 10.6.1 it omits lookup table files, data
 # models and calculated fields (75 of them on the dev target).
 TYPES = OrderedDict((t["id"], t) for t in (
-    {"id": "savedsearch", "label": "Report or alert", "endpoint": "saved/searches"},
-    {"id": "view", "label": "Dashboard", "endpoint": "data/ui/views"},
-    {"id": "nav", "label": "Navigation menu", "endpoint": "data/ui/nav"},
-    {"id": "panel", "label": "Prebuilt panel", "endpoint": "data/ui/panels"},
-    {"id": "macro", "label": "Search macro", "endpoint": "admin/macros"},
-    {"id": "eventtype", "label": "Event type", "endpoint": "saved/eventtypes"},
-    {"id": "tag", "label": "Tag", "endpoint": "saved/fvtags"},
-    {"id": "extraction", "label": "Field extraction", "endpoint": "data/props/extractions"},
-    {"id": "fieldalias", "label": "Field alias", "endpoint": "data/props/fieldaliases"},
-    {"id": "calcfield", "label": "Calculated field", "endpoint": "data/props/calcfields"},
-    {"id": "autolookup", "label": "Automatic lookup", "endpoint": "data/props/lookups"},
+    {"id": "savedsearch", "label": "Report or alert", "endpoint": "saved/searches", "common": True},
+    {"id": "view", "label": "Dashboard", "endpoint": "data/ui/views", "common": True},
+    {"id": "nav", "label": "Navigation menu", "endpoint": "data/ui/nav", "common": False},
+    {"id": "panel", "label": "Prebuilt panel", "endpoint": "data/ui/panels", "common": False},
+    {"id": "macro", "label": "Search macro", "endpoint": "admin/macros", "common": True},
+    {"id": "eventtype", "label": "Event type", "endpoint": "saved/eventtypes", "common": True},
+    {"id": "tag", "label": "Tag", "endpoint": "saved/fvtags", "common": True},
+    {"id": "extraction", "label": "Field extraction", "endpoint": "data/props/extractions", "common": True},
+    {"id": "fieldalias", "label": "Field alias", "endpoint": "data/props/fieldaliases", "common": True},
+    {"id": "calcfield", "label": "Calculated field", "endpoint": "data/props/calcfields", "common": True},
+    {"id": "autolookup", "label": "Automatic lookup", "endpoint": "data/props/lookups", "common": True},
     {"id": "sourcetyperename", "label": "Source type renaming",
-     "endpoint": "data/props/sourcetype-rename"},
-    {"id": "transform", "label": "Field transformation", "endpoint": "data/transforms/extractions"},
-    {"id": "lookupdef", "label": "Lookup definition", "endpoint": "data/transforms/lookups"},
-    {"id": "lookupfile", "label": "Lookup table file", "endpoint": "data/lookup-table-files"},
-    {"id": "workflow", "label": "Workflow action", "endpoint": "data/ui/workflow-actions"},
-    {"id": "timerange", "label": "Time range", "endpoint": "data/ui/times"},
-    {"id": "datamodel", "label": "Data model", "endpoint": "datamodel/model"},
-    {"id": "collection", "label": "KV store collection", "endpoint": "storage/collections/config"},
-    {"id": "alertaction", "label": "Alert action", "endpoint": "data/ui/alerts"},
+     "endpoint": "data/props/sourcetype-rename", "common": False},
+    {"id": "transform", "label": "Field transformation", "endpoint": "data/transforms/extractions", "common": False},
+    {"id": "lookupdef", "label": "Lookup definition", "endpoint": "data/transforms/lookups", "common": True},
+    {"id": "lookupfile", "label": "Lookup table file", "endpoint": "data/lookup-table-files", "common": True},
+    {"id": "workflow", "label": "Workflow action", "endpoint": "data/ui/workflow-actions", "common": True},
+    {"id": "timerange", "label": "Time range", "endpoint": "data/ui/times", "common": False},
+    {"id": "datamodel", "label": "Data model", "endpoint": "datamodel/model", "common": True},
+    {"id": "collection", "label": "KV store collection", "endpoint": "storage/collections/config", "common": False},
+    {"id": "alertaction", "label": "Alert action", "endpoint": "data/ui/alerts", "common": False},
 ))
 
 SHARING = ("user", "app", "global")
+
+# Apps Splunk marks as its own (core=1) that are still where most users keep
+# their knowledge objects, so they are shown with the installed apps rather
+# than behind "Show Splunk's built-in apps".
+USER_FACING_APPS = ("search", "SplunkEnterpriseSecuritySuite")
 
 # Objects in $SPLUNK_HOME/etc/system report this as their app. It is not an
 # app directory, so nothing can be moved into it.
@@ -174,7 +182,7 @@ def build_app(entry):
         "name": name,
         "label": as_text(content.get("label")) or name,
         # core=1 marks the apps Splunk ships (search, launcher, splunk_*...).
-        "builtin": _is_true(content.get("core", False)),
+        "builtin": _is_true(content.get("core", False)) and name not in USER_FACING_APPS,
         "visible": _is_true(content.get("visible", True)),
         "disabled": _is_true(content.get("disabled", False)),
         "version": as_text(content.get("version")),
@@ -218,7 +226,7 @@ def build_model(app_entries, objects_by_type, failures, roles, users, context):
             objects.append(item)
     objects.sort(key=lambda o: (o["app"].lower(), list(TYPES).index(o["type"]), o["name"].lower()))
     return {
-        "types": [{"id": t["id"], "label": t["label"]} for t in TYPES.values()],
+        "types": [{"id": t["id"], "label": t["label"], "common": t["common"]} for t in TYPES.values()],
         # Alphabetical by the label people see in each box's title; the
         # directory name only breaks ties.
         "apps": sorted(apps.values(), key=lambda a: (a["label"].lower(), a["name"].lower())),

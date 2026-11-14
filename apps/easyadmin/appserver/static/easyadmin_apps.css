@@ -37,6 +37,12 @@
     --ea-success-bg: #e8f5e9;
     --ea-success-edge: #2e7d32;
     --ea-shadow: #8a96a3;
+    --ea-private-bg: #efe2f8;
+    --ea-private-edge: #8e4fb5;
+    --ea-app-bg: #dcebf9;
+    --ea-app-edge: #1a6fc4;
+    --ea-global-bg: #ddf1df;
+    --ea-global-edge: #2e7d32;
     color-scheme: light;
 }
 
@@ -66,6 +72,12 @@
     --ea-success-bg: #1e3a24;
     --ea-success-edge: #4caf50;
     --ea-shadow: #000000;
+    --ea-private-bg: #3f2a52;
+    --ea-private-edge: #b98be0;
+    --ea-app-bg: #1f3a57;
+    --ea-app-edge: #5aa9f5;
+    --ea-global-bg: #1e3a24;
+    --ea-global-edge: #6cc070;
     color-scheme: dark;
 }
 
@@ -498,4 +510,104 @@
     font-family: monospace;
     white-space: pre-wrap;
     word-break: break-all;
+}
+
+/*
+ * Sharing, colour-coded: purple private, blue this app, green all apps. Each
+ * badge also says its level in words (A4), and has an edge in its colour so
+ * the levels stay apart for people who see the fills alike.
+ */
+#easyadmin-apps .ea-share {
+    color: var(--ea-fg);
+    border: 1px solid transparent;
+}
+
+#easyadmin-apps .ea-share-user {
+    background: var(--ea-private-bg);
+    border-color: var(--ea-private-edge);
+}
+
+#easyadmin-apps .ea-share-app {
+    background: var(--ea-app-bg);
+    border-color: var(--ea-app-edge);
+}
+
+#easyadmin-apps .ea-share-global {
+    background: var(--ea-global-bg);
+    border-color: var(--ea-global-edge);
+}
+
+#easyadmin-apps .ea-sharing-key {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 4px 0;
+}
+
+#easyadmin-apps .ea-toolbar .ea-app-filter {
+    width: 200px;
+}
+
+/* Type menu: a drop-down of checkboxes under its button. */
+#easyadmin-apps .ea-types {
+    position: relative;
+    flex: none;
+}
+
+#easyadmin-apps .ea-types-button {
+    height: 32px;
+    min-width: 140px;
+    text-align: left;
+}
+
+#easyadmin-apps .ea-types-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 900;
+    margin-top: 2px;
+    padding: 6px 8px;
+    min-width: 260px;
+    max-height: 420px;
+    overflow-y: auto;
+    background: var(--ea-bg);
+    color: var(--ea-fg);
+    border: 1px solid var(--ea-border);
+    box-shadow: 0 4px 12px var(--ea-shadow);
+}
+
+#easyadmin-apps .ea-types-quick {
+    display: flex;
+    gap: 4px;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--ea-grid);
+}
+
+#easyadmin-apps .ea-types-item {
+    display: flex;
+    padding: 3px 0;
+    white-space: nowrap;
+}
+
+#easyadmin-apps .ea-app-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+#easyadmin-apps .ea-select-app {
+    margin: 0;
+    flex: none;
+}
+
+/* A small down-pointing triangle, so the Types button reads as a drop-down. */
+#easyadmin-apps .ea-caret {
+    display: inline-block;
+    margin-left: 8px;
+    vertical-align: middle;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--ea-fg);
 }

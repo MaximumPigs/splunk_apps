@@ -126,8 +126,9 @@ editor says, a search job limit of `0` means no limit.
 Open **Easy Admin > App management**. Every app is a box, in alphabetical
 order of the name in its title. Each box lists the app's knowledge objects,
 grouped by type, each with an icon for its type. The legend above the boxes
-names every icon. An object shows its sharing (**Private**, **This app** or
-**All apps**) and whether it is disabled.
+names every icon. An object shows its sharing, colour-coded and in words:
+**Private** (purple), **This app** (blue), **All apps** (green), or **System**
+for objects in `etc/system`. It also shows whether it is disabled.
 
 Objects of these types are listed: reports and alerts, dashboards, navigation
 menus, prebuilt panels, search macros, event types, tags, field extractions,
@@ -138,12 +139,24 @@ Private objects are listed under their app, for every user whose objects your
 account can see. Objects in `$SPLUNK_HOME/etc/system` appear in a
 **System (etc/system)** box, which cannot take objects.
 
-Splunk's own apps (Search & Reporting, Home, the Monitoring Console and the
-like) are hidden until you tick **Show Splunk's built-in apps**.
+Splunk's own apps (Home, the Monitoring Console and the like) are hidden
+until you tick **Show Splunk's built-in apps**. Search & Reporting and
+Enterprise Security (`SplunkEnterpriseSecuritySuite`) are always shown with
+the installed apps, since that is where users keep their objects.
+
+At first the page shows the types users create day to day: reports and
+alerts, dashboards, search macros, event types, tags, field extractions,
+field aliases, calculated fields, automatic lookups, lookup definitions,
+lookup table files, workflow actions and data models. The administrator's
+types (navigation menus, prebuilt panels, source type renaming, field
+transformations, time ranges, KV store collections and alert actions) are
+added from the **Types** menu.
 
 | Control | What it does |
 | --- | --- |
-| **Filter objects by name** and the type list | Narrow the objects in every box. Every app stays on show, so you can filter for an object and then drag it to any app. |
+| **Filter objects by name** and **Types** | Narrow the objects in every box. **Types** is a drop-down of every type, with shortcuts for the common types, all and none. Every app stays on show, so you can filter for an object and then drag it to any app. |
+| **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. |
+| The tick box in an app's title | Selects every object shown in that app (after the filters). It is half-ticked when only some are selected. |
 | Drag an object onto another app's box | Stages a move. Dragging a ticked object moves every ticked object. |
 | Tick objects, then **Move to app...** and **Move** | Stages a move without dragging. |
 | **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |

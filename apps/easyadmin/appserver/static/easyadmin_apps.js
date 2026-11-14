@@ -137,7 +137,8 @@ require([
 
     // ---------------------------------------------------------------- state
 
-    var SHARING_LABELS = { user: 'Private', app: 'This app', global: 'All apps' };
+    // "system" is what splunkd reports for objects in etc/system.
+    var SHARING_LABELS = { user: 'Private', app: 'This app', global: 'All apps', system: 'System' };
     var SHARING_CHOICES = [
         ['user', 'Keep private (owner only)'],
         ['app', 'This app only'],
@@ -152,8 +153,10 @@ require([
         pending: newMap(),     // object key -> {moveTo, acl, del}
         selected: newMap(),    // object key -> true
         details: newMap(),     // object key -> settings from the server, or 'loading' / {error}
-        filter: '',
-        type: '',
+        filter: '',            // object name filter
+        appFilter: '',         // app name or label filter
+        types: null,           // type id -> true for the types on show (set on first load)
+        typesOpen: false,      // the type menu is open
         showBuiltin: false,
         panel: null,           // {mode: 'object', key} or {mode: 'bulk'}
         busy: false,
@@ -336,6 +339,7 @@ require([
             }
             state.data = data;
             index(data);
+            if (!state.types) { state.types = commonTypes(); }
             state.details = newMap();
             // Staged changes for objects that no longer exist where they were
             // (moved, renamed or deleted elsewhere) cannot be applied.
@@ -464,10 +468,28 @@ require([
 
     // ----------------------------------------------------------- filtering
 
+    // The types users create day to day; the administrator's ones (navigation,
+    // panels, time ranges...) are left for them to add from the type menu.
+    function commonTypes() {
+        var map = newMap();
+        $.each(state.data.types, function (i, type) { if (type.common) { map[type.id] = true; } });
+        return map;
+    }
+
+    function shownTypeCount() {
+        return $.grep(state.data.types, function (type) { return state.types[type.id]; }).length;
+    }
+
     function matches(obj) {
-        if (state.type && obj.type !== state.type) { return false; }
+        if (!state.types[obj.type]) { return false; }
         var needle = state.filter.toLowerCase();
         return !needle || obj.name.toLowerCase().indexOf(needle) !== -1;
+    }
+
+    function appMatches(app) {
+        var needle = state.appFilter.toLowerCase();
+        return !needle || app.name.toLowerCase().indexOf(needle) !== -1 ||
+            app.label.toLowerCase().indexOf(needle) !== -1;
     }
 
     // App name -> objects to show in its box, placed where pending moves put them.
@@ -481,17 +503,18 @@ require([
         return map;
     }
 
-    // The filter narrows objects, never apps: every app stays on show as a
-    // place to drop objects (finding an object, then dragging it elsewhere,
-    // is the main use). Only the built-in toggle hides boxes.
+    // The object filter and type menu narrow objects, never apps: every app
+    // stays on show as a place to drop objects (finding an object, then
+    // dragging it elsewhere, is the main use). Apps are hidden only by the app
+    // filter and the built-in toggle, and a box with staged changes always shows.
     function visibleApps(byApp) {
         return $.grep(state.data.apps, function (app) {
             if (byApp[app.name] && $.grep(byApp[app.name], function (obj) {
                 return state.pending[obj.key];
             }).length) {
-                return true;   // always show where staged changes are
+                return true;
             }
-            return !(app.builtin && !state.showBuiltin);
+            return appMatches(app) && !(app.builtin && !state.showBuiltin);
         });
     }
 
@@ -597,16 +620,15 @@ require([
             render();
         }));
 
-        var $type = el('select', 'ea-type').attr({ 'aria-label': 'Object type', 'data-fid': 'type' });
-        $type.append(el('option', null, 'All types').attr('value', ''));
-        $.each(state.data.types, function (i, type) {
-            $type.append(el('option', null, type.label).attr('value', type.id));
-        });
-        $type.val(state.type).on('change', function () {
-            state.type = $(this).val();
+        $bar.append(renderTypeMenu());
+
+        $bar.append(el('input', 'ea-app-filter').attr({
+            type: 'text', placeholder: 'Filter apps by name', 'aria-label': 'Filter apps by name',
+            'data-fid': 'app-filter'
+        }).val(state.appFilter).on('input', function () {
+            state.appFilter = $(this).val();
             render();
-        });
-        $bar.append($type);
+        }));
 
         var $builtin = el('label', 'ea-check');
         $builtin.append(el('input').attr({ type: 'checkbox', 'data-fid': 'builtin' })
@@ -640,6 +662,51 @@ require([
             .prop('disabled', state.busy || !count).on('click', apply));
         $bar.append($actions);
         return $bar;
+    }
+
+    // A drop-down of checkboxes, one per object type, with shortcuts for the
+    // common types, all and none. A native <select multiple> was not used: it
+    // is a tall list box rather than a drop-down, and needs Ctrl+click.
+    function renderTypeMenu() {
+        var $wrap = el('div', 'ea-types');
+        var total = state.data.types.length;
+        var shown = shownTypeCount();
+        $wrap.append(el('button', 'btn ea-types-button', 'Types: ' + (shown === total ? 'all' :
+            shown + ' of ' + total)).attr({
+            type: 'button', 'aria-expanded': state.typesOpen ? 'true' : 'false',
+            'aria-controls': 'ea-types-menu', 'data-fid': 'types-button'
+        }).append(el('span', 'ea-caret').attr('aria-hidden', 'true')).on('click', function () {
+            state.typesOpen = !state.typesOpen;
+            render();
+        }));
+        if (!state.typesOpen) { return $wrap; }
+
+        var $menu = el('div', 'ea-types-menu').attr({ id: 'ea-types-menu', role: 'group',
+            'aria-label': 'Object types to show' });
+        var $quick = el('div', 'ea-types-quick');
+        $.each([['Common types', commonTypes], ['All', function () {
+            var map = newMap();
+            $.each(state.data.types, function (i, type) { map[type.id] = true; });
+            return map;
+        }], ['None', newMap]], function (i, choice) {
+            $quick.append(el('button', 'btn btn-link', choice[0]).attr({ type: 'button', 'data-fid': 'types-' + i })
+                .on('click', function () {
+                    state.types = choice[1]();
+                    render();
+                }));
+        });
+        $menu.append($quick);
+        $.each(state.data.types, function (i, type) {
+            var $label = el('label', 'ea-check ea-types-item');
+            $label.append(el('input').attr({ type: 'checkbox', 'data-fid': 'type:' + type.id })
+                .prop('checked', !!state.types[type.id]).on('change', function () {
+                    if (this.checked) { state.types[type.id] = true; } else { delete state.types[type.id]; }
+                    render();
+                }));
+            $label.append(icon(type.id), document.createTextNode(' ' + type.label));
+            $menu.append($label);
+        });
+        return $wrap.append($menu);
     }
 
     function renderSelectionBar() {
@@ -700,6 +767,12 @@ require([
             $types.append($item);
         });
         $legend.append($types);
+        var $sharing = el('p', 'ea-muted ea-sharing-key').append(document.createTextNode('Sharing: '));
+        $.each(['user', 'app', 'global', 'system'], function (i, sharing) {
+            $sharing.append(el('span', 'ea-badge ea-share ea-share-' + sharing, SHARING_LABELS[sharing]),
+                document.createTextNode(' '));
+        });
+        $legend.append($sharing);
         var $note = el('p', 'ea-muted');
         $note.append(icon('lock'), document.createTextNode(
             ' ships in the app\'s default folder: it can be re-permissioned, not moved or deleted. ' +
@@ -741,7 +814,8 @@ require([
             $tags.append(el('span', 'ea-badge ea-locked').attr('title',
                 'Ships in the app\'s default folder: cannot be moved or deleted.').append(icon('lock'), document.createTextNode(' default')));
         }
-        $tags.append(el('span', 'ea-badge', SHARING_LABELS[acl.sharing] || acl.sharing));
+        // Colour-coded by sharing, and always labelled, so colour is never the only cue.
+        $tags.append(el('span', 'ea-badge ea-share ea-share-' + acl.sharing, SHARING_LABELS[acl.sharing] || acl.sharing));
         if (obj.disabled) { $tags.append(el('span', 'ea-badge', 'disabled')); }
         $.each(changeBadges(obj), function (i, text) {
             $tags.append(el('span', 'ea-badge ea-badge-changed', text));
@@ -755,11 +829,22 @@ require([
         if (!app.target) { $box.addClass('ea-app-fixed'); }
         if (!objects.length) { $box.addClass('ea-app-empty'); }
         var $head = el('header', 'ea-app-head');
-        var $title = el('h3', 'ea-app-title', app.label).attr('title', app.label + ' (' + app.name + ')');
-        $head.append($title);
+        var $titleRow = el('div', 'ea-app-title-row');
+        if (objects.length) {
+            // One tick selects every object shown in the box (after filters);
+            // half-ticked when only some of them are selected.
+            var picked = $.grep(objects, function (obj) { return state.selected[obj.key]; }).length;
+            $titleRow.append(el('input', 'ea-select-app').attr({
+                type: 'checkbox', 'data-app': app.name, 'data-fid': 'selapp:' + app.name,
+                'aria-label': 'Select all ' + plural(objects.length, 'object') + ' shown in ' + app.label,
+                title: 'Select all objects shown in this app'
+            }).prop({ checked: picked === objects.length, indeterminate: picked > 0 && picked < objects.length }));
+        }
+        $titleRow.append(el('h3', 'ea-app-title', app.label).attr('title', app.label + ' (' + app.name + ')'));
+        $head.append($titleRow);
         var $meta = el('div', 'ea-app-meta');
         $meta.append(el('code', null, app.name));
-        $meta.append(el('span', null, state.filter || state.type ?
+        $meta.append(el('span', null, state.filter ?
             plural(objects.length, 'match', 'matches') : plural(objects.length, 'object')));
         if (app.builtin) { $meta.append(el('span', 'ea-badge', 'built-in')); }
         if (app.disabled) { $meta.append(el('span', 'ea-badge', 'disabled')); }
@@ -773,9 +858,10 @@ require([
 
         var $list = el('ul', 'ea-objects').attr({ 'data-app': app.name, 'aria-label': 'Objects in ' + app.label });
         if (!objects.length) {
-            $list.append(el('li', 'ea-empty', state.filter || state.type ?
-                'No matching objects.' + (app.target ? ' Drop objects here to move them.' : '') :
-                'No knowledge objects visible to your account.'));
+            var empty = state.filter ? 'No matching objects.' :
+                shownTypeCount() < state.data.types.length ? 'No objects of the selected types.' :
+                    'No knowledge objects visible to your account.';
+            $list.append(el('li', 'ea-empty', empty + (app.target ? ' Drop objects here to move them.' : '')));
         }
         $.each(objects, function (i, obj) { $list.append(renderObject(obj)); });
         $box.append($list);
@@ -786,24 +872,30 @@ require([
         var byApp = objectsByApp();
         var apps = visibleApps(byApp);
         var $wrap = el('div', 'ea-grid-wrap');
-        var hidden = state.data.apps.length - apps.length;
-        var filtered = state.filter || state.type;
+        var builtinHidden = $.grep(state.data.apps, function (app) {
+            return app.builtin && !state.showBuiltin && appMatches(app);
+        }).length;
+        var typeCount = shownTypeCount();
         var shown = 0;
         $.each(apps, function (i, app) { shown += (byApp[app.name] || []).length; });
-        var summary = 'Showing ' + plural(apps.length, 'app') + (filtered ? ' and ' +
-            plural(shown, 'matching object') : '') + '.';
-        if (hidden) {
-            summary += ' ' + plural(hidden, 'built-in app is', 'built-in apps are') +
+        var allTypes = typeCount === state.data.types.length;
+        var summary = 'Showing ' + plural(apps.length, 'app') + ' and ' + plural(shown, 'object') + ' (' +
+            (allTypes ? 'all types' : typeCount + ' of ' + state.data.types.length + ' types') + ').';
+        if (builtinHidden) {
+            summary += ' ' + plural(builtinHidden, 'built-in app is', 'built-in apps are') +
                 ' hidden; tick "Show Splunk\'s built-in apps" to see them.';
         }
         $wrap.append(el('p', 'ea-muted ea-summary', summary));
-        if (filtered && !shown) {
-            var what = state.type ? state.typeLabels[state.type].toLowerCase() + ' objects' : 'objects';
-            $wrap.append(el('p', 'ea-message ea-info', 'No ' + what + (state.filter ? ' match the filter "' +
-                state.filter + '"' : ' found') + (hidden ? ' in the apps shown.' : '.')));
+        if (!typeCount) {
+            $wrap.append(el('p', 'ea-message ea-info', 'No object types are selected. Choose some under "Types".'));
+        } else if (state.filter && !shown) {
+            $wrap.append(el('p', 'ea-message ea-info', 'No objects match the filter "' + state.filter + '"' +
+                (builtinHidden || state.appFilter ? ' in the apps shown.' : '.') + (allTypes ? '' :
+                ' Some types are hidden; choose "All" under "Types" to search every type.')));
         }
         if (!apps.length) {
-            $wrap.append(el('p', 'ea-empty', 'No apps are visible to your account.'));
+            $wrap.append(el('p', 'ea-empty', state.appFilter ? 'No apps match the filter "' + state.appFilter + '".' :
+                'No apps are visible to your account.'));
             return $wrap;
         }
         var $grid = el('div', 'ea-grid');
@@ -1121,7 +1213,26 @@ require([
     $root.on('change', '.ea-select', function () {
         var objKey = $(this).closest('.ea-object').attr('data-key');
         if (this.checked) { state.selected[objKey] = true; } else { delete state.selected[objKey]; }
-        $root.find('.ea-selection').replaceWith(renderSelectionBar());
+        render();   // the selection bar and the app's select-all box both change
+    });
+
+    $root.on('change', '.ea-select-app', function () {
+        var objects = objectsByApp()[this.getAttribute('data-app')] || [];
+        var on = this.checked;
+        $.each(objects, function (i, obj) {
+            if (on) { state.selected[obj.key] = true; } else { delete state.selected[obj.key]; }
+        });
+        render();
+    });
+
+    // A click anywhere outside the type menu closes it, as a drop-down should.
+    // (A click inside it re-renders the menu, detaching the target, hence the
+    // contains() check.)
+    $(document).on('click', function (event) {
+        if (state.typesOpen && document.contains(event.target) && !$(event.target).closest('.ea-types').length) {
+            state.typesOpen = false;
+            render();
+        }
     });
 
     $root.on('click', '.ea-object-name', function () {
@@ -1168,8 +1279,25 @@ require([
         render();
     });
 
+    $root.on('focusout', '.ea-types', function (event) {
+        var next = event.relatedTarget;
+        // A re-render inside the menu also fires focusout, with no next
+        // element; only a move to a control outside the menu closes it.
+        if (state.typesOpen && next && document.contains(next) && !$(next).closest('.ea-types').length) {
+            state.typesOpen = false;
+            render();
+        }
+    });
+
     $(document).on('keydown', function (event) {
-        if (event.which === 27 && state.panel) { closePanel(); }
+        if (event.which !== 27) { return; }
+        if (state.typesOpen) {
+            state.typesOpen = false;
+            render();
+            $root.find('[data-fid="types-button"]').focus();
+        } else if (state.panel) {
+            closePanel();
+        }
     });
 
     // Leaving with staged changes silently discards them; let the browser ask.

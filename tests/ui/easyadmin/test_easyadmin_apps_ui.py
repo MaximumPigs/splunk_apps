@@ -54,7 +54,9 @@ def _open(open_view, builtin=True):
 
 
 def _object(page, app, name):
-    return page.locator('%s .ea-app[data-app="%s"] .ea-object' % (ROOT, app), has_text=name)
+    """The row of the object called exactly ``name`` (not one whose badges contain the text)."""
+    return page.locator('%s .ea-app[data-app="%s"] .ea-object:has(.ea-object-name:text-is("%s"))'
+                        % (ROOT, app, name))
 
 
 def _apply(page):
@@ -99,13 +101,96 @@ def test_apps_are_boxes_in_alphabetical_order_with_a_legend(open_view, shot, pag
 
 
 def test_builtin_apps_are_hidden_until_asked_for(open_view):
-    """Splunk's own apps (search, launcher...) only appear with "Show Splunk's built-in apps"."""
+    """Splunk's own apps (launcher, the Monitoring Console...) only appear with "Show Splunk's
+    built-in apps"; Search & Reporting is always shown, as users keep their objects there."""
     page = _open(open_view, builtin=False)
-    assert page.locator(ROOT + ' .ea-app[data-app="search"]').count() == 0
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 0
+    assert page.locator(ROOT + ' .ea-app[data-app="search"]').count() == 1
     assert page.locator(ROOT + ' .ea-app[data-app="easyadmin"]').count() == 1
     assert "built-in apps are hidden" in page.locator(ROOT + " .ea-summary").inner_text()
     page.locator(ROOT + ' input[data-fid="builtin"]').check()
-    assert page.locator(ROOT + ' .ea-app[data-app="search"]').count() == 1
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 1
+
+
+def test_type_menu_shows_common_types_first(open_view, shot):
+    """The type menu starts with the common types ticked; administrator types such as
+    navigation menus are hidden until ticked, and the menu closes with Escape."""
+    page = _open(open_view, builtin=False)
+    nav = _object(page, "easyadmin", "default")
+    assert nav.count() == 0   # the app's navigation menu: an administrator's type
+    assert _object(page, "easyadmin", "role_management").count() == 1   # a dashboard: common
+    button = page.locator(ROOT + ' button[data-fid="types-button"]')
+    assert button.inner_text().startswith("Types: 13 of 20")
+    button.click()
+    assert button.get_attribute("aria-expanded") == "true"
+    menu = page.locator(ROOT + " #ea-types-menu")
+    assert menu.locator('input[data-fid="type:view"]').is_checked()
+    assert not menu.locator('input[data-fid="type:panel"]').is_checked()
+    assert not menu.locator('input[data-fid="type:timerange"]').is_checked()
+    shot(page, "app_management_types")
+    menu.locator('input[data-fid="type:nav"]').check()
+    assert nav.count() == 1
+    assert page.locator(ROOT + " #ea-types-menu").count() == 1   # stays open while ticking
+    page.keyboard.press("Escape")
+    assert page.locator(ROOT + " #ea-types-menu").count() == 0
+    assert button.inner_text().startswith("Types: 14 of 20")
+    # Tabbing out of the open menu closes it too.
+    button.click()
+    page.locator(ROOT + ' input[data-fid="type:alertaction"]').focus()
+    page.keyboard.press("Tab")
+    assert page.locator(ROOT + " #ea-types-menu").count() == 0
+    button.click()
+    page.locator(ROOT + ' button[data-fid="types-2"]').click()   # None
+    assert page.locator(ROOT + " .ea-object").count() == 0
+    assert "No object types are selected" in page.locator(ROOT).inner_text()
+    page.locator(ROOT + ' button[data-fid="types-1"]').click()   # All
+    assert page.locator(ROOT + ' button[data-fid="types-button"]').inner_text().startswith("Types: all")
+
+
+def test_app_filter_narrows_the_boxes(open_view):
+    """"Filter apps by name" keeps only apps whose label or directory name contains the text."""
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-app-filter").fill("easy")
+    apps = page.locator(ROOT + " .ea-app").evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))")
+    assert apps == ["easyadmin"]
+    page.locator(ROOT + " .ea-app-filter").fill("reporting")   # matches the label Search & Reporting
+    apps = page.locator(ROOT + " .ea-app").evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))")
+    assert apps == ["search"]
+    page.locator(ROOT + " .ea-app-filter").fill("no_such_app_anywhere")
+    assert 'No apps match the filter "no_such_app_anywhere"' in page.locator(ROOT).inner_text()
+
+
+def test_select_all_in_an_app_selects_what_it_shows(open_view, macro):
+    """One tick in an app's header selects every object shown in it; half-ticked when only some are."""
+    first, second = macro(), macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    box = page.locator(ROOT + ' .ea-app[data-app="search"]')
+    box.locator(".ea-select-app").check()
+    assert "2 objects selected" in page.locator(ROOT + " .ea-selection").inner_text()
+    assert _object(page, "search", first).locator(".ea-select").is_checked()
+    _object(page, "search", second).locator(".ea-select").uncheck()
+    assert box.locator(".ea-select-app").evaluate("n => n.indeterminate") is True
+    # As with any half-ticked box, a click selects them all; a second clears them.
+    box.locator(".ea-select-app").click()
+    assert "2 objects selected" in page.locator(ROOT + " .ea-selection").inner_text()
+    box.locator(".ea-select-app").click()
+    assert page.locator(ROOT + " .ea-selection strong").count() == 0
+
+
+def test_sharing_is_colour_coded_and_labelled(open_view, macro, sandbox_client):
+    """Each object's sharing badge has its own colour class and says its level in words."""
+    name = macro()
+    sandbox_client.request("POST", "/servicesNS/nobody/search/admin/macros/%s/acl" % q(name),
+                           {"sharing": "global", "owner": "admin", "perms.read": "*", "perms.write": "admin"})
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    badge = _object(page, "search", name).locator(".ea-share")
+    assert badge.inner_text() == "All apps"
+    assert "ea-share-global" in badge.get_attribute("class")
+    colours = page.locator(ROOT + " .ea-sharing-key .ea-share").evaluate_all(
+        "nodes => nodes.map(n => getComputedStyle(n).backgroundColor)")
+    assert len(set(colours)) == 4   # private, this app, all apps, system
 
 
 def test_filter_narrows_objects_and_says_when_nothing_matches(open_view, macro):

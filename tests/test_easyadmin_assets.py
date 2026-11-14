@@ -54,6 +54,13 @@ APPS_CONTRAST_PAIRS = [
     ("--ea-drop", "--ea-drop-bg", 3.0),
     ("--ea-focus", "--ea-bg", 3.0),
     ("--ea-focus", "--ea-head", 3.0),
+    # Sharing badges: text on each fill, and each edge against the box behind.
+    ("--ea-fg", "--ea-private-bg", 4.5),
+    ("--ea-fg", "--ea-app-bg", 4.5),
+    ("--ea-fg", "--ea-global-bg", 4.5),
+    ("--ea-private-edge", "--ea-bg", 3.0),
+    ("--ea-app-edge", "--ea-bg", 3.0),
+    ("--ea-global-edge", "--ea-bg", 3.0),
 ]
 
 # (stylesheet, light palette selector, contrast pairs) for each page.

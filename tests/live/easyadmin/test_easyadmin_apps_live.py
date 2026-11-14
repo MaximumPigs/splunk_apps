@@ -83,7 +83,10 @@ def test_model_lists_apps_and_objects_with_what_splunkd_allows(splunk, objects):
     assert labels == sorted(labels)
     assert {"search", "launcher", "easyadmin"} <= set(names)
     search = next(a for a in document["apps"] if a["name"] == "search")
-    assert search["builtin"] is True and search["target"] is True
+    # Splunk marks search as core (core=1); the page still shows it with the
+    # installed apps, and launcher behind "Show Splunk's built-in apps".
+    assert search["builtin"] is False and search["target"] is True
+    assert next(a for a in document["apps"] if a["name"] == "launcher")["builtin"] is True
     assert next(a for a in document["apps"] if a["name"] == "easyadmin")["builtin"] is False
 
     mine = find(document, "macro", name)

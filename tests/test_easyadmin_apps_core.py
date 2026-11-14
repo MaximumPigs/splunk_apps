@@ -50,7 +50,7 @@ class FakeGateway(object):
         return apps.object_path(type_id, ns, app, item["name"])
 
     def list_apps(self):
-        return [{"name": name, "content": {"label": name.title(), "core": name == "search",
+        return [{"name": name, "content": {"label": name.title(), "core": name in ("search", "launcher", "SplunkEnterpriseSecuritySuite"),
                                            "visible": True, "disabled": False, "version": "1.0"}}
                 for name in self.app_names]
 
@@ -150,7 +150,8 @@ def test_model_sorts_apps_and_objects_and_reports_unlistable_types():
     assert [a["label"] for a in model["apps"]] == ["hidden_app", "Myapp", "Myapp_B", "Search",
                                                    "System (etc/system)"]
     by_name = {a["name"]: a for a in model["apps"]}
-    assert by_name["search"]["builtin"] is True
+    # Splunk marks search as core, but it is where users keep their objects.
+    assert by_name["search"]["builtin"] is False
     assert by_name["system"]["target"] is False and by_name["system"]["builtin"] is True
     assert by_name["hidden_app"]["target"] is False
     # Within an app: type order of the legend (reports before macros), then name.
@@ -159,6 +160,18 @@ def test_model_sorts_apps_and_objects_and_reports_unlistable_types():
     assert model["roles"] == ["admin", "power", "user"]
     assert model["user"] == "admin" and model["theme"] == "dark"
     assert [t["id"] for t in model["types"]] == list(apps.TYPES)
+    common = {t["id"] for t in model["types"] if t["common"]}
+    assert {"savedsearch", "view", "macro", "lookupfile", "lookupdef"} <= common
+    assert not common & {"panel", "timerange", "nav", "alertaction"}
+
+
+def test_search_and_enterprise_security_are_not_hidden_as_built_in():
+    gateway = FakeGateway(app_names=("search", "launcher", "SplunkEnterpriseSecuritySuite", "myapp"))
+    by_name = {a["name"]: a for a in apps.read_model(gateway)["apps"]}
+    assert by_name["launcher"]["builtin"] is True
+    assert by_name["search"]["builtin"] is False
+    assert by_name["SplunkEnterpriseSecuritySuite"]["builtin"] is False
+    assert by_name["myapp"]["builtin"] is False
 
 
 def test_details_list_settings_and_shorten_long_values():
