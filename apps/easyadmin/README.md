@@ -166,7 +166,7 @@ added from the **Types** menu.
 | **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |
 | **Delete** | Stages the ticked objects for deletion. |
 | **New app...**, and **Clone...** in an app's title | Opens a form to stage a new app, or a clone of that app with copies of its objects: see [Creating and cloning apps](#creating-and-cloning-apps). Shown only to accounts that can create apps. |
-| A **new app** or **clone of** box, outlined with dashes | An app that exists only as a staged change. It takes objects like any other app, and its × drops the app and every change staged into it, after asking. |
+| A **new app** or **clone of** box, outlined with dashes | An app that exists only as a staged change. It takes objects like any other app, and its × drops the app and every change staged into it, after asking. Its header counts the objects it holds and the copies staged into it, for example "0 objects, 60 staged". |
 | Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings, which can be filtered, copied and edited: see [Settings in the panel](#settings-in-the-panel). |
 | **Apply changes to N objects** | Applies every staged change, after a confirmation that says how many apps are created and how many objects are moved, copied, re-permissioned and deleted. New apps are created first. |
 | The × on a staged-change badge | Drops that one change (a move, a copy, a permission change, edited settings or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
@@ -176,6 +176,11 @@ A staged change is outlined and labelled on the object (`moving from search`,
 `copying to launcher`, `permissions changed`, `will be deleted`). A moved
 object shows in the box it is moving to; a staged copy shows there as a
 dashed `copy from` row, and the original stays where it is.
+
+The filters narrow what a box lists, but a clone copies every type. Copies the
+**Types** menu or the name filter keep out of a box are counted in a line at
+its foot ("1 staged copy is hidden by the filters."), and a box that has such
+copies stays on show whatever the app filter says.
 
 ### Creating and cloning apps
 

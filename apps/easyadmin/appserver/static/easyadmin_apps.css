@@ -255,6 +255,14 @@
     padding: 6px 8px;
 }
 
+/* Staged copies the filters keep out of a clone's list: counted, not listed. */
+#easyadmin-apps .ea-hidden-staged {
+    color: var(--ea-muted);
+    font-style: italic;
+    padding: 6px 8px;
+    list-style: none;
+}
+
 /* App boxes: as many columns as fit, in alphabetical order. */
 #easyadmin-apps .ea-grid {
     display: grid;
@@ -498,9 +506,10 @@
     margin: 12px 0;
 }
 
+/* Inherit Splunk Web's body size: labels, names and code inside it do too. */
 #easyadmin-apps .ea-settings {
     margin: 0;
-    font-size: 12px;
+    font-size: inherit;
 }
 
 #easyadmin-apps .ea-settings dt {
@@ -921,7 +930,7 @@
     width: 100%;
     box-sizing: border-box;
     font-family: monospace;
-    font-size: 12px;
+    font-size: inherit;
 }
 
 #easyadmin-apps .ea-settings .ea-setting-value {
@@ -938,7 +947,7 @@
     border: 1px solid var(--ea-grid);
     border-radius: 3px;
     font-family: monospace;
-    font-size: 12px;
+    font-size: inherit;
     white-space: pre-wrap;
     word-break: break-all;
 }
@@ -989,7 +998,6 @@
 #easyadmin-apps .ea-setting-label {
     margin-top: 4px;
     font-family: inherit;
-    font-size: 11px;
     font-weight: 600;
 }
 

@@ -87,6 +87,10 @@ def test_edit_is_staged_with_old_and_new_value_and_can_be_discarded(open_view, m
     page = _open(open_view)
     panel = _open_panel(page, name)
     panel.locator('button[data-fid="setting-edit:definition"]').click()
+    # The edit box keeps the size of the value it replaces, so it does not shrink on Edit.
+    size = "n => getComputedStyle(n).fontSize"
+    assert panel.locator("#ea-edit-value").evaluate(size) == \
+        panel.locator('label[for="ea-edit-value"]').evaluate(size)
     panel.locator("#ea-edit-value").fill("index=_audit")
     panel.locator('button[data-fid="setting-stage:definition"]').click()
 
@@ -101,6 +105,11 @@ def test_edit_is_staged_with_old_and_new_value_and_can_be_discarded(open_view, m
     assert "Apply writes this to" in item.inner_text()
     assert "settings changed (1)" in _object(page, "search", name).inner_text()
     shot(page, "app_management_setting_staged")
+    # Labels and code are the page's body size, not smaller: compared with the
+    # note beside them (plain inherited text), so no pixel size is hard-coded.
+    body = item.locator(".ea-setting-note").evaluate(size)
+    assert item.locator(".ea-setting-label").first.evaluate(size) == body
+    assert item.locator(".ea-setting-new .ea-code code").evaluate(size) == body
     # Nothing has been written.
     assert _macro_content(sandbox_client, name)["definition"] == "index=_internal"
 
