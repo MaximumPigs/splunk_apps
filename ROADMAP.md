@@ -25,6 +25,7 @@ its format is fixed:
 | 1.3.0 | Configuration precedence tab, btool-style (#19). |
 | 1.4.0 | Copy objects into another app (the default for objects in a default folder); discard one staged change; the object's own settings in the panel; locks from splunkd's `removable` flag (#20). |
 | 1.5.0 | Create a new app (barebones template), or clone one with copies of its copyable objects, staged as pending boxes and run by Apply; a restart notice only when splunkd asks (creating needs none on 10.6.1). |
+| 1.6.0 | Edit the individual settings of a knowledge object from its panel: filter, copy, show the default value, edit and add settings, staged with the old and new value and written to the app's local configuration by Apply. No delete of a local setting: splunkd has no REST call for it. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -66,67 +67,26 @@ included. Private user objects are in scope.
   roles dropped, each flagged on the pending change.: Agreed, as
   recommended.
 - [ ] Can the target app name be an app that does not exist yet? Options:
-  (a) existing apps only; (b) a new name stages a create first, as in item 1
-  (same fields, defaults from the JSON's app label, description, author and
-  version, and the same restart notice). Recommendation: (b), so an app can
-  be moved to another instance in one step; it means building item 1 first.
+  (a) existing apps only; (b) a new name stages a create first, as 1.5.0's
+  "create a new app" does (same fields, defaults from the JSON's app label,
+  description, author and version, and the same restart notice).
+  Recommendation: (b), so an app can be moved to another instance in one
+  step; the create path already exists since 1.5.0.
+- [ ] When the target app already exists, what happens to its objects that
+  are not in the JSON? Options: (a) left alone (an import only creates and
+  overwrites); (b) staged for deletion, so the target ends up matching the
+  JSON. Recommendation: (a), since a delete is not undoable and the person
+  can still stage deletes by hand on the page.
+- [ ] When the target app already exists, are its app-level settings (label,
+  description, version, visibility) changed to the JSON's? Options: (a) never,
+  objects only; (b) staged as one "changed" entry for the app, discardable
+  like any other. Recommendation: (a), keeping the import to knowledge
+  objects; the label and version belong to whoever owns the target app.
 
 Probe first: whether a lookup file's contents can be written through REST
 or a search on 9.3 and 10.x without Splunk's upload staging folder (for
 example `outputlookup` run in the target app's namespace), and the largest
 JSON body the page's REST endpoint accepts (upload and paste).
-
-### 3. Edit individual settings of a knowledge object
-Status: ready
-
-From inside the object's settings in the details panel.
-
-- Changes to default settings are made in the object's local config.
-- If the app has no local file yet, it is created in that app, and the
-  object keeps its sharing and permissions.
-- When viewing settings, each one shows where it is set (default or local).
-  (Partly done in 1.4.0: own settings are badged `default`, `local` or
-  `private`.)
-- A setting set in both can show the default value on request.
-- Local settings can be deleted.
-- A filter searches the settings; when it has text, it shows every
-  matching setting, including ones otherwise hidden (inherited defaults).
-- Settings are shown in code blocks or similar, with a "copy" button on
-  hover.
-- An edit is staged as a pending change, showing the old and new value, and
-  written by Apply.
-- A new setting can be added from the settings splunkd reports for that
-  object type, with free text as a fallback for types where splunkd lists
-  none.
-- Covers every listed type except dashboards, navigation menus and prebuilt
-  panels, which are better edited in Splunk's own editors.
-- If a single local setting cannot be removed through REST, delete is left
-  out and the README says why.
-- [x] Is an edit staged as a pending change and written by Apply, like the
-  page's other changes, or saved at once? Recommendation: staged, with the
-  old and new value shown on the pending change.: Staged.
-- [x] Can the person add a setting the object does not have yet, or only
-  edit and delete existing ones? Options: (a) existing only; (b) add any
-  name as free text; (c) add from the settings splunkd reports for that
-  object type. Recommendation: (c), with free text as a fallback for types
-  where splunkd lists none.: (c), as recommended.
-- [x] Which object types does this cover? Dashboards, navigation menus and
-  prebuilt panels are one XML document each (their only setting is the
-  XML). Recommendation: every listed type except those three, which are
-  better edited in Splunk's own editors.: Agreed, as recommended.
-- [x] If the probe below shows a single local setting cannot be removed
-  through REST, what should "delete" do? Options: (a) leave delete out and
-  say why in the README; (b) "reset to default" by writing the default value
-  into local, which stops inheriting later changes to the default; (c) offer
-  delete on Splunk Enterprise only, through file writes, if AppInspect
-  allows it. Recommendation: (a), since (b) looks like a delete but is not
-  one.: (a).
-
-Probe first: splunkd's REST API sets a value but has no call to remove
-one attribute from local while keeping the default. Posting an empty value
-overrides it with empty instead. Deleting a local setting may need the
-configuration endpoints (merged, see the copy lessons) or file writes, which
-Splunk Cloud does not allow.
 
 ### Low priority: Deployment apps portal
 Status: blocked
@@ -194,7 +154,7 @@ Notes:
 Status: ready
 
 Opening an object's details panel runs `add_explicit`
-(`apps/easyadmin/bin/easyadmin_apps_core.py:357`), which calls
+(`apps/easyadmin/bin/easyadmin_apps_core.py:375`), which calls
 `gateway.current_context()` only to check for `admin_all_objects`. In
 `AppsGateway.current_context` (`apps/easyadmin/bin/easyadmin_apps_rest.py`)
 that is two requests: `authentication/current-context`, then the user's

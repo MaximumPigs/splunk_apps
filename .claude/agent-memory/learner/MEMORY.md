@@ -50,9 +50,8 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | rule | [SDK metadata overstated its Python floor](lessons/vendoring-sdk-python-metadata.md): vendor without `ai/`. |
 | 1 | lesson | [Branch tracking main pushed by editor Sync](lessons/git-branch-tracking-main-editor-push.md): use `checkout --no-track`; ruleset is the real guard. Candidate rule. |
 | 1 | lesson | [Unattended agent escape routes](lessons/security-unattended-agent-escape-routes.md): spelling variants, inherited env, own comments read as owner. Test variants. |
-| 2 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): cannot prompt; reload after permission change. |
+| 3 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): loop sessions ignore settings.json allow entries until the workspace is trusted (`hasTrustDialogAccepted`); owner action. |
 | 2 | pattern | [Unattended agent escape routes](lessons/security-unattended-agent-escape-routes.md): spelling variants, inherited env, /proc environ, new env/file channels, check after repo code ran. Playbook `loop-secrets-across-privilege-drop`. |
-| 1 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): cannot prompt; reload after permission change. |
 | 1 | pattern | [Probe guards before designing on them](lessons/process-probe-guards-before-designing-on-them.md): `.agent/` write denied. Playbook `observe-tool-behaviour-first`. |
 | 1 | lesson | [PowerShell mangled JSON argument](lessons/windows-powershell-json-arguments.md): spawn from Python with an arg list. |
 | 1 | pattern | [Narrowing a guard regex reopened bypasses](lessons/security-guard-regex-narrowing-reopens-bypasses.md): `+main`, quotes, `bash -c`, `~0` slipped; test the deny corpus first, boundaries = what a ref cannot contain. Playbook `probe-a-hook-with-decide`. |

@@ -153,12 +153,16 @@ require([
         byKey: newMap(),       // object key -> object
         typeLabels: newMap(),  // type id -> label
         apps: newMap(),        // app name -> app
-        pending: newMap(),     // object key -> {moveTo, acl, del}
+        pending: newMap(),     // object key -> {moveTo, copyTo, acl, del, settings: {name: {value, previous}}}
         newApps: newMap(),     // app name -> {name, label, visible, description, author, version, cloneOf}
         restartNotice: false,  // splunkd asked for a restart after an Apply
         selected: newMap(),    // object key -> true
         details: newMap(),     // object key -> settings from the server, or 'loading' / {error}
         showAllSettings: newMap(),  // object key -> true to list inherited settings too
+        settingFilter: newMap(),    // object key -> text filtering the panel's settings
+        showDefault: newMap(),      // object key + NUL + setting -> true to show the value it hides
+        settingEdit: null,          // {key, name, value}: the setting being edited in the panel
+        settingAdd: newMap(),       // object key -> {name, value}: the "add a setting" draft
         filter: '',            // object name filter
         appFilter: '',         // app name or label filter
         types: null,           // type id -> true for the types on show (set on first load)
@@ -265,7 +269,7 @@ require([
 
     // Store one object's staged edits, dropping any that match what it is now.
     function setPending(obj, edits) {
-        var pending = state.pending[obj.key] || { moveTo: null, copyTo: null, acl: null, del: false };
+        var pending = state.pending[obj.key] || { moveTo: null, copyTo: null, acl: null, del: false, settings: null };
         if ('moveTo' in edits) {
             pending.moveTo = edits.moveTo === obj.app ? null : edits.moveTo;
             if (pending.moveTo) { pending.copyTo = null; }   // moved or copied, not both
@@ -276,8 +280,9 @@ require([
         }
         if ('acl' in edits) { pending.acl = edits.acl && !sameAcl(edits.acl, currentAcl(obj)) ? edits.acl : null; }
         if ('del' in edits) { pending.del = !!edits.del; }
-        if (pending.del) { pending.moveTo = null; pending.copyTo = null; pending.acl = null; }
-        if (pending.moveTo || pending.copyTo || pending.acl || pending.del) {
+        if ('settings' in edits) { pending.settings = edits.settings && size(edits.settings) ? edits.settings : null; }
+        if (pending.del) { pending.moveTo = null; pending.copyTo = null; pending.acl = null; pending.settings = null; }
+        if (pending.moveTo || pending.copyTo || pending.acl || pending.del || pending.settings) {
             state.pending[obj.key] = pending;
         } else {
             delete state.pending[obj.key];
@@ -602,6 +607,14 @@ require([
                     change.acl = { sharing: pending.acl.sharing, owner: pending.acl.owner,
                         read: pending.acl.read, write: pending.acl.write };
                 }
+                if (pending.settings) {
+                    // ``previous`` lets the server refuse an edit whose setting
+                    // changed since this page read it.
+                    change.settings = $.map(keys(pending.settings), function (name) {
+                        var staged = pending.settings[name];
+                        return { name: name, value: staged.value, previous: staged.previous };
+                    });
+                }
             }
             changes.push(change);
         });
@@ -722,9 +735,11 @@ require([
         var moves = 0;
         var copies = 0;
         var acls = 0;
+        var edits = 0;
         var deletes = 0;
         $.each(changes, function (i, change) {
             if (change['delete']) { deletes += 1; }
+            if (change.settings) { edits += 1; }
             if (change.move_to) { moves += 1; }
             if (change.copy_to) { copies += 1; }
             if (change.acl) { acls += 1; }
@@ -733,6 +748,7 @@ require([
         if (newApps.length) { parts.push('create ' + plural(newApps.length, 'app')); }
         if (moves) { parts.push('move ' + plural(moves, 'object')); }
         if (copies) { parts.push('copy ' + plural(copies, 'object') + ' into another app'); }
+        if (edits) { parts.push('change settings of ' + plural(edits, 'object')); }
         if (acls) { parts.push('change the permissions of ' + plural(acls, 'object')); }
         if (deletes) { parts.push('delete ' + plural(deletes, 'object')); }
         var prompt = 'Apply changes to ' + stagedText() + ': ' + parts.join(', ') + '?';
@@ -796,6 +812,14 @@ require([
                 } else {
                     failures.push(result.message);
                 }
+                // The settings were written but a later step failed: keep only
+                // what is left to retry, or Apply would write them again.
+                if (result.settings_applied && pending) {
+                    pending.settings = null;
+                    if (!pending.moveTo && !pending.copyTo && !pending.acl && !pending.del) {
+                        delete state.pending[result.key];
+                    }
+                }
                 // Copied, but a later step failed: the copy exists, so stop
                 // staging it and keep only what is left to retry.
                 if (result.copied_to && pending) {
@@ -808,7 +832,7 @@ require([
                     delete state.pending[result.key];
                     var movedKey = [obj.type, obj.ns, result.moved_to, obj.name].join('\u0000');
                     if (pending.acl) {
-                        state.pending[movedKey] = { moveTo: null, acl: pending.acl, del: false };
+                        state.pending[movedKey] = { moveTo: null, acl: pending.acl, del: false, settings: null };
                     }
                 }
             });
@@ -1212,6 +1236,9 @@ require([
         if (pending.moveTo) { parts.push({ kind: 'move', text: 'moving from ' + obj.app }); }
         if (pending.copyTo) { parts.push({ kind: 'copy', text: 'copying to ' + pending.copyTo }); }
         if (pending.acl) { parts.push({ kind: 'acl', text: 'permissions changed' }); }
+        if (pending.settings) {
+            parts.push({ kind: 'settings', text: 'settings changed (' + size(pending.settings) + ')' });
+        }
         return parts;
     }
 
@@ -1220,12 +1247,13 @@ require([
     }
 
     // Drop one staged change from one object, leaving its other changes.
-    // Prototype-free, so only these four kinds are ever accepted.
+    // Prototype-free, so only these five kinds are ever accepted.
     var DISCARD = newMap();
     DISCARD.del = { del: false };
     DISCARD.move = { moveTo: null };
     DISCARD.copy = { copyTo: null };
     DISCARD.acl = { acl: null };
+    DISCARD.settings = { settings: null };
 
     function discardOne(objKey, kind) {
         var obj = state.byKey[objKey];
@@ -1604,59 +1632,381 @@ require([
 
     var LAYER_TEXT = { 'default': 'default', local: 'local', user: 'private' };
 
-    function settingsList(settings, withLayer) {
-        var $dl = el('dl', 'ea-settings');
-        $.each(settings, function (i, setting) {
-            var $dt = el('dt', null, setting.name);
-            if (withLayer) {
-                $dt.append(el('span', 'ea-badge ea-setting-layer', LAYER_TEXT[setting.layer] || setting.layer)
-                    .attr('title', setting.layer === 'user' ? 'Set in the owner\'s private folder' :
-                        'Set in the app\'s ' + setting.layer + ' folder'));
+    // ------------------------------------------------------------ settings
+    //
+    // The panel's settings section. Own settings (read from the object's
+    // stanza) can be edited and added when splunkd and the account allow it
+    // (details.editable); an edit is staged on the object like any other
+    // change, with the old and the new value, and written by Apply. There is
+    // no delete: splunkd has no call that removes one setting.
+
+    function stagedSettings(obj) {
+        var pending = state.pending[obj.key];
+        return pending && pending.settings ? pending.settings : newMap();
+    }
+
+    // Stage ``value`` for a setting; staging what it already is drops the edit.
+    function stageSetting(obj, name, value, previous) {
+        var map = newMap();
+        var current = stagedSettings(obj);
+        $.each(keys(current), function (i, other) { map[other] = current[other]; });
+        if (value === previous) { delete map[name]; } else { map[name] = { value: value, previous: previous }; }
+        setPending(obj, { settings: map });
+    }
+
+    function focusFid(fid) {
+        var found = $root.find('[data-fid]').filter(function () { return this.getAttribute('data-fid') === fid; })[0];
+        if (found) { found.focus(); }
+    }
+
+    // Copy with the clipboard API where the page may use it, else a hidden
+    // textarea and execCommand (plain-http Splunk Web is not a secure context).
+    function copyText(text, done) {
+        var fallback = function () {
+            var back = document.activeElement;
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (ignore) { ok = false; }
+            document.body.removeChild(area);
+            if (back && back.focus) { back.focus(); }
+            return ok;
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(fallback()); });
+        } else {
+            done(fallback());
+        }
+    }
+
+    // A value in a code block. The Copy button is drawn on hover and on
+    // keyboard focus (the block is focusable through the button), and is left
+    // out for a masked secret and for a value shown shortened, where it would
+    // copy something other than the value.
+    function valueBlock(name, text, truncated, secret, fid, extraClass) {
+        var $wrap = el('div', 'ea-setting-value' + (extraClass ? ' ' + extraClass : ''));
+        $wrap.append(el('pre', 'ea-code').append(el('code', null, text + (truncated ? ' ... (shortened)' : ''))));
+        if (!truncated && !secret) {
+            var $copy = el('button', 'btn btn-link ea-copy', 'Copy').attr({
+                type: 'button', 'data-fid': fid, 'aria-label': 'Copy the value of ' + name
+            });
+            $copy.on('click', function () {
+                copyText(text, function (ok) {
+                    $copy.text(ok ? 'Copied' : 'Not copied');
+                    $liveStatus.text('');
+                    setTimeout(function () {
+                        $liveStatus.text(ok ? 'Copied the value of ' + name + '.' : 'Could not copy the value of ' + name + '.');
+                    }, 50);
+                    setTimeout(function () { $copy.text('Copy'); }, 2000);
+                });
+            });
+            $wrap.append($copy);
+        }
+        return $wrap;
+    }
+
+    // Where an edit is written, in words.
+    function destinationText(obj, details) {
+        var conf = details.explicit_conf + '.conf';
+        if (details.edit_layer === 'user') {
+            return 'the owner\'s private ' + conf + ' for ' + appText(obj.app);
+        }
+        return obj.app === 'system' ? 'etc/system/local/' + conf : 'the ' + conf + ' in ' + appText(obj.app) + '\'s local folder';
+    }
+
+    function nameProblem(obj, details, name) {
+        if (!name) { return ''; }
+        var taken = false;
+        $.each(details.explicit || [], function (i, own) { if (own.name === name) { taken = true; } });
+        if (taken || stagedSettings(obj)[name]) {
+            return '"' + name + '" is already set or staged: edit it in the list.';
+        }
+        if (name.length > 256 || /[=\u0000-\u001f]/.test(name) || /^[\[#]/.test(name) || name !== $.trim(name) ||
+                name.indexOf('eai:') === 0) {
+            return '"' + name + '" is not a name a setting can have.';
+        }
+        if (details.free_text || $.inArray(name, details.addable) !== -1) { return ''; }
+        var matched = false;
+        $.each(details.addable_patterns, function (i, pattern) {
+            try { if (new RegExp('^(?:' + pattern + ')$').test(name)) { matched = true; } } catch (ignore) { /* not a pattern JS reads */ }
+        });
+        return matched ? '' : 'splunkd does not list "' + name + '" as a setting of this kind of object.';
+    }
+
+    function settingEditor(obj, details, setting) {
+        var edit = state.settingEdit;
+        var $editor = el('div', 'ea-setting-editor');
+        var id = 'ea-edit-value';
+        $editor.append(el('label', 'ea-setting-label', 'New value of ' + setting.name).attr('for', id));
+        var $area = el('textarea', 'ea-setting-input').attr({ id: id, rows: 4, spellcheck: 'false',
+            'data-fid': 'setting-edit-value:' + setting.name }).val(edit.value)
+            .on('input', function () { edit.value = $area.val(); });
+        $editor.append($area);
+        if (setting.layer === 'default') {
+            $editor.append(el('p', 'ea-muted', 'This setting is set in the app\'s default folder. Staging a new value ' +
+                'writes it as a local setting, which then stays when the default changes.'));
+        }
+        var $actions = el('div', 'ea-panel-actions');
+        $actions.append(el('button', 'btn btn-primary', 'Stage change').attr({ type: 'button',
+            'data-fid': 'setting-stage:' + setting.name }).on('click', function () {
+            state.settingEdit = null;
+            stageSetting(obj, setting.name, $area.val(), setting.value);
+            render();
+            focusFid('setting-edit:' + setting.name);
+        }));
+        $actions.append(el('button', 'btn', 'Cancel').attr({ type: 'button',
+            'data-fid': 'setting-cancel:' + setting.name }).on('click', function () {
+            state.settingEdit = null;
+            renderPanel();
+            focusFid('setting-edit:' + setting.name);
+        }));
+        return $editor.append($actions);
+    }
+
+    // One setting as a dt/dd pair of the list. ``setting`` has name, value,
+    // truncated and, for an own setting, layer, secret and overrides.
+    function appendSetting($dl, obj, details, setting, inherited) {
+        var staged = stagedSettings(obj)[setting.name];
+        var editing = state.settingEdit && state.settingEdit.key === obj.key && state.settingEdit.name === setting.name;
+        var $dt = el('dt').append(el('span', 'ea-setting-name', setting.name));
+        if (setting.layer) {
+            $dt.append(el('span', 'ea-badge ea-setting-layer', LAYER_TEXT[setting.layer] || setting.layer)
+                .attr('title', setting.layer === 'user' ? 'Set in the owner\'s private folder' :
+                    'Set in the app\'s ' + setting.layer + ' folder'));
+        }
+        if (inherited) {
+            $dt.append(el('span', 'ea-badge ea-setting-inherited', 'inherited').attr('title',
+                'Not set in this object: it comes from a default'));
+        }
+        if (staged) {
+            $dt.append(el('span', 'ea-badge ea-badge-changed ea-setting-staged-badge',
+                staged.previous === null ? 'new, staged' : 'staged'));
+        }
+        $dl.append($dt);
+        var $dd = el('dd', 'ea-setting' + (staged ? ' ea-setting-staged' : ''));
+        var fid = 'copy:' + setting.name;
+        if (staged) {
+            if (staged.previous !== null) {
+                $dd.append(el('div', 'ea-setting-label', 'Old value'));
+                $dd.append(valueBlock(setting.name, staged.previous, false, false, fid + ':old', 'ea-setting-old'));
             }
-            $dl.append($dt);
-            $dl.append(el('dd', null, setting.value + (setting.truncated ? ' ... (shortened)' : '')));
+            $dd.append(el('div', 'ea-setting-label', 'New value'));
+            $dd.append(valueBlock(setting.name, staged.value, false, false, fid + ':new', 'ea-setting-new'));
+            $dd.append(el('p', 'ea-muted ea-setting-note', 'Apply writes this to ' + destinationText(obj, details) +
+                (setting.layer === 'default' ? ', as a local setting that overrides the default' : '') +
+                '. The object keeps its sharing and permissions.'));
+            $dd.append(el('button', 'btn btn-link ea-setting-discard', 'Discard this change').attr({ type: 'button',
+                'data-fid': 'setting-discard:' + setting.name, 'aria-label': 'Discard the staged change to ' + setting.name })
+                .prop('disabled', state.busy).on('click', function () {
+                    // Staging the old value again drops the edit.
+                    stageSetting(obj, setting.name, staged.previous, staged.previous);
+                    render();
+                    focusFid(staged.previous === null ? 'setting-add-name' : 'setting-edit:' + setting.name);
+                }));
+            $dl.append($dd);
+            return;
+        }
+        if (editing) {
+            $dd.append(settingEditor(obj, details, setting));
+            $dl.append($dd);
+            return;
+        }
+        $dd.append(valueBlock(setting.name, setting.value, setting.truncated, setting.secret, fid, null));
+        var lower = setting.overrides || [];
+        if (lower.length) {
+            var showKey = obj.key + '\u0000' + setting.name;
+            var shown = !!state.showDefault[showKey];
+            var hasDefault = $.grep(lower, function (o) { return o.layer === 'default'; }).length > 0;
+            $dd.append(el('button', 'btn btn-link ea-show-default', (shown ? 'Hide ' : 'Show ') +
+                (hasDefault ? 'default value' : 'overridden value')).attr({
+                type: 'button', 'data-fid': 'show-default:' + setting.name, 'aria-expanded': shown ? 'true' : 'false',
+                'aria-label': (shown ? 'Hide ' : 'Show ') + (hasDefault ? 'the default value of ' : 'the overridden value of ') + setting.name
+            }).on('click', function () {
+                if (state.showDefault[showKey]) { delete state.showDefault[showKey]; } else { state.showDefault[showKey] = true; }
+                renderPanel();
+            }));
+            if (shown) {
+                $.each(lower.slice().reverse(), function (i, other) {
+                    var $row = el('div', 'ea-setting-lower');
+                    $row.append(el('div', 'ea-setting-label', 'Value in ' + (LAYER_TEXT[other.layer] || other.layer) +
+                        (other.layer === 'default' ? ' (hidden by the local value)' : ' (hidden)')));
+                    $row.append(valueBlock(setting.name, other.value, other.truncated, setting.secret,
+                        fid + ':' + other.layer, 'ea-setting-default'));
+                    $dd.append($row);
+                });
+            }
+        }
+        if (!inherited && details.editable && !setting.secret && !setting.truncated) {
+            $dd.append(el('button', 'btn ea-setting-edit', 'Edit').attr({ type: 'button',
+                'data-fid': 'setting-edit:' + setting.name, 'aria-label': 'Edit ' + setting.name })
+                .prop('disabled', state.busy).on('click', function () {
+                    state.settingEdit = { key: obj.key, name: setting.name, value: setting.value };
+                    renderPanel();
+                    focusFid('setting-edit-value:' + setting.name);
+                }));
+        }
+        if (!inherited && details.editable && (setting.secret || setting.truncated)) {
+            $dd.append(el('div', 'ea-muted', setting.secret ? 'Masked value: edit it in the .conf file.' :
+                'Too long to edit here: edit it in the .conf file.'));
+        }
+        $dl.append($dd);
+    }
+
+    function settingsList(obj, details, list, inheritedNames) {
+        var $dl = el('dl', 'ea-settings');
+        $.each(list, function (i, setting) {
+            appendSetting($dl, obj, details, setting, !!(inheritedNames && inheritedNames[setting.name]));
         });
         return $dl;
     }
 
+    function addSettingForm($panel, obj, details) {
+        var draft = state.settingAdd[obj.key] = state.settingAdd[obj.key] || { name: '', value: '' };
+        $panel.append(el('h3', null, 'Add a setting'));
+        var hint = details.free_text ?
+            'splunkd lists no settings for this kind of object: type the name of the setting.' :
+            (details.addable.length ? 'Choose one of the ' + plural(details.addable.length, 'setting') +
+                ' splunkd lists for this kind of object, or start typing.' : '') +
+            (details.addable_patterns.length ? ' Names matching ' + details.addable_patterns.join(', ') + ' also work.' : '');
+        var $name = el('input').attr({ type: 'text', id: 'ea-add-name', list: 'ea-add-names', spellcheck: 'false',
+            autocomplete: 'off', 'data-fid': 'setting-add-name', 'aria-describedby': 'ea-add-hint ea-add-problem' }).val(draft.name);
+        var $list = el('datalist').attr('id', 'ea-add-names');
+        $.each(details.addable, function (i, name) { $list.append(el('option').attr('value', name)); });
+        var $problem = el('div', 'ea-muted ea-setting-problem').attr('id', 'ea-add-problem');
+        var $area = el('textarea', 'ea-setting-input').attr({ id: 'ea-add-value', rows: 3, spellcheck: 'false',
+            'data-fid': 'setting-add-value' }).val(draft.value);
+        var $stage = el('button', 'btn btn-primary', 'Stage new setting').attr({ type: 'button', 'data-fid': 'setting-add-stage' });
+        var update = function () {
+            var problem = nameProblem(obj, details, draft.name);
+            $problem.text(problem);
+            $name.attr('aria-invalid', problem ? 'true' : 'false');
+            $stage.prop('disabled', !draft.name || !!problem || state.busy);
+        };
+        $name.on('input', function () { draft.name = $.trim($name.val()); update(); });
+        $area.on('input', function () { draft.value = $area.val(); });
+        $stage.on('click', function () {
+            if (nameProblem(obj, details, draft.name) || !draft.name) { return; }
+            stageSetting(obj, draft.name, draft.value, null);
+            var added = draft.name;
+            delete state.settingAdd[obj.key];
+            render();
+            focusFid('setting-discard:' + added);
+        });
+        $panel.append(el('div', 'ea-field').append(el('label', null, 'Setting name').attr('for', 'ea-add-name'),
+            $name, $list, el('div', 'ea-muted').attr('id', 'ea-add-hint').text(hint), $problem));
+        $panel.append(el('div', 'ea-field').append(el('label', null, 'Value').attr('for', 'ea-add-value'), $area));
+        $panel.append($stage);
+        update();
+    }
+
+    var EDIT_NOTES = {
+        kind: 'The settings of this kind of object are not edited here: dashboards, navigation menus and prebuilt ' +
+            'panels are better edited in Splunk\'s own editors, and a lookup table file has no settings.',
+        capability: 'Editing settings needs the admin_all_objects capability, as it reads and checks the ' +
+            'configuration files.',
+        write: 'Your account cannot write to this object, so its settings are read-only here.'
+    };
+
     // The object's own settings first (read from its stanza in its app's
     // default and local files, as btool does); everything it inherits
-    // (from [default] stanzas and etc/system/default) only on request.
+    // (from [default] stanzas and etc/system/default) on request, or when the
+    // filter has text.
     function renderSettings($panel, obj, details) {
         var showAll = state.showAllSettings[obj.key];
         var explicit = details.explicit;
+        var text = ($.trim(state.settingFilter[obj.key] || '')).toLowerCase();
+        var matches = function (setting) {
+            return !text || setting.name.toLowerCase().indexOf(text) !== -1 ||
+                String(setting.value).toLowerCase().indexOf(text) !== -1;
+        };
+        // Staged new settings are not in the file yet: list them with the own ones.
+        var own = explicit ? explicit.slice() : [];
+        var ownNames = newMap();
+        $.each(own, function (i, setting) { ownNames[setting.name] = true; });
+        var staged = stagedSettings(obj);
+        $.each(keys(staged), function (i, name) {
+            if (!ownNames[name]) { own.push({ name: name, value: staged[name].value, truncated: false, secret: false, overrides: [] }); }
+        });
+        own.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+
+        $panel.append(el('h3', null, explicit ? 'Settings set in this object' : 'Settings'));
         if (explicit) {
-            $panel.append(el('h3', null, 'Settings set in this object'));
             $panel.append(el('p', 'ea-muted', 'From its [' + obj.name + '] stanza in ' + details.explicit_conf +
-                '.conf. Settings it inherits from defaults are not listed.'));
-            if (explicit.length) {
-                $panel.append(settingsList(explicit, true));
-            } else {
-                $panel.append(el('p', 'ea-muted', 'None: every setting of this object comes from defaults.'));
-            }
+                '.conf. Settings it inherits from defaults are listed only when you filter or ask for them.'));
         } else {
-            $panel.append(el('h3', null, 'Settings'));
             $panel.append(el('p', 'ea-muted', details.explicit_note === 'capability' ?
                 'All settings, including inherited defaults: telling the object\'s own settings apart needs the ' +
                 'admin_all_objects capability, as it reads the configuration files.' :
                 'All of this object\'s settings are its own.'));
-            $panel.append(details.settings.length ? settingsList(details.settings, false) :
-                el('p', 'ea-muted', 'This object has no settings to show.'));
-            return;
         }
-        if (details.settings.length <= explicit.length) { return; }   // nothing more to show
-        $panel.append(el('button', 'btn btn-link ea-show-all', showAll ? 'Hide the inherited settings' :
-            'Show all ' + plural(details.settings.length, 'setting') + ', including inherited defaults').attr({
-            type: 'button', 'data-fid': 'show-all:' + obj.key, 'aria-expanded': showAll ? 'true' : 'false'
-        }).on('click', function () {
-            if (state.showAllSettings[obj.key]) { delete state.showAllSettings[obj.key]; } else {
-                state.showAllSettings[obj.key] = true;
+        if (!details.editable && EDIT_NOTES[details.edit_note]) {
+            $panel.append(el('p', 'ea-muted ea-edit-note', EDIT_NOTES[details.edit_note]));
+        }
+        if (!own.length && !details.settings.length) {
+            $panel.append(el('p', 'ea-muted', 'This object has no settings to show.'));
+        } else {
+            var $filter = el('input', 'ea-setting-filter').attr({ type: 'text', id: 'ea-setting-filter',
+                'data-fid': 'setting-filter', spellcheck: 'false', autocomplete: 'off' }).val(state.settingFilter[obj.key] || '')
+                .on('input', function () {
+                    state.settingFilter[obj.key] = $filter.val();
+                    renderPanel();
+                });
+            $panel.append(el('div', 'ea-field').append(el('label', null, 'Filter settings').attr('for', 'ea-setting-filter'),
+                $filter, el('div', 'ea-muted', 'Matches names and values, including settings the object inherits.')));
+        }
+
+        if (text) {
+            // Everything that matches: own settings, then inherited ones.
+            // Staged settings stay listed whatever the filter says, so a stage never seems to vanish.
+            var shown = $.grep(own, function (setting) { return matches(setting) || !!staged[setting.name]; });
+            var inheritedNames = newMap();
+            $.each(details.settings, function (i, setting) {
+                if (ownNames[setting.name] || staged[setting.name] || !matches(setting)) { return; }
+                inheritedNames[setting.name] = true;
+                shown.push(setting);
+            });
+            $panel.append(el('p', 'ea-muted ea-setting-count', plural(shown.length, 'setting') + ' match' +
+                (shown.length === 1 ? 'es' : '') + ' "' + $.trim(state.settingFilter[obj.key]) + '".'));
+            if (shown.length) { $panel.append(settingsList(obj, details, shown, inheritedNames)); }
+        } else if (explicit) {
+            if (own.length) {
+                $panel.append(settingsList(obj, details, own));
+            } else {
+                $panel.append(el('p', 'ea-muted', 'None: every setting of this object comes from defaults.'));
             }
-            renderPanel();
-        }));
-        if (showAll) {
-            $panel.append(el('h3', null, 'All settings, as splunkd reports them'));
-            $panel.append(settingsList(details.settings, false));
+            if (details.settings.length > explicit.length) {
+                $panel.append(el('button', 'btn btn-link ea-show-all', showAll ? 'Hide the inherited settings' :
+                    'Show all ' + plural(details.settings.length, 'setting') + ', including inherited defaults').attr({
+                    type: 'button', 'data-fid': 'show-all:' + obj.key, 'aria-expanded': showAll ? 'true' : 'false'
+                }).on('click', function () {
+                    if (state.showAllSettings[obj.key]) { delete state.showAllSettings[obj.key]; } else {
+                        state.showAllSettings[obj.key] = true;
+                    }
+                    renderPanel();
+                }));
+                if (showAll) {
+                    $panel.append(el('h3', null, 'All settings, as splunkd reports them'));
+                    $panel.append(settingsList(obj, details, details.settings));
+                }
+            }
+        } else if (details.settings.length) {
+            $panel.append(settingsList(obj, details, details.settings));
+        }
+
+        if (details.editable) {
+            if (details.addable.length || details.addable_patterns.length || details.free_text) {
+                addSettingForm($panel, obj, details);
+            } else if (details.explicit_conf === 'props') {
+                $panel.append(el('p', 'ea-muted', 'This object is the one line shown: the other lines of its stanza ' +
+                    'belong to other objects, so settings are not added here.'));
+            }
+            $panel.append(el('p', 'ea-muted ea-no-delete', 'A local setting cannot be removed here, so there is no delete. ' +
+                'Writing the default value back would not remove it either: edit the .conf file to remove it.'));
         }
     }
 

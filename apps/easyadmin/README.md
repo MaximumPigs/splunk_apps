@@ -167,9 +167,9 @@ added from the **Types** menu.
 | **Delete** | Stages the ticked objects for deletion. |
 | **New app...**, and **Clone...** in an app's title | Opens a form to stage a new app, or a clone of that app with copies of its objects: see [Creating and cloning apps](#creating-and-cloning-apps). Shown only to accounts that can create apps. |
 | A **new app** or **clone of** box, outlined with dashes | An app that exists only as a staged change. It takes objects like any other app, and its × drops the app and every change staged into it, after asking. |
-| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings (read-only): see [Settings in the panel](#settings-in-the-panel). |
+| Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings, which can be filtered, copied and edited: see [Settings in the panel](#settings-in-the-panel). |
 | **Apply changes to N objects** | Applies every staged change, after a confirmation that says how many apps are created and how many objects are moved, copied, re-permissioned and deleted. New apps are created first. |
-| The × on a staged-change badge | Drops that one change (a move, a copy, a permission change or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
+| The × on a staged-change badge | Drops that one change (a move, a copy, a permission change, edited settings or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
 | **Discard changes** | Drops every staged change, after asking. |
 
 A staged change is outlined and labelled on the object (`moving from search`,
@@ -236,12 +236,85 @@ everything splunkd reports for it.
 
 Like the precedence tab, this reads the configuration files, so it needs the
 `admin_all_objects` capability; without it the panel lists every setting, as
-splunkd reports them. It applies to objects kept as a stanza: reports and
-alerts, search macros, event types, tags, field transformations, lookup
-definitions, workflow actions, time ranges, data models, KV store
-collections and alert actions. Dashboards, navigation menus and prebuilt
-panels are XML files whose settings are all their own, and props-based
-objects are a single setting each.
+splunkd reports them, and nothing can be edited. It applies to objects kept
+as a stanza: reports and alerts, search macros, event types, tags, field
+transformations, lookup definitions, workflow actions, time ranges, data
+models, KV store collections and alert actions. A props-based object (field
+extraction, field alias, calculated field, automatic lookup, source type
+renaming) is a single line of a stanza that other objects share, so it shows
+and edits that one line only. Dashboards, navigation menus and prebuilt
+panels are XML files whose settings are all their own, and are better edited
+in Splunk's own editors; lookup table files are not settings at all.
+
+**Filter settings** searches the names and values of the settings. With text
+in it, every matching setting is listed, including settings the object only
+inherits, each labelled `inherited`. Each value is in a code block with a
+**Copy** button, drawn when the block is hovered or has keyboard focus (and
+read out as "Copied"). There is no Copy for a masked secret or a value that is
+shown shortened (values over 4000 characters are cut).
+
+A setting set in more than one place (default and local, or local and the
+owner's private folder) has **Show default value**, which lists the value it
+hides.
+
+#### Editing settings
+
+**Edit** on one of the object's own settings, or **Add a setting**, stages the
+change like any other: the setting is outlined, with the old value (struck
+through) and the new one, and nothing is written until **Apply**. The × on the
+object's `settings changed (N)` badge, or **Discard this change**, drops it.
+
+- The change is written to the object's own local configuration: the
+  `local` folder of its app (created when the app had no such file), the
+  owner's private folder for a private object, or `etc/system/local` for an
+  object in `etc/system`. Settings in `default` are never touched; an edit of
+  one writes a local setting that overrides it, and that local setting then
+  stays when the default changes. The object keeps its sharing, owner and
+  roles (observed on 10.6.1 for every kind below).
+- The write goes to splunkd's `configs/conf-<file>/<stanza>` endpoint, which
+  writes just the keys posted. The object kind's own endpoint was not used:
+  on 10.6.1 it refuses a partial edit (a macro needs its `definition` and
+  `args` again, a transformation its `REGEX`), and one of them dropped a
+  field alias that was not posted.
+- Add a setting from the names splunkd reports for that kind of object (an
+  `Add a setting` box with the list, plus the patterns it reports, such as
+  `dispatch.*` for reports). A name outside them is refused. Splunkd lists no
+  settings for tags and alert actions (it reports other keys than the file's),
+  so for those the name is free text. A props-based object adds nothing: it
+  is the one line.
+- Needs `admin_all_objects` and write access to the object. Secrets (names
+  such as `password` or `token`) are masked on the page and cannot be edited
+  here.
+- A value may run over several lines (searches and macros do). A value with
+  a line that looks like `[stanza]` or `key = value` did not create a second
+  stanza or key on 10.6.1: splunkd stored it as one value, which read back
+  unchanged. Control characters other than newline and tab are refused.
+- If a setting changed in the file after the page loaded it, the edit is
+  refused ("changed since the page loaded") and nothing is written.
+- Splunkd can answer success and write nothing (seen for props and tags
+  when copying), so after each write the file is read back, and a setting that
+  did not arrive is reported as an error.
+- Settings are written first; if a move or a permission change on the same
+  object then fails, the page says that the settings were changed.
+
+#### Why local settings cannot be deleted
+
+No REST call removes one setting from a file while keeping the default
+(observed on 10.6.1, with the settings read back from the files):
+
+- `DELETE .../properties/<file>/<stanza>/<key>` answers HTTP 400 "Key deletion
+  is not supported", for an object that ships a default and for a local-only one;
+- `DELETE .../configs/conf-<file>/<stanza>` removes the whole local-only
+  object, and for an object that ships in `default` is refused ("cannot be
+  deleted in config");
+- posting an empty value writes `key =` into local, an empty override, and
+  posting the default value back keeps the key in local, so neither is a
+  delete.
+
+Writing files directly is not possible on Splunk Cloud, so the page has no
+delete for a setting. To remove a local setting, edit the `local` file, or use
+Splunk's own editor where it offers one. The settings added or changed here
+are the ones that remain.
 
 ### Copying objects
 
@@ -363,8 +436,9 @@ version, with the `barebones` template. It never sends the settings with which
 Splunk installs an app from a file or a URL, and the endpoint refuses a request
 that carries them.
 
-Role edits, object moves, copies, permission changes and deletions, and app
-creations are logged to
+Role edits, object moves, copies, permission changes, settings edits (the
+names of the settings, never their values) and deletions, and app creations
+are logged to
 `$SPLUNK_HOME/var/log/splunk/easyadmin.log`, with the user, the role or
 object, and what was written:
 
@@ -434,7 +508,14 @@ objects can be moved into it), `objects`, `roles`, `users` and `warnings`
 `app`, `ns` (the namespace it lives in: its owner for a private object,
 `nobody` otherwise), `owner`, `sharing`, `read`, `write`, `movable`,
 `copyable`, `removable` and `can_change_perms`. With `type`, `ns`, `app` and `name`, it
-returns that one object with its `settings`.
+returns that one object with its `settings` (all, as splunkd reports them) and,
+for callers with `admin_all_objects`, `explicit`: the settings set in its own
+files, each with `name`, `value`, `layer` (`default`, `local` or `user`),
+`truncated`, `secret` and `overrides` (the values it hides, lowest layer
+first). It also has `editable`, `edit_layer` (`local` or `user`, where an edit
+lands) and `edit_note` (why it is not editable: `kind`, `capability` or
+`write`), `addable` (setting names splunkd lists that the object does not
+set), `addable_patterns` (the patterns it reports) and `free_text`.
 
 `GET` also returns `can_create_apps` (whether your account holds
 `admin_all_objects` or `edit_local_apps`), and each app has `description`
@@ -452,7 +533,13 @@ and `author`.
 ```
 
 `copy_to` (an app name) creates a copy there instead of moving; it cannot be
-combined with `move_to` or `delete`. `acl` always carries `sharing` and `owner`; `read` and `write` are ignored for
+combined with `move_to` or `delete`. `settings` is a list (at most 200) of
+`{"name", "value", "previous"}`, where `previous` is the value the caller read
+(`null` for a setting the object did not set) and an edit is refused when the
+file has another; it can go with `move_to`, `copy_to` and `acl`, not with
+`delete`, and its names and values are validated (no `=`, `[`, `#`, `eai:` or
+secret names, values up to 65536 characters, control characters other than
+newline and tab refused). Each result also has `settings_applied`. `acl` always carries `sharing` and `owner`; `read` and `write` are ignored for
 `"sharing": "user"`. An empty `write` list leaves no write roles. The response
 has one result per object with `status` of `applied` or `error`, its
 `message`, and `moved_to` when it was moved, plus `applied` and `failed`
@@ -495,6 +582,13 @@ was not created is not attempted and is reported as an error.
 - Props-based objects (field extractions, aliases, calculated fields,
   automatic lookups, source type renaming), tags, lookup table files and
   navigation menus cannot be copied.
+- A local setting cannot be deleted (see
+  [Why local settings cannot be deleted](#why-local-settings-cannot-be-deleted)),
+  and dashboards, navigation menus, prebuilt panels and lookup table files
+  are not edited setting by setting.
+- Editing settings has been tried on Splunk Enterprise 10.6.1 only. It uses
+  splunkd's `configs` REST endpoint and never writes files itself, but it has
+  not been tried on Splunk Cloud Platform, nor on 9.3.
 - The configuration precedence tab shows Splunk's global order. It does not
   model the per-app order used at search time, or settings in `etc/users`.
 - A clone is partial: props-based objects, tags, lookup table files and
