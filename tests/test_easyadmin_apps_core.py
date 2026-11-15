@@ -848,3 +848,92 @@ def test_creating_apps_checks_capabilities_without_the_theme():
     gateway = FakeGateway(capabilities=("edit_local_apps",))
     apps.submit_changes(gateway, None, raw_apps=[new_app()])
     assert gateway.context_reads == ["caller_capabilities"]
+
+
+# ----------------------------------------------------------- request size cap
+#
+# Neither Splunk Web nor splunkd stopped a 64 MB body (probed on 10.6.1), so
+# the app caps the whole POST body itself, before parsing.
+
+def _padded_body(total_bytes):
+    """A JSON body of exactly ``total_bytes`` bytes with no changes in it."""
+    head = '{"changes": [], "pad": "'
+    tail = '"}'
+    return head + "x" * (total_bytes - len(head) - len(tail)) + tail
+
+
+def test_request_size_counts_utf8_bytes():
+    assert apps.request_size(None) == 0
+    assert apps.request_size("") == 0
+    assert apps.request_size("abc") == 3
+    assert apps.request_size(u"\u00e9" * 10) == 20      # two bytes each, not one character
+    assert apps.request_size(b"\xff" * 7) == 7          # bytes are counted as they are
+    assert apps.request_size(u"\u20ac") == 3
+
+
+@pytest.mark.parametrize("count, text", [
+    (16 * 1024 * 1024, "16 MB"),
+    (1024 * 1024, "1 MB"),
+    (int(17.2 * 1024 * 1024), "17.2 MB"),
+    (16 * 1024 * 1024 + 1, "16 MB"),
+    (0, "0 MB"),
+    (1536 * 1024, "1.5 MB"),
+])
+def test_megabytes_text(count, text):
+    assert apps.megabytes(count) == text
+
+
+def test_cap_is_16_mb():
+    assert apps.MAX_REQUEST_BYTES == 16 * 1024 * 1024
+
+
+def test_post_over_the_cap_is_refused_before_parsing_and_touches_nothing():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search"))])
+    body = _padded_body(apps.MAX_REQUEST_BYTES + 1)
+    status, result = apps.handle_request("POST", body, {}, gateway)
+    assert status == 413
+    message = result["error"] if "error" in result else json.dumps(result)
+    assert "16 MB" in message and "smaller batches" in message
+    assert gateway.calls == [] and gateway.context_reads == []
+    assert len(gateway.objects) == 1
+
+
+def test_refusal_names_both_sizes():
+    body = _padded_body(int(17.2 * 1024 * 1024))
+    status, result = apps.handle_request("POST", body, {}, FakeGateway())
+    assert status == 413
+    assert "17.2 MB" in json.dumps(result) and "16 MB" in json.dumps(result)
+
+
+def test_post_over_the_cap_is_refused_for_bytes_and_form_bodies_too():
+    over = _padded_body(apps.MAX_REQUEST_BYTES + 1)
+    assert apps.handle_request("POST", over.encode("utf-8"), {}, FakeGateway())[0] == 413
+    assert apps.handle_request("POST", "changes=" + "x" * apps.MAX_REQUEST_BYTES, {}, FakeGateway())[0] == 413
+
+
+def test_post_exactly_at_the_cap_is_not_refused_for_size():
+    status, result = apps.handle_request("POST", _padded_body(apps.MAX_REQUEST_BYTES), {}, FakeGateway())
+    assert status == 400
+    assert "no changes" in json.dumps(result).lower()
+
+
+def test_the_cap_is_in_bytes_not_characters():
+    # 8 MiB of two-byte characters is 8 Mi characters but 16 MiB of bytes.
+    half = apps.MAX_REQUEST_BYTES // 2
+    head = '{"changes": [], "pad": "'
+    exact = head + u"\u00e9" * ((apps.MAX_REQUEST_BYTES - len(head) - 4) // 2) + 'xx"}'
+    assert apps.request_size(exact) == apps.MAX_REQUEST_BYTES
+    assert len(exact) < half + 100            # far fewer characters than the cap
+    assert apps.handle_request("POST", exact, {}, FakeGateway())[0] == 400
+    assert apps.handle_request("POST", exact + " ", {}, FakeGateway())[0] == 413
+
+
+def test_the_page_caps_at_the_same_size():
+    """easyadmin_apps.js refuses at staging with the server's number; they must not drift."""
+    import os
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "apps", "easyadmin", "appserver", "static", "easyadmin_apps.js")
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "var MAX_REQUEST_BYTES = 16 * 1024 * 1024;" in source
+    assert apps.MAX_REQUEST_BYTES == 16 * 1024 * 1024

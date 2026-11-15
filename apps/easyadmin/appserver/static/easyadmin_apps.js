@@ -161,6 +161,7 @@ require([
         showAllSettings: newMap(),  // object key -> true to list inherited settings too
         settingFilter: newMap(),    // object key -> text filtering the panel's settings
         showDefault: newMap(),      // object key + NUL + setting -> true to show the value it hides
+        capRefusal: null,           // the request-cap refusal, shown in the panel (it covers the message area)
         settingEdit: null,          // {key, name, value}: the setting being edited in the panel
         settingAdd: newMap(),       // object key -> {name, value}: the "add a setting" draft
         filter: '',            // object name filter
@@ -394,6 +395,9 @@ require([
     var VERSION_MAX = 64;
     var DEFAULT_VERSION = '1.0.0';
     var MAX_CHANGES = 2000;
+    // The whole request body in UTF-8 bytes; mirrors easyadmin_apps_core.MAX_REQUEST_BYTES,
+    // which refuses a larger Apply with HTTP 413 (a unit test keeps the two equal).
+    var MAX_REQUEST_BYTES = 16 * 1024 * 1024;
     var MAX_NEW_APPS = 20;
     var RESTART_NOTICE = 'Splunk asks for a restart to finish some of these changes. Restart it from ' +
         'Settings > Server controls when it suits your users; this page does not restart Splunk.';
@@ -621,6 +625,69 @@ require([
         return changes;
     }
 
+    // The body Apply sends. Measured and sent from this one function, so the
+    // size the page checks at staging is the size the server counts.
+    function requestBody() {
+        return JSON.stringify({ apps: collectNewApps(), changes: collectChanges() });
+    }
+
+    function requestBytes() {
+        return new TextEncoder().encode(requestBody()).length;
+    }
+
+    // The cap in force. A positive integer in ?ea_max_request_bytes can only
+    // lower it: a test hook, so a UI test need not stage 16 MB. The server
+    // enforces its own 16 MB whatever the page does.
+    function requestLimit() {
+        var text = urlParam('ea_max_request_bytes');
+        var asked = text !== null && /^[0-9]{1,15}$/.test(text) ? parseInt(text, 10) : 0;
+        return asked > 0 && asked < MAX_REQUEST_BYTES ? asked : MAX_REQUEST_BYTES;
+    }
+
+    // "16 MB", "17.2 MB": as easyadmin_apps_core.megabytes.
+    function megabytes(count) {
+        var value = Math.round(count / (1024 * 1024) * 10) / 10;
+        return (value === Math.floor(value) ? String(value) : value.toFixed(1)) + ' MB';
+    }
+
+    // Likewise for a cap lowered by the test hook, which may be under 0.1 MB.
+    function limitText(limit) {
+        return limit === MAX_REQUEST_BYTES ? megabytes(limit) : limit + ' bytes';
+    }
+
+    function sizeText(count, limit) {
+        return limit === MAX_REQUEST_BYTES ? megabytes(count) : count + ' bytes';
+    }
+
+    // Run a staging ``action``; if it takes the whole request over the cap,
+    // put the staged state back as it was, say why, and return false. The
+    // caller re-renders either way. Discards never come here: they shrink
+    // the request, and a reload must not drop staged work.
+    function withinCap(action) {
+        var pending = newMap();
+        $.each(keys(state.pending), function (i, objKey) {
+            pending[objKey] = $.extend({}, state.pending[objKey]);
+        });
+        var newApps = newMap();
+        $.each(keys(state.newApps), function (i, name) { newApps[name] = state.newApps[name]; });
+        state.capRefusal = null;
+        action();
+        var limit = requestLimit();
+        var bytes = requestBytes();
+        if (bytes <= limit) { return true; }
+        state.pending = pending;
+        state.newApps = newApps;
+        syncApps();
+        var text = 'Not staged: this would make the staged changes ' + sizeText(bytes, limit) +
+            ', and one Apply can send at most ' + limitText(limit) + '. Apply what is staged first, then ' +
+            'stage the rest.';
+        state.message = { kind: 'error', lines: [text] };
+        // The side panel covers the page's message area, so it shows the
+        // refusal too, where the person is working.
+        state.capRefusal = text;
+        return false;
+    }
+
     // ---------------------------------------------------------------- data
 
     function index(data) {
@@ -767,7 +834,7 @@ require([
             url: ENDPOINT + '?output_mode=json',
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ apps: newApps, changes: changes }),
+            data: requestBody(),
             dataType: 'json',
             // Splunk Web rejects a state-changing request without its CSRF token.
             headers: {
@@ -1206,7 +1273,9 @@ require([
                     }
                     // Move works as a drop does: objects that cannot be
                     // moved (a default folder) are copied instead, and said so.
-                    stageTransfer(keys(state.selected), app, action[1] === 'move' ? 'auto' : 'copy');
+                    withinCap(function () {
+                        stageTransfer(keys(state.selected), app, action[1] === 'move' ? 'auto' : 'copy');
+                    });
                     render();
                 }));
         });
@@ -1215,18 +1284,22 @@ require([
         $bar.append(el('button', 'btn', 'Delete').attr({ type: 'button', 'data-fid': 'delete-selected' }).on('click', function () {
             var staged = 0;
             var locked = 0;
-            $.each(keys(state.selected), function (i, objKey) {
-                var obj = state.byKey[objKey];
-                if (obj && obj.removable) {
-                    setPending(obj, { del: true });
-                    staged += 1;
-                } else {
-                    locked += 1;
-                }
+            var within = withinCap(function () {
+                $.each(keys(state.selected), function (i, objKey) {
+                    var obj = state.byKey[objKey];
+                    if (obj && obj.removable) {
+                        setPending(obj, { del: true });
+                        staged += 1;
+                    } else {
+                        locked += 1;
+                    }
+                });
             });
-            var lines = staged ? ['Staged ' + plural(staged, 'object') + ' for deletion. Apply to delete them.'] : [];
-            if (locked) { lines.push(lockedText(locked, 'deleted')); }
-            state.message = { kind: 'info', lines: lines };
+            if (within) {
+                var lines = staged ? ['Staged ' + plural(staged, 'object') + ' for deletion. Apply to delete them.'] : [];
+                if (locked) { lines.push(lockedText(locked, 'deleted')); }
+                state.message = { kind: 'info', lines: lines };
+            }
             render();
         }));
         $bar.append(el('button', 'btn btn-link', 'Clear selection').attr({ type: 'button', 'data-fid': 'clear-selection' })
@@ -1583,8 +1656,8 @@ require([
         $app.on('change', function () {
             var hadCopy = pending && pending.copyTo;
             if (!targetFree(obj, $app.val())) { return; }
-            setPending(obj, { moveTo: $app.val() });
-            if (hadCopy && $app.val() !== obj.app) {
+            var fits = withinCap(function () { setPending(obj, { moveTo: $app.val() }); });
+            if (fits && hadCopy && $app.val() !== obj.app) {
                 state.message = { kind: 'info', lines: ['Replaced the staged copy with a move: an object is either ' +
                     'moved or copied.'] };
             }
@@ -1603,8 +1676,8 @@ require([
         $copy.on('change', function () {
             if ($copy.val() && !targetFree(obj, $copy.val())) { return; }
             var hadMove = pending && pending.moveTo;
-            setPending(obj, { copyTo: $copy.val() || obj.app });
-            if (hadMove && $copy.val()) {
+            var fits = withinCap(function () { setPending(obj, { copyTo: $copy.val() || obj.app }); });
+            if (fits && hadMove && $copy.val()) {
                 state.message = { kind: 'info', lines: ['Replaced the staged move with a copy: an object is either ' +
                     'moved or copied.'] };
             }
@@ -1623,7 +1696,7 @@ require([
 
         var aclEnabled = obj.can_change_perms && !(pending && pending.del);
         var setAcl = function (next) {
-            setPending(obj, { acl: next });
+            withinCap(function () { setPending(obj, { acl: next }); });
             rerender();
         };
         $panel.append(el('h3', null, 'Permissions'));
@@ -1650,7 +1723,7 @@ require([
             $actions.append(el('button', 'btn ea-danger', 'Delete object').attr({ type: 'button', 'data-fid': 'panel-delete' })
                 .prop('disabled', !obj.removable)
                 .attr('title', obj.removable ? 'Stage this object for deletion' : 'Objects in the default folder cannot be deleted')
-                .on('click', function () { setPending(obj, { del: true }); rerender(); }));
+                .on('click', function () { withinCap(function () { setPending(obj, { del: true }); }); rerender(); }));
         }
         if (pending) {
             $actions.append(el('button', 'btn', 'Undo staged changes').attr({ type: 'button', 'data-fid': 'panel-undo' })
@@ -1795,8 +1868,13 @@ require([
         var $actions = el('div', 'ea-panel-actions');
         $actions.append(el('button', 'btn btn-primary', 'Stage change').attr({ type: 'button',
             'data-fid': 'setting-stage:' + setting.name }).on('click', function () {
+            // Over the cap: the editor stays open with what was typed.
+            if (!withinCap(function () { stageSetting(obj, setting.name, $area.val(), setting.value); })) {
+                render();
+                focusFid('setting-edit-value:' + setting.name);
+                return;
+            }
             state.settingEdit = null;
-            stageSetting(obj, setting.name, $area.val(), setting.value);
             render();
             focusFid('setting-edit:' + setting.name);
         }));
@@ -1932,8 +2010,13 @@ require([
         $area.on('input', function () { draft.value = $area.val(); });
         $stage.on('click', function () {
             if (nameProblem(obj, details, draft.name) || !draft.name) { return; }
-            stageSetting(obj, draft.name, draft.value, null);
             var added = draft.name;
+            // Over the cap: the form keeps what was typed.
+            if (!withinCap(function () { stageSetting(obj, added, draft.value, null); })) {
+                render();
+                focusFid('setting-add-value');
+                return;
+            }
             delete state.settingAdd[obj.key];
             render();
             focusFid('setting-discard:' + added);
@@ -2099,23 +2182,31 @@ require([
             .on('click', function () {
                 var staged = 0;
                 var refused = 0;
-                $.each(editable, function (i, obj) {
-                    // A sharing level splunkd says this object cannot take
-                    // would only fail at Apply; skip it now and say so.
-                    if ((draft.sharing === 'global' && !obj.can_share_global) ||
-                            (draft.sharing === 'app' && !obj.can_share_app)) {
-                        refused += 1;
-                        return;
-                    }
-                    var acl = aclOf(obj);
-                    var next = $.extend({}, acl);
-                    if (draft.sharing) { next.sharing = draft.sharing; }
-                    if (draft.owner) { next.owner = draft.owner; }
-                    if (draft.perms) { next.read = draft.acl.read.slice(); next.write = draft.acl.write.slice(); }
-                    setPending(obj, { acl: next });
-                    // setPending drops an edit that matches the object as it is.
-                    if (state.pending[obj.key] && state.pending[obj.key].acl) { staged += 1; }
+                var fits = withinCap(function () {
+                    $.each(editable, function (i, obj) {
+                        // A sharing level splunkd says this object cannot take
+                        // would only fail at Apply; skip it now and say so.
+                        if ((draft.sharing === 'global' && !obj.can_share_global) ||
+                                (draft.sharing === 'app' && !obj.can_share_app)) {
+                            refused += 1;
+                            return;
+                        }
+                        var acl = aclOf(obj);
+                        var next = $.extend({}, acl);
+                        if (draft.sharing) { next.sharing = draft.sharing; }
+                        if (draft.owner) { next.owner = draft.owner; }
+                        if (draft.perms) { next.read = draft.acl.read.slice(); next.write = draft.acl.write.slice(); }
+                        setPending(obj, { acl: next });
+                        // setPending drops an edit that matches the object as it is.
+                        if (state.pending[obj.key] && state.pending[obj.key].acl) { staged += 1; }
+                    });
                 });
+                if (!fits) {
+                    // Over the cap: the panel stays open with its choices.
+                    render();
+                    focusFid('bulk-stage');
+                    return;
+                }
                 var lines = staged ? ['Staged permission changes for ' + plural(staged, 'object') +
                     '. Apply to make them.'] : ['Nothing was staged.'];
                 if (refused) {
@@ -2177,7 +2268,12 @@ require([
             .on('click', function () {
                 // A refusal (too many staged) sets its own message; either way
                 // the panel closes so the message is in view.
-                if ($.isEmptyObject(newAppProblems(draft))) { stageNewApp(draft, cloneOf); }
+                if ($.isEmptyObject(newAppProblems(draft)) && !withinCap(function () { stageNewApp(draft, cloneOf); })) {
+                    // Over the request cap: the form stays open with its draft.
+                    render();
+                    focusFid('newapp-stage');
+                    return;
+                }
                 closePanel();
             });
         $actions.append($stage);
@@ -2211,6 +2307,9 @@ require([
         var $panel = el('aside', 'ea-panel').attr({ role: 'dialog', 'aria-labelledby': 'ea-panel-title' });
         $panel.append(el('button', 'btn btn-link ea-panel-close', 'Close').attr({ type: 'button', 'data-fid': 'panel-close' })
             .on('click', closePanel));
+        if (state.capRefusal) {
+            $panel.append(el('div', 'ea-message ea-error ea-panel-refusal', state.capRefusal).attr('role', 'alert'));
+        }
         if (state.panel.mode === 'object') {
             renderObjectPanel($panel, state.byKey[state.panel.key]);
         } else if (state.panel.mode === 'newapp') {
@@ -2222,6 +2321,7 @@ require([
     }
 
     function openPanel(panel) {
+        state.capRefusal = null;
         state.panel = panel;
         state.returnFocus = document.activeElement;
         renderPanel();
@@ -2230,6 +2330,7 @@ require([
 
     function closePanel() {
         var returnTo = state.returnFocus;
+        state.capRefusal = null;
         state.panel = null;
         render();
         if (returnTo && returnTo.getAttribute) {
@@ -2633,7 +2734,9 @@ require([
         var dragged = state.dragKeys || [];
         var original = event.originalEvent;
         state.dragKeys = null;
-        stageTransfer(dragged, app, original.ctrlKey || original.metaKey ? 'copy' : 'auto');
+        withinCap(function () {
+            stageTransfer(dragged, app, original.ctrlKey || original.metaKey ? 'copy' : 'auto');
+        });
         render();
     });
 

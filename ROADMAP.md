@@ -28,6 +28,7 @@ its format is fixed:
 | 1.6.0 | Edit the individual settings of a knowledge object from its panel: filter, copy, show the default value, edit and add settings, staged with the old and new value and written to the app's local configuration by Apply. No delete of a local setting: splunkd has no REST call for it. |
 | 1.6.1 | The details panel, settings edits, app creation and the precedence view read only the caller's capabilities from splunkd, not the theme preference as well: one splunkd request fewer per details click. |
 | 1.6.2 | A box counts the copies staged into it ("0 objects, 60 staged") and says how many staged copies, moves and deletions the Types menu or name filter keep out of its list; the settings list, its labels and code use the page's body font size. |
+| 1.6.3 | One Apply is capped at 16 MB of request body: the server refuses a larger one with HTTP 413 before anything is written, and the page refuses, at the click that would take the staged changes over it, and puts the staged state back (the editor, form or panel stays open with what was typed). Splunk Web passed 64 MB bodies in a probe and splunkd allows 2 GB, so the cap is the app's own. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -161,30 +162,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Proposed: No cap on the total size of one settings Apply
-Status: in-progress
-
-Left by the security review on #39 (1.6.0), low. Each object may carry 200
-settings of up to 64 KB (`easyadmin_apps_core.py:365-367`, checked at
-`:659-687`), and one Apply may hold 2000 changes (`MAX_CHANGES`, `:106`), so
-one request can ask splunkd for gigabytes of writes. Only a caller with
-`admin_all_objects` reaches it, so the harm is self-inflicted load. Fix: a
-total byte cap across the request, refused with a clear message, plus a
-unit test.
-
-Agreed: probe, then set the cap. The person sees the error when they stage
-the first change that takes the total above the cap, not at Apply; the
-server-side refusal stays as the backstop.
-
-- [x] Confirm: should this be done? (Recommended: yes, small and cheap; the
-  web server's own body limit may already stop it, so probe that first.):
-  Yes, probe and set the cap, but show the error when the first change above
-  the cap is staged, not at Apply.
-
-Probe first: the largest request body the page's REST endpoint accepts
-through Splunk Web on the dev target, so the cap sits below it and the
-staging check measures the same size the server counts.
 
 ### Proposed: Tests the settings panel still lacks
 Status: ready
