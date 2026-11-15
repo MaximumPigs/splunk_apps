@@ -177,10 +177,12 @@ A staged change is outlined and labelled on the object (`moving from search`,
 object shows in the box it is moving to; a staged copy shows there as a
 dashed `copy from` row, and the original stays where it is.
 
-The filters narrow what a box lists, but a clone copies every type. Copies the
-**Types** menu or the name filter keep out of a box are counted in a line at
-its foot ("1 staged copy is hidden by the filters."), and a box that has such
-copies stays on show whatever the app filter says.
+The filters narrow what a box lists, but a clone copies every type. Staged
+copies, moves and deletions that the **Types** menu or the name filter keep out
+of a box are counted in a line at its foot ("1 staged copy and 1 staged move
+are hidden by the filters."): a copy or move in the box it is going to, a
+deletion in the box the object is in. A box that has such changes stays on show
+whatever the app filter says.
 
 ### Creating and cloning apps
 
