@@ -466,7 +466,7 @@ def add_explicit(details, gateway, type_id, ns, app, name, entry=None):
         details["edit_note"] = "kind"
         return details
     conf, stanza, only = target
-    if "admin_all_objects" not in (gateway.current_context().get("capabilities") or []):
+    if "admin_all_objects" not in gateway.caller_capabilities():
         details["explicit_note"] = "capability"
         details["edit_note"] = "capability"
         return details
@@ -908,7 +908,7 @@ def _apply_settings(gateway, change, user):
     target = own_setting_target(type_id, entry, name)
     if target is None:
         return "error", 'The settings of "%s" cannot be edited here.' % name
-    if "admin_all_objects" not in (gateway.current_context().get("capabilities") or []):
+    if "admin_all_objects" not in gateway.caller_capabilities():
         return "error", "Editing settings needs the admin_all_objects capability, as it reads the configuration files."
     acl = entry.get("acl") or {}
     if not _is_true(acl.get("can_write", False)):
@@ -1085,7 +1085,7 @@ def submit_changes(gateway, raw_changes, user="unknown", raw_apps=None):
     if raw_apps is not None and not isinstance(raw_apps, list):
         raise EasyAdminError("'apps' must be a list.")
     wants_apps = bool(raw_apps)
-    if wants_apps and not can_create_apps(gateway.current_context()):
+    if wants_apps and not can_create_apps({"capabilities": gateway.caller_capabilities()}):
         # splunkd would refuse as well; saying so first creates nothing.
         raise EasyAdminError("Creating apps needs the admin_all_objects or edit_local_apps capability.",
                              status=403)

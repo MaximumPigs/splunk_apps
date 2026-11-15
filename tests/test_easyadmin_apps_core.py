@@ -48,6 +48,10 @@ class FakeGateway(object):
             self.objects[self._path(type_id, item)] = (type_id, item)
         self.refuse_acl = set(refuse_acl)
         self.calls = []
+        # Kept apart from calls: some tests assert calls exactly. Which of the
+        # two context reads ran matters, since current_context costs a second
+        # splunkd request (the theme) that capability checks do not need.
+        self.context_reads = []
 
     @staticmethod
     def _path(type_id, item):
@@ -72,7 +76,12 @@ class FakeGateway(object):
         return ["admin", "alice"]
 
     def current_context(self):
+        self.context_reads.append("current_context")
         return {"username": "admin", "theme": "dark", "capabilities": self.capabilities}
+
+    def caller_capabilities(self):
+        self.context_reads.append("caller_capabilities")
+        return list(self.capabilities)
 
     def create_app(self, args):
         self.calls.append(("create_app", dict(args)))
@@ -808,3 +817,34 @@ def test_model_says_whether_the_caller_can_create_apps():
     for caps, expected in (((), False), (("search",), False), (("edit_local_apps",), True),
                            (("admin_all_objects",), True)):
         assert apps.read_model(FakeGateway(capabilities=caps))["can_create_apps"] is expected
+
+
+# ------------------------------------- capability checks skip the theme lookup
+
+def test_a_details_click_reads_the_context_once_and_not_the_theme():
+    gateway = ConfGateway([("macro", entry("macro", "m1", "search", content={"definition": "x"}))],
+                          files={"local": "[m1]\ndefinition = x\n"})
+    status, body = apps.handle_request("GET", None, {"type": "macro", "ns": "nobody", "app": "search", "name": "m1"},
+                                       gateway)
+    assert status == 200 and body["explicit"] is not None
+    assert gateway.context_reads == ["caller_capabilities"]
+
+
+def test_a_details_click_without_admin_all_objects_still_reads_the_context_once():
+    gateway = ConfGateway([("macro", entry("macro", "m1", "search"))], capabilities=("search",))
+    status, body = apps.handle_request("GET", None, {"type": "macro", "ns": "nobody", "app": "search", "name": "m1"},
+                                       gateway)
+    assert status == 200 and body["explicit_note"] == "capability"
+    assert gateway.context_reads == ["caller_capabilities"]
+
+
+def test_the_model_still_reads_the_full_context_for_the_theme():
+    gateway = FakeGateway()
+    assert apps.read_model(gateway)["theme"] == "dark"
+    assert gateway.context_reads == ["current_context"]
+
+
+def test_creating_apps_checks_capabilities_without_the_theme():
+    gateway = FakeGateway(capabilities=("edit_local_apps",))
+    apps.submit_changes(gateway, None, raw_apps=[new_app()])
+    assert gateway.context_reads == ["caller_capabilities"]

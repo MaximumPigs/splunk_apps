@@ -26,6 +26,7 @@ its format is fixed:
 | 1.4.0 | Copy objects into another app (the default for objects in a default folder); discard one staged change; the object's own settings in the panel; locks from splunkd's `removable` flag (#20). |
 | 1.5.0 | Create a new app (barebones template), or clone one with copies of its copyable objects, staged as pending boxes and run by Apply; a restart notice only when splunkd asks (creating needs none on 10.6.1). |
 | 1.6.0 | Edit the individual settings of a knowledge object from its panel: filter, copy, show the default value, edit and add settings, staged with the old and new value and written to the app's local configuration by Apply. No delete of a local setting: splunkd has no REST call for it. |
+| 1.6.1 | The details panel, settings edits, app creation and the precedence view read only the caller's capabilities from splunkd, not the theme preference as well: one splunkd request fewer per details click. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -123,10 +124,20 @@ A portal like App management, for the deployment server's apps.
   `$SPLUNK_HOME/var`; (c) all as files in the app's folder (lost when the
   app is upgraded). Recommendation: (b), since backups of app files can be
   large.
+- [ ] This is several pages of work, too large to review as one PR. Options:
+  (a) one item and one PR with every point; (b) split into items built and
+  merged in order, released together or one by one: detection and a
+  read-only view of `deployment-apps`, knowledge-object editing, the server
+  class tabs, server class groups and precedence, export and import, backup
+  and revert. Recommendation: (b), so each part can be reviewed on its own;
+  all of them are still in the first version, as agreed.
 
 Probe first: how to tell that the instance is a deployment server (for
-example `deployment/server/config` or a configured `serverclass.conf`), and
-which AppInspect checks a file write outside the app's own folder trips.
+example `deployment/server/config` or a configured `serverclass.conf`),
+which AppInspect checks a file write outside the app's own folder trips,
+and whether a navigation entry can be hidden per instance (app navigation
+is static XML; if it cannot, report back to the owner with the fallback,
+such as the page showing "not a deployment server" instead).
 
 - The same ability to create, update, delete and move knowledge objects,
   working on the `deployment-apps` folder. Default settings can be modified.
@@ -149,23 +160,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Proposed: Details panel makes two splunkd calls it does not need
-Status: ready
-
-Opening an object's details panel runs `add_explicit`
-(`apps/easyadmin/bin/easyadmin_apps_core.py:375`), which calls
-`gateway.current_context()` only to check for `admin_all_objects`. In
-`AppsGateway.current_context` (`apps/easyadmin/bin/easyadmin_apps_rest.py`)
-that is two requests: `authentication/current-context`, then the user's
-`user-prefs` for the theme, which the panel never uses. So every object
-clicked costs four splunkd requests instead of two. Fix: pass a flag so the
-details path skips the theme lookup (or read capabilities alone), with a unit
-test on a fake gateway counting the calls. This is a small saving per click,
-read from the code and not timed; the dev target is too small to show it.
-
-- [x] Confirm: should this be done? (Recommended, low priority: small, safe,
-  and every details click benefits.): Implement, but low priority.
 
 ## fillcontinuous
 

@@ -91,3 +91,21 @@ def wait_for_audit_line(search, role, timeout=90):
         if rows or time.time() >= deadline:
             return rows
         time.sleep(3)
+
+
+def wait_for_access_rows(search, user, uri, timeout=90):
+    """Poll _internal until splunkd_access has a request by ``user`` for ``uri``.
+
+    ``uri`` is a search wildcard pattern. splunkd logs the handler's own
+    requests to splunkd with the caller as ``user``, so this shows which
+    splunkd calls a REST endpoint made on the caller's behalf. Returns the
+    rows (empty when none arrived); indexing lags the request by seconds.
+    """
+    spl = ('search index=_internal sourcetype=splunkd_access user="%s" uri="%s" | table _time uri'
+           % (user, uri))
+    deadline = time.time() + timeout
+    while True:
+        rows = search(spl, earliest="-15m", latest="now")
+        if rows or time.time() >= deadline:
+            return rows
+        time.sleep(3)

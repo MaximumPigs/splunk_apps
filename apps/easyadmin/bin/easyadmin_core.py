@@ -26,6 +26,7 @@ A gateway provides:
     list_indexes()          -> [{"name": str, "content": dict}, ...]
     list_capabilities()     -> [str, ...]   every capability splunkd defines
     current_context()       -> {"capabilities": [...], "roles": [...]}
+    caller_capabilities()   -> [str, ...]   the caller's capabilities alone (one request)
     get_role(name)          -> content dict of one role
     update_role(name, {field: [value, ...] or "value"})
 
