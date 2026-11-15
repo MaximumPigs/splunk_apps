@@ -118,6 +118,45 @@ def load_targets_file(path=None):
             raise ConfigError("Invalid TOML in %s: %s" % (path, exc))
 
 
+# A target with `from_env = true` takes these keys from SPLK_TARGET_<KEY>
+# (e.g. SPLK_TARGET_HOST). It is for an instance the owner runs elsewhere,
+# such as the one the dev container (docker/) tests against: its host and
+# shared folder are the owner's and stay out of the public repo. Opt-in per
+# target, so the local target can never be redirected by a stray variable.
+ENV_OVERRIDE_PREFIX = "SPLK_TARGET_"
+_ENV_OVERRIDABLE = {
+    "host": str, "port": int, "scheme": str, "verify_tls": "bool", "allow_restart": "bool",
+    "stage_dir": str, "server_stage_dir": str, "test_index": str, "web_url": str,
+}
+
+
+def _parse_bool(key, value):
+    lowered = value.strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off"):
+        return False
+    raise ConfigError("%s%s must be true or false, not %r" % (ENV_OVERRIDE_PREFIX, key.upper(), value))
+
+
+def _env_overrides(environ):
+    overrides = {}
+    for key, kind in _ENV_OVERRIDABLE.items():
+        value = environ.get(ENV_OVERRIDE_PREFIX + key.upper())
+        if value is None or value == "":
+            continue
+        if kind == "bool":
+            overrides[key] = _parse_bool(key, value)
+        elif kind is int:
+            try:
+                overrides[key] = int(value)
+            except ValueError:
+                raise ConfigError("%s%s must be a number, not %r" % (ENV_OVERRIDE_PREFIX, key.upper(), value))
+        else:
+            overrides[key] = value
+    return overrides
+
+
 def resolve_target(name=None, path=None, environ=None, require_token=True):
     """Return the named target (or the default) with its token filled in.
 
@@ -127,7 +166,22 @@ def resolve_target(name=None, path=None, environ=None, require_token=True):
     environ = os.environ if environ is None else environ
     data = load_targets_file(path)
     targets = data.get("targets") or {}
-    chosen = name or environ.get(TARGET_ENV_VAR) or data.get("default_target")
+    # In an unattended `splk loop` step the target choice and its overrides
+    # come only from the .env file the owner's set-up wrote, never from the
+    # step's environment: otherwise one step command
+    # (SPLK_TARGET_HOST=elsewhere splk doctor) could send the token to another
+    # host or turn restarts on.
+    source = environ
+    if environ.get("SPLK_LOOP") == "1":
+        source = {}
+        load_env_file(environ=source)
+        pinned = source.get(TARGET_ENV_VAR) or data.get("default_target")
+        # --target in a step would deploy to one target while the live and
+        # UI tests (which resolve again in a subprocess) used the pinned one.
+        if name and name != pinned:
+            raise ConfigError("Loop steps use target %r (from .env); --target %s is not allowed"
+                              % (pinned, name))
+    chosen = name or source.get(TARGET_ENV_VAR) or data.get("default_target")
     if not chosen:
         raise ConfigError("No target named and no default_target in targets.toml")
     if chosen not in targets:
@@ -137,6 +191,8 @@ def resolve_target(name=None, path=None, environ=None, require_token=True):
         )
 
     spec = dict(targets[chosen])
+    if spec.pop("from_env", False):
+        spec.update(_env_overrides(source))
     if "host" not in spec:
         raise ConfigError("Target %r has no host" % chosen)
 

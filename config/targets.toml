@@ -34,17 +34,21 @@ test_index = "splk_test"
 # Windows environment rule.
 web_url = "http://localhost:8000"
 
-[targets.docker]
-# The Splunk container in docker/compose.yaml, seen from the dev container
-# (selected there with SPLK_TARGET=docker). A dev instance like local.
-host = "splunk"
+[targets.server]
+# A Splunk instance the owner runs separately, which the dev container
+# (docker/compose.yaml, SPLK_TARGET=server) tests against. Its host and
+# shared folder come from SPLK_TARGET_* variables so they stay out of this
+# public file (see config.resolve_target). These are the defaults.
+from_env = true
+host = "splunk.invalid"
 port = 8089
 scheme = "https"
 verify_tls = false
-allow_restart = true
+# Restarting someone else's instance needs the owner's say-so:
+# SPLK_TARGET_ALLOW_RESTART=true.
+allow_restart = false
 test_index = "splk_test"
-# splunkd cannot read the dev container's dist/: packages are copied to the
-# shared stage volume, mounted at /stage in both containers.
+# splunkd installs a package by path, so it must be able to read the file:
+# the container writes to stage_dir, a folder splunkd also sees, at
+# server_stage_dir (SPLK_TARGET_SERVER_STAGE_DIR).
 stage_dir = "/stage"
-server_stage_dir = "/stage"
-web_url = "http://splunk:8000"

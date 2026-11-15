@@ -1,61 +1,44 @@
-# The roadmap loop on a server: a Splunk instance and the dev container that
-# runs `splk loop` against it. From this directory, with .env filled in from
-# .env.example:
+# The roadmap loop on a server: the dev container that runs `splk loop`
+# against a Splunk instance the owner runs and manages separately. From this
+# directory, with .env filled in from .env.example:
 #
 #   docker compose up -d --build
 #   docker compose logs -f dev
 #   docker compose exec -u loop -w /work/splunk_apps dev splk loop status
-#
-# Splunk Web is published on SPLUNK_WEB_PORT for looking at the apps; splunkd
-# (8089) is reachable only from the dev container.
 
 name: splunk-apps
 
 services:
-  splunk:
-    # Pin the exact version the apps are tested against (never :latest).
-    image: ${SPLUNK_IMAGE:?set SPLUNK_IMAGE in .env, e.g. splunk/splunk:<exact version>}
-    hostname: splunk
-    restart: unless-stopped
-    environment:
-      # Licence and terms acceptance are the owner's to give, in .env.
-      SPLUNK_START_ARGS: ${SPLUNK_START_ARGS:?accept the licence in .env}
-      SPLUNK_GENERAL_TERMS: ${SPLUNK_GENERAL_TERMS:-}
-      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD:?set SPLUNK_PASSWORD in .env}
-      # The free Developer licence: the Free licence turns off users and
-      # roles, which the live and UI tests create and check.
-      SPLUNK_LICENSE_URI: /licence/splunk.lic
-    volumes:
-      - splunk-etc:/opt/splunk/etc
-      - splunk-var:/opt/splunk/var
-      - ./licence:/licence:ro
-      # splunkd installs the packages `splk deploy` stages here.
-      - stage:/stage:ro
-    ports:
-      # Plain HTTP with the admin account: loopback by default. Set
-      # SPLUNK_WEB_BIND to the server's LAN address to reach it from the LAN.
-      - "${SPLUNK_WEB_BIND:-127.0.0.1}:${SPLUNK_WEB_PORT:-8000}:8000"
-
   dev:
     build:
       context: ..
       dockerfile: docker/dev/Dockerfile
+      args:
+        # Owner of the files the loop writes, including packages in the
+        # shared stage folder (Unraid shares are usually nobody:users, 99:100).
+        LOOP_UID: ${LOOP_UID:-1000}
+        LOOP_GID: ${LOOP_GID:-1000}
     restart: unless-stopped
-    depends_on:
-      - splunk
-    # An explicit list, never env_file: the Splunk admin password and image
-    # settings in .env must not reach the loop. The entrypoint moves the
-    # secrets out of reach of the steps (see docker/dev/entrypoint.sh).
+    # An explicit list, never env_file: only what the loop needs. The
+    # entrypoint moves the secrets out of reach of the steps (see
+    # docker/dev/entrypoint.sh).
     environment:
-      SPLK_TARGET: docker   # config/targets.toml [targets.docker]
+      # config/targets.toml [targets.server], filled in from SPLK_TARGET_*.
+      SPLK_TARGET: server
+      SPLK_TARGET_HOST: ${SPLK_TARGET_HOST:?set SPLK_TARGET_HOST in .env (your Splunk instance)}
+      SPLK_TARGET_PORT: ${SPLK_TARGET_PORT:-8089}
+      SPLK_TARGET_VERIFY_TLS: ${SPLK_TARGET_VERIFY_TLS:-false}
+      SPLK_TARGET_ALLOW_RESTART: ${SPLK_TARGET_ALLOW_RESTART:-false}
+      SPLK_TARGET_SERVER_STAGE_DIR: ${SPLK_TARGET_SERVER_STAGE_DIR:?set SPLK_TARGET_SERVER_STAGE_DIR in .env}
+      SPLK_TARGET_WEB_URL: ${SPLK_TARGET_WEB_URL:-}
       REPO_URL: ${REPO_URL:?set REPO_URL in .env}
       GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:?set GIT_AUTHOR_NAME in .env}
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:?set GIT_AUTHOR_EMAIL in .env}
       GH_TOKEN: ${GH_TOKEN:?set GH_TOKEN in .env}
       SPLK_LOOP_GH_TOKEN: ${SPLK_LOOP_GH_TOKEN:-}
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?set CLAUDE_CODE_OAUTH_TOKEN in .env}
-      SPLUNK_TOKEN: ${SPLUNK_TOKEN:-}
-      SPLUNK_WEB_USERNAME: ${SPLUNK_WEB_USERNAME:-admin}
+      SPLUNK_TOKEN: ${SPLUNK_TOKEN:?set SPLUNK_TOKEN in .env}
+      SPLUNK_WEB_USERNAME: ${SPLUNK_WEB_USERNAME:-}
       SPLUNK_WEB_PASSWORD: ${SPLUNK_WEB_PASSWORD:-}
       SPLK_NTFY_TOPIC: ${SPLK_NTFY_TOPIC:-}
       SPLK_NTFY_TOKEN: ${SPLK_NTFY_TOKEN:-}
@@ -64,7 +47,6 @@ services:
     cap_add: [CHOWN, SETUID, SETGID]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 4096
-    # A runaway step must not starve Splunk. Override in .env if needed.
     mem_limit: ${DEV_MEM_LIMIT:-8g}
     cpus: ${DEV_CPUS:-4}
     # In memory and root-owned (0711): the entrypoint hands the secrets to
@@ -76,13 +58,13 @@ services:
       # The clone, its branches and .agent/ (loop state, run log) live here,
       # so a rebuilt image carries on where the loop stopped.
       - work:/work
-      - stage:/stage
       # Claude Code's own settings and session history.
       - claude:/home/loop/.claude
+      # A folder your Splunk instance can also read: splk deploy copies each
+      # package here and tells splunkd to install it from
+      # SPLK_TARGET_SERVER_STAGE_DIR (the same folder as splunkd sees it).
+      - ${SPLK_STAGE_HOST_PATH:?set SPLK_STAGE_HOST_PATH in .env}:/stage
 
 volumes:
-  splunk-etc:
-  splunk-var:
-  stage:
   work:
   claude:
