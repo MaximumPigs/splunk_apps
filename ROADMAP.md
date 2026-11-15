@@ -123,10 +123,20 @@ A portal like App management, for the deployment server's apps.
   `$SPLUNK_HOME/var`; (c) all as files in the app's folder (lost when the
   app is upgraded). Recommendation: (b), since backups of app files can be
   large.
+- [ ] This is several pages of work, too large to review as one PR. Options:
+  (a) one item and one PR with every point; (b) split into items built and
+  merged in order, released together or one by one: detection and a
+  read-only view of `deployment-apps`, knowledge-object editing, the server
+  class tabs, server class groups and precedence, export and import, backup
+  and revert. Recommendation: (b), so each part can be reviewed on its own;
+  all of them are still in the first version, as agreed.
 
 Probe first: how to tell that the instance is a deployment server (for
-example `deployment/server/config` or a configured `serverclass.conf`), and
-which AppInspect checks a file write outside the app's own folder trips.
+example `deployment/server/config` or a configured `serverclass.conf`),
+which AppInspect checks a file write outside the app's own folder trips,
+and whether a navigation entry can be hidden per instance (app navigation
+is static XML; if it cannot, report back to the owner with the fallback,
+such as the page showing "not a deployment server" instead).
 
 - The same ability to create, update, delete and move knowledge objects,
   working on the `deployment-apps` folder. Default settings can be modified.
