@@ -18,6 +18,7 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 2 | rule | [Evidence before theory](lessons/process-evidence-before-theory.md): stale secret, assumed role-editor modal; open the FAILED.png/log/timestamps first. |
 | 2 | rule | [UI `has_text` is a substring match](lessons/splk-ui-has-text-is-substring.md): "default", "pass4SymmKey" matched too much; `:text-is()` on the name. Rule `ui-ux`. |
 | 1 | pattern | [Links are not enough: check acl.removable](lessons/splunkd-links-not-enough-check-acl-removable.md): default saved searches keep move links; owner hit the refusal. |
+| 1 | test | [app.manifest version left behind](lessons/conf-manifest-version-not-bumped.md): AppInspect `check_version_is_valid_semver`; `tests/test_app_versions.py` now catches it in unit. |
 | 1 | lesson | [Asserted an unseen REST key](lessons/tests-assert-only-observed-rest-keys.md): guessed `iseval`; assert only keys seen in a real response. |
 | 1 | pattern | [Namespace GET returns any visible object](lessons/splunkd-namespace-get-returns-visible-objects.md): check `acl.app` before acting (`get_in_app`). Playbook `splunkd-knowledge-objects-rest`. |
 | 1 | pattern | [Props and tags cannot be copied by REST](lessons/splunkd-props-tags-copy-unreliable.md): merged views, 409s, writes that never land. |

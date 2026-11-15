@@ -905,13 +905,47 @@ require([
         return map;
     }
 
+    // App name -> {copy, move, del}: the staged changes the filters keep out of
+    // its list. A copy and a move are counted where the object is going, a
+    // deletion where it is. A clone copies every type whatever the Types menu and
+    // name filter show, so the box counts these instead of listing them (a clone
+    // can stage up to 2000, and listing all would make the filter look broken).
+    function hiddenStagedByApp() {
+        var map = newMap();
+        function count(app, kind) {
+            var entry = map[app] = map[app] || { copy: 0, move: 0, del: 0 };
+            entry[kind] += 1;
+        }
+        $.each(state.data.objects, function (i, obj) {
+            var pending = state.pending[obj.key];
+            if (!pending || matches(obj)) { return; }
+            if (pending.copyTo) { count(pending.copyTo, 'copy'); }
+            if (pending.moveTo) { count(pending.moveTo, 'move'); }
+            if (pending.del) { count(obj.app, 'del'); }
+        });
+        return map;
+    }
+
+    // "2 staged copies, 1 staged move and 1 staged deletion are hidden by the filters."
+    function hiddenStagedText(entry) {
+        var parts = [];
+        if (entry.copy) { parts.push(plural(entry.copy, 'staged copy', 'staged copies')); }
+        if (entry.move) { parts.push(plural(entry.move, 'staged move')); }
+        if (entry.del) { parts.push(plural(entry.del, 'staged deletion')); }
+        var total = entry.copy + entry.move + entry.del;
+        var head = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
+        return head + (total === 1 ? ' is' : ' are') + ' hidden by the filters.';
+    }
+
     // The object filter and type menu narrow objects, never apps: every app
     // stays on show as a place to drop objects (finding an object, then
     // dragging it elsewhere, is the main use). Apps are hidden only by the app
-    // filter and the built-in toggle, and a box with staged changes always shows.
-    function visibleApps(byApp) {
+    // filter and the built-in toggle, and a box with staged changes always
+    // shows, including one whose only staged changes the filters hide.
+    function visibleApps(byApp, hidden) {
         return $.grep(appList(), function (app) {
             if (app.pending) { return true; }   // staged: always on show, whatever the filters say
+            if (hidden && hidden[app.name]) { return true; }
             if (byApp[app.name] && $.grep(byApp[app.name], function (item) {
                 return state.pending[(item.ghostOf || item).key];
             }).length) {
@@ -1340,7 +1374,7 @@ require([
         return $li;
     }
 
-    function renderApp(app, objects) {
+    function renderApp(app, objects, hiddenStaged) {
         var $box = el('section', 'ea-app').attr({ 'data-app': app.name, 'aria-label': 'App ' + app.label });
         if (!app.target) { $box.addClass('ea-app-fixed'); }
         if (app.pending) { $box.addClass('ea-app-new'); }
@@ -1375,9 +1409,12 @@ require([
         $head.append($titleRow);
         var $meta = el('div', 'ea-app-meta');
         $meta.append(el('code', null, app.name));
-        var realCount = $.grep(objects, function (item) { return !item.ghostOf; }).length;
-        $meta.append(el('span', null, state.filter ?
-            plural(realCount, 'match', 'matches') : plural(realCount, 'object')));
+        // Real objects and staged copies are counted apart: a clone's box holds
+        // only copies, and "0 objects" alone reads as an empty box.
+        var staged = objects.length - real.length;
+        $meta.append(el('span', null, (state.filter ?
+            plural(real.length, 'match', 'matches') : plural(real.length, 'object')) +
+            (staged ? ', ' + staged + ' staged' : '')));
         if (app.pending) {
             $meta.append(el('span', 'ea-badge ea-badge-changed', app.cloneOf ? 'clone of ' + app.cloneOf : 'new app'));
         }
@@ -1399,13 +1436,17 @@ require([
             $list.append(el('li', 'ea-empty', empty + (app.target ? ' Drop objects here to move or copy them.' : '')));
         }
         $.each(objects, function (i, item) { $list.append(item.ghostOf ? renderGhost(item.ghostOf) : renderObject(item)); });
+        if (hiddenStaged) {
+            $list.append(el('li', 'ea-hidden-staged', hiddenStagedText(hiddenStaged)));
+        }
         $box.append($list);
         return $box;
     }
 
     function renderGrid() {
         var byApp = objectsByApp();
-        var apps = visibleApps(byApp);
+        var hidden = hiddenStagedByApp();
+        var apps = visibleApps(byApp, hidden);
         var $wrap = el('div', 'ea-grid-wrap');
         var builtinHidden = $.grep(state.data.apps, function (app) {
             return app.builtin && !state.showBuiltin && appMatches(app);
@@ -1437,7 +1478,7 @@ require([
             return $wrap;
         }
         var $grid = el('div', 'ea-grid');
-        $.each(apps, function (i, app) { $grid.append(renderApp(app, byApp[app.name] || [])); });
+        $.each(apps, function (i, app) { $grid.append(renderApp(app, byApp[app.name] || [], hidden[app.name])); });
         return $wrap.append($grid);
     }
 

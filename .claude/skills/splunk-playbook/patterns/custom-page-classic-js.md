@@ -1,6 +1,6 @@
 ---
-confirmed: 4
-seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14]
+confirmed: 5
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-16]
 apps: [easyadmin]
 ---
 # Custom page: Classic dashboard hosting JavaScript
@@ -49,6 +49,11 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
      and arrow keys; a `#hash` deep link kept with `history.replaceState`;
      explanations in a `<details>` whose open state is kept in page state so
      it survives re-renders (`easyadmin_apps.js`, precedence tab).
+   - text that must match the body font size inherits it: a UI test
+     (`test_edit_is_staged_with_old_and_new_value_and_can_be_discarded`)
+     failed `'12px' == '14px'` because the page's root class
+     (`.ea-settings`) fixed 12px, so changing only the child rules did
+     nothing. Check the whole ancestor chain, and assert `getComputedStyle`.
 9. Bulk or destructive edits: stage, then one Apply that reports a result per
    object; keep failed items staged for retry, and re-key staged edits for an
    object whose location changed in a partial apply.

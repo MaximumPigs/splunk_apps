@@ -6,6 +6,7 @@ the test left them. Each checks what a person sees and, after Apply, splunkd
 itself through the admin REST client.
 """
 
+import re
 import time
 import urllib.parse
 
@@ -754,3 +755,137 @@ def test_clone_stages_a_copy_of_every_copyable_object_and_says_what_it_leaves_ou
     assert len(seen) == 1 and CLONE_APP in seen[0]
     assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % CLONE_APP).count() == 0
     assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def _staged_clone_of_search(page):
+    """Stage a clone of search (common types) and return its box."""
+    page.locator(ROOT + ' button[data-fid="clone:search"]').click()
+    _fill(page, "name", CLONE_APP)
+    page.locator(ROOT + ' button[data-fid="newapp-stage"]').click()
+    return page.locator(ROOT + ' .ea-app[data-app="%s"]' % CLONE_APP)
+
+
+def _copy_count(page):
+    """The number of objects the Apply button says it will touch."""
+    text = page.locator(ROOT + " .ea-apply").inner_text()
+    return int(re.search(r"and (\d+) objects?", text).group(1))
+
+
+def test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide(open_view, macro, shot):
+    """A clone's header says "0 objects, N staged", not a bare "0 objects"; copies the Types menu
+    or the name filter keep out of the list are counted at the foot of the box."""
+    name = macro()
+    page = _open(open_view)
+    box = _staged_clone_of_search(page)
+    meta = box.locator(".ea-app-meta")
+    total = _copy_count(page)   # every copyable object, whatever the filters show
+    listed = box.locator(".ea-ghost").count()
+    assert listed >= 1
+    assert "0 objects, %d staged" % listed in meta.inner_text()
+    assert not re.search(r"\b0 objects(?!,)", meta.inner_text())
+    note = box.locator(".ea-hidden-staged")
+    if total > listed:
+        hidden = total - listed
+        assert note.inner_text() == "%s hidden by the filters." % (
+            "1 staged copy is" if hidden == 1 else "%d staged copies are" % hidden)
+    else:
+        assert note.count() == 0
+    shot(page, "app_management_clone_counts")
+
+    # All types: nothing is hidden, so every copy is listed and the note goes.
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    page.locator(ROOT + ' button[data-fid="types-1"]').click()
+    page.keyboard.press("Escape")
+    assert box.locator(".ea-ghost").count() == total
+    assert "0 objects, %d staged" % total in meta.inner_text()
+    assert box.locator(".ea-hidden-staged").count() == 0
+
+    # A name filter lists the one matching copy and counts the rest as hidden.
+    page.locator(ROOT + " .ea-filter").fill(name)
+    assert box.locator(".ea-ghost").count() == 1
+    assert "0 matches, 1 staged" in meta.inner_text()
+    assert box.locator(".ea-hidden-staged").inner_text() == "%s hidden by the filters." % (
+        "1 staged copy is" if total - 1 == 1 else "%d staged copies are" % (total - 1))
+
+    seen = _accept_dialogs(page)
+    box.locator(".ea-discard-app").click()
+    assert len(seen) == 1
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_a_box_with_only_hidden_staged_copies_stays_on_show(open_view, macro, cleanup_launcher_macros):
+    """The app filter does not hide a box that has staged copies the Types menu keeps out of its list."""
+    name = macro()
+    cleanup_launcher_macros.append(name)
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
+    assert "copying to launcher" in _object(page, "search", name).inner_text()
+    page.locator(ROOT + " .ea-filter").fill("")
+
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
+    page.keyboard.press("Escape")
+    page.locator(ROOT + " .ea-app-filter").fill("search")
+    box = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
+    assert box.count() == 1
+    assert box.locator(".ea-hidden-staged").inner_text() == "1 staged copy is hidden by the filters."
+    assert ", 1 staged" not in box.locator(".ea-app-meta").inner_text()
+    assert box.locator(".ea-ghost").count() == 0
+
+    seen = _accept_dialogs(page)
+    page.locator(ROOT + ' button[data-fid="discard"]').click()
+    assert len(seen) == 1
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cleanup_launcher_macros):
+    """A move is counted in the box it goes to, a deletion in the box the object is in, when the
+    Types menu keeps the object out of the list; both are said alongside a hidden copy."""
+    moved, deleted, copied = macro(), macro(), macro()
+    cleanup_launcher_macros.extend([moved, copied])
+    page = _open(open_view)
+
+    def stage(name, button, target=None):
+        page.locator(ROOT + " .ea-filter").fill(name)
+        _object(page, "search", name).locator(".ea-select").check()
+        if target:
+            page.locator(ROOT + " .ea-move-target").select_option(target)
+        page.locator(ROOT + ' button[data-fid="%s"]' % button).click()
+        page.locator(ROOT + ' button[data-fid="clear-selection"]').click()
+
+    stage(moved, "move-selected", "launcher")
+    stage(deleted, "delete-selected")
+    assert "will be deleted" in _object(page, "search", deleted).inner_text()
+    page.locator(ROOT + " .ea-filter").fill("")
+    assert "moving from search" in page.locator(ROOT + " .ea-app[data-app='launcher']").inner_text()
+
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
+    page.keyboard.press("Escape")
+    launcher = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
+    search = page.locator(ROOT + ' .ea-app[data-app="search"]')
+    assert launcher.locator(".ea-hidden-staged").inner_text() == "1 staged move is hidden by the filters."
+    assert search.locator(".ea-hidden-staged").inner_text() == "1 staged deletion is hidden by the filters."
+    assert moved not in launcher.inner_text()
+
+    # A copy into the same box is said in the same line.
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    page.locator(ROOT + ' input[data-fid="type:macro"]').check()
+    page.keyboard.press("Escape")
+    stage(copied, "copy-selected", "launcher")
+    page.locator(ROOT + " .ea-filter").fill("")
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
+    page.keyboard.press("Escape")
+    assert launcher.locator(".ea-hidden-staged").inner_text() == \
+        "1 staged copy and 1 staged move are hidden by the filters."
+    assert search.locator(".ea-hidden-staged").inner_text() == "1 staged deletion is hidden by the filters."
+
+    seen = _accept_dialogs(page)
+    page.locator(ROOT + ' button[data-fid="discard"]').click()
+    assert len(seen) == 1
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+    assert page.locator(ROOT + " .ea-hidden-staged").count() == 0

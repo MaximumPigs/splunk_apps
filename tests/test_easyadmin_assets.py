@@ -164,3 +164,19 @@ def test_text_is_readable(css, light_selector, text, background, minimum):
     palette = _palette(css, light_selector)
     ratio = contrast(palette[text], palette[background])
     assert ratio >= minimum, "%s on %s in %s %s: %.2f" % (text, background, css, light_selector, ratio)
+
+
+@pytest.mark.parametrize("selector", [
+    "#easyadmin-apps .ea-settings",
+    "#easyadmin-apps .ea-setting-label",
+    "#easyadmin-apps .ea-settings .ea-code",
+    "#easyadmin-apps .ea-setting-input",
+])
+def test_setting_text_takes_the_page_font_size(selector):
+    """Labels, code blocks and the edit box inherit Splunk Web's body size: a pixel size
+    below it was flagged by the UX review."""
+    bodies = [body for sel, body in _blocks("easyadmin_apps.css") if sel == selector]
+    assert bodies, "no rule for " + selector
+    for body in bodies:
+        sizes = re.findall(r"font-size\s*:\s*([^;]+);", body)
+        assert all(size.strip() == "inherit" for size in sizes), (selector, sizes)
