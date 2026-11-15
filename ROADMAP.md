@@ -172,7 +172,7 @@ Notes:
 ## Tooling
 
 ### Proposed: Audit step can change code that is then pushed unverified
-Status: ready
+Status: interactive
 
 `phase_audit` (`tools/splk/loop.py:500`) commits whatever the audit step
 changed and goes straight to `publish`, with no `splk dev`/`splk test`. The
@@ -190,7 +190,7 @@ code. Not observed: no audit has gone wrong yet.
   needs an interactive session.): Yes.
 
 ### Proposed: Question issues are closed before the groom PR that answers them is merged
-Status: ready
+Status: interactive
 
 `phase_groom` runs the groom step with `main` checked out and calls
 `sync_question_issues` (`tools/splk/loop.py:375-398`) before it creates the
@@ -208,7 +208,7 @@ Found by reading the code, not observed on GitHub.
   session, as above.): Close on merge.
 
 ### Proposed: Console errors without a source in `splk shot`, and the UX audit missing the app's own REST failures
-Status: ready
+Status: interactive
 
 `PageLog._on_console` (`tools/splk/ui.py:150`) keeps only `message.text`, so
 `splk shot easyadmin/app_management` reports six bare "Failed to load

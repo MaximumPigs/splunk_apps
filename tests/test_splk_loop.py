@@ -439,6 +439,88 @@ def test_question_issue_body_is_refreshed_when_questions_change(loop_dir, monkey
     assert not [c for c in calls if c[:2] == ("issue", "edit")]
 
 
+def test_interactive_items_are_never_picked_and_are_listed_for_a_session():
+    text = ROADMAP.replace("### 2. Export and import\nStatus: ready", "### 2. Export and import\nStatus: interactive")
+    parsed = loop_core.parse_roadmap(text)
+    assert loop_core.next_item(parsed).title == "3. Edit settings"
+    assert [i.title for i in loop_core.awaiting_session(parsed)] == ["2. Export and import"]
+    assert "2. Export and import" not in [i.title for i in loop_core.awaiting_owner(parsed)]
+
+
+def test_trust_key_matches_what_a_headless_run_asked_for():
+    # Both spellings were printed by the CLI's warning on this machine.
+    assert loop_core.trust_key("d:\\GitHub\\splunk_apps") == "d:/GitHub/splunk_apps"
+    assert loop_core.trust_key("D:\\GitHub\\splunk_apps") == "D:/GitHub/splunk_apps"
+    assert loop_core.trust_key("/work/splunk_apps") == "/work/splunk_apps"
+
+
+def test_ensure_trusted_keeps_everything_else_and_writes_once(tmp_path):
+    state = tmp_path / ".claude.json"
+    state.write_text(json.dumps({"oauthAccount": {"x": 1}, "projects": {
+        "D:\\repo": {"hasTrustDialogAccepted": True, "history": [1]},
+        "D:/repo": {"hasTrustDialogAccepted": False, "allowedTools": ["a"]}}}), encoding="utf-8")
+    assert loop.ensure_trusted("D:\\repo", str(state)) is True
+    data = json.loads(state.read_text(encoding="utf-8"))
+    assert data["oauthAccount"] == {"x": 1}
+    assert data["projects"]["D:/repo"] == {"hasTrustDialogAccepted": True, "allowedTools": ["a"]}
+    assert data["projects"]["D:\\repo"]["history"] == [1]
+    assert loop.ensure_trusted("D:\\repo", str(state)) is False
+
+
+def test_ensure_trusted_creates_a_missing_file_and_leaves_a_broken_one(tmp_path):
+    missing = tmp_path / "new.json"
+    assert loop.ensure_trusted("/work/repo", str(missing)) is True
+    assert json.loads(missing.read_text(encoding="utf-8")) == {
+        "projects": {"/work/repo": {"hasTrustDialogAccepted": True}}}
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    assert loop.ensure_trusted("/work/repo", str(broken)) is False
+    assert broken.read_text(encoding="utf-8") == "{not json"
+
+
+def test_steps_since_last_groom():
+    names = ["20261115-093356-groom.json", "20261115-125503-plan.json", "20261115-212527-groom.json",
+             "20261115-212806-plan.json", "20261115-213007-implement.json", "notes.txt"]
+    assert loop_core.steps_since_last_groom(names) == ["20261115-212806-plan.json",
+                                                       "20261115-213007-implement.json"]
+    assert loop_core.steps_since_last_groom(names[1:2]) == ["20261115-125503-plan.json"]
+    assert loop_core.steps_since_last_groom([]) == []
+
+
+def test_loop_digest_shows_each_step_and_repeated_stderr_once():
+    warn = "Ignoring 15 permissions.allow entries"
+    records = [
+        ("a-implement.json", {"step": "implement", "model": "m", "kind": "rate_limit", "exit": 1,
+                              "seconds": 2, "cost_usd": 0, "detail": "5-hour limit", "stderr": warn}),
+        ("b-review.json", {"step": "review", "model": "m", "kind": "ok", "exit": 0, "seconds": 9,
+                           "cost_usd": 0.5, "output": {"status": "done", "summary": "ROADMAP corrupted"},
+                           "stderr": warn}),
+    ]
+    text = loop_core.loop_digest(records, ["2026-11-15T19:43:24Z Loop stuck in await"])
+    assert "a-implement.json: implement (m), rate_limit, exit 1" in text
+    assert "Status done: ROADMAP corrupted" in text and "Detail: 5-hour limit" in text
+    assert text.count(warn) == 1 and "Stderr: same as above." in text
+    assert "- 2026-11-15T19:43:24Z Loop stuck in await" in text
+    assert "Nothing happened" in loop_core.loop_digest([], [])
+
+
+def test_write_loop_digest_reads_records_and_notifications_since_the_last_groom(loop_dir, monkeypatch):
+    steps = loop_dir / "steps"
+    monkeypatch.setattr(loop, "STEPS_DIR", str(steps))
+    monkeypatch.setattr(loop, "NOTIFY_LOG", str(loop_dir / "notifications.log"))
+    monkeypatch.setattr(loop, "LOOP_LOG_FILE", str(loop_dir / "inbox" / "loop-log.md"))
+    loop.write_file(str(steps / "20261115-100000-groom.json"), json.dumps({"step": "groom"}))
+    os.utime(str(steps / "20261115-100000-groom.json"), (1763200800, 1763200800))  # 2025-11-15T10:00:00Z
+    loop.write_file(str(steps / "20261115-110000-plan.json"),
+                    json.dumps({"step": "plan", "kind": "ok", "output": {"status": "done", "summary": "planned"}}))
+    loop.write_file(str(loop_dir / "notifications.log"),
+                    "2025-11-15T09:00:00Z before the groom\n2025-11-15T11:00:00Z after the groom\n")
+    loop.write_loop_digest()
+    text = (loop_dir / "inbox" / "loop-log.md").read_text(encoding="utf-8")
+    assert "plan" in text and "planned" in text and "groom (" not in text
+    assert "after the groom" in text and "before the groom" not in text
+
+
 def test_shipped_settings_and_prompts_are_complete():
     settings = loop.load_settings()
     steps = ("groom", "audit", "plan", "implement", "review", "retro", "fix")

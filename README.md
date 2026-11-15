@@ -257,6 +257,15 @@ groom -> plan -> implement -> verify -> review -> verify -> retro -> publish -> 
   and are queued for the next groom, which adds each as a `Status: proposed`
   item (or folds it into an item that already covers it), so the owner
   confirms or declines it like an audit proposal.
+- Groom also **reviews the loop itself**: the supervisor gives it every step
+  record and notification since the previous groom, and it proposes fixes
+  for problems they show (under `## Tooling`, at most three per round).
+- Agreed work that changes what loop steps may not edit (the loop, hooks,
+  prompts, settings) gets `Status: interactive`. The loop never picks it;
+  build it in an interactive session.
+- Before each step the supervisor marks the repo trusted in the CLI's
+  `~/.claude.json`. A loop never shows the trust dialog, and an untrusted
+  workspace ignores the allowlist in `.claude/settings.json`.
 - The loop takes the **first actionable item**, skipping blocked ones. With
   nothing actionable, it reviews the code for bugs, security, efficiency and
   refactoring, then adds up to eight `Status: proposed` items. Each has a
