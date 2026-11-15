@@ -301,3 +301,24 @@ view. Changes `tools/splk/`, so it would be built in an interactive session.
 
 - [ ] Confirm: should this be done? (Recommended: yes, the theme switch at
   least; CLAUDE.md's definition of done assumes both themes are audited.)
+
+### Proposed: One failed `git pull` after a merge leaves the loop stuck until resumed
+Status: proposed
+
+On 2026-11-15T19:43:24Z, after #41 merged, the loop notified "Loop stuck in
+await: git pull -q failed: error: cannot lock ref 'refs/remotes/origin/main':
+is at 593ef36 but expected 809be99" (loop log since the groom of
+20261115-212527). Another git process had moved `origin/main` to #41's merge
+while the pull was updating it (most likely the editor's background fetch;
+inferred, not observed). `phase_await` (`tools/splk/loop.py:749-751`) runs
+`git checkout`/`git pull --ff-only` with `check=True`, `run` turns any
+non-zero exit into a `LoopError` (`loop.py:238-239`), and `run_loop` treats
+every `LoopError` as stuck: it pauses and waits for the owner
+(`loop.py:897-902`). The merge had already happened and the phase is safe to
+repeat, so a retry a few seconds later would have carried on without the
+owner. Fix: retry the post-merge `git pull` (and other read-only git calls in
+`await`) a few times with a short wait before raising, with a unit test.
+Changes `tools/splk/`, so it would be built in an interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a small retry; it
+  costs nothing when git succeeds, and a ref race should not need the owner.)
