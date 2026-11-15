@@ -34,6 +34,7 @@ finally worked instead of rediscovering it.
 | [See it in a browser before claiming it works](patterns/verify-in-browser.md) | Any change whose effect is only visible in Splunk Web. | 2 (easyadmin) |
 | [Observe a tool's real behaviour first](patterns/observe-tool-behaviour-first.md) | `splk` code or hooks depend on headless `claude -p` output, a guard's verdict or a git side effect. | 1 (splk) |
 | [Probe a hook from a Python file](patterns/probe-a-hook-with-decide.md) | Changing or reviewing a deny rule in `.claude/hooks/`; testing both the deny corpus and the false positive. | 1 (repo hooks) |
+| [Give an unattended loop its secrets and settings safely](patterns/loop-secrets-across-privilege-drop.md) | A container or supervisor starts `splk loop` steps and must pass credentials or target settings. | 1 (splk loop; unbuilt) |
 
 ## Writing a pattern
 
