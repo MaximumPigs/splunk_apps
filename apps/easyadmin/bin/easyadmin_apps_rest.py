@@ -121,6 +121,23 @@ class AppsGateway(roles_rest.SplunkdGateway):
     def delete_object(self, path):
         self._request(path, method="DELETE")
 
+    def create_app(self, args):
+        # A POST to the fixed collection, with the caller's token: splunkd
+        # decides whether they may create apps. ``args`` is built by
+        # easyadmin_apps_core.create_app_args from an allow-list of keys.
+        self._request("/services/apps/local", method="POST", postargs=dict(args))
+
+    def restart_required(self):
+        # splunkd keeps a message of this name while a restart is pending and
+        # answers 404 when there is none (observed on 10.6.1).
+        try:
+            self._request("/services/messages/restart_required")
+        except core.GatewayError as error:
+            if error.status != 404:
+                raise
+            return False
+        return True
+
     def create_object(self, collection, args):
         # simpleRequest needs a dict; list values go as repeated form fields.
         self._request(collection, method="POST", postargs=dict(args))

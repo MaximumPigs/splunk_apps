@@ -546,3 +546,197 @@ def test_move_button_copies_what_cannot_be_moved(open_view, sandbox_client, clea
     text = page.locator(ROOT + " .ea-messages").inner_text()
     assert 'Staged a copy of 1 object into "Home" (launcher).' in text and "were copied instead" in text
     assert "copying to launcher" in _object(page, "search", shipped).inner_text()
+
+
+# ------------------------------------------------------- creating and cloning
+#
+# Stage and discard only: applying a create would add a second app per run
+# (and a restart to remove it). The live test covers Apply.
+
+NEW_APP = "easyadmin_ui_newapp"
+CLONE_APP = "easyadmin_ui_clone"
+
+
+def _form(page):
+    return page.locator(ROOT + " .ea-panel")
+
+
+def _fill(page, field, value):
+    page.locator(ROOT + ' .ea-panel input[data-fid="newapp-%s"]' % field).fill(value)
+
+
+def _accept_dialogs(page):
+    seen = []
+
+    def answer(dialog):
+        seen.append(dialog.message)
+        dialog.accept()
+    page.on("dialog", answer)
+    return seen
+
+
+def _stage_new_app(page):
+    page.locator(ROOT + ' button[data-fid="new-app"]').click()
+    _fill(page, "name", NEW_APP)
+    _fill(page, "label", "UI Test New App")
+    page.locator(ROOT + ' button[data-fid="newapp-stage"]').click()
+    return page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP)
+
+
+def test_new_app_form_validates_before_it_stages(open_view, shot):
+    """Stage stays disabled until the ID and label are acceptable; each refusal says why."""
+    page = _open(open_view)
+    page.locator(ROOT + ' button[data-fid="new-app"]').click()
+    form = _form(page)
+    stage = form.locator('button[data-fid="newapp-stage"]')
+    assert form.locator("#ea-panel-title").inner_text() == "New app"
+    # The defaults: version 1.0.0, the signed-in user as author, visible.
+    assert form.locator('input[data-fid="newapp-version"]').input_value() == "1.0.0"
+    assert form.locator('input[data-fid="newapp-author"]').input_value() != ""
+    assert form.locator('input[data-fid="newapp-visible"]').is_checked()
+    assert stage.is_disabled()
+
+    _fill(page, "name", "search")
+    assert "already exists" in form.locator("#ea-newapp-name-error").inner_text()
+    _fill(page, "name", "SEARCH")   # compared ignoring case
+    assert "already exists" in form.locator("#ea-newapp-name-error").inner_text()
+    _fill(page, "name", "bad name")
+    assert "Use letters" in form.locator("#ea-newapp-name-error").inner_text()
+    assert form.locator('input[data-fid="newapp-name"]').get_attribute("aria-invalid") == "true"
+    _fill(page, "name", NEW_APP)
+    assert form.locator("#ea-newapp-name-error").inner_text() == ""
+    _fill(page, "label", "abc")
+    assert "5 to 80" in form.locator("#ea-newapp-label-error").inner_text()
+    _fill(page, "label", "Splunk for Testing")
+    assert "Splunk for" in form.locator("#ea-newapp-label-error").inner_text()
+    assert stage.is_disabled()
+    _fill(page, "label", "UI Test New App")
+    _fill(page, "version", "1 2")
+    assert "letters, digits" in form.locator("#ea-newapp-version-error").inner_text()
+    assert stage.is_disabled()
+    _fill(page, "version", "")      # empty means the default
+    assert not stage.is_disabled()
+    shot(page, "app_management_new_app_form")
+    # Escape closes the form and nothing is staged.
+    page.keyboard.press("Escape")
+    assert page.locator(ROOT + " .ea-panel").count() == 0
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 0
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_a_new_app_is_staged_as_a_box_and_can_be_discarded(open_view, shot):
+    page = _open(open_view)
+    box = _stage_new_app(page)
+    assert box.count() == 1 and "ea-app-new" in box.get_attribute("class")
+    assert box.locator(".ea-app-title").inner_text() == "UI Test New App"
+    assert "new app" in box.locator(".ea-app-meta").inner_text()
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 app"
+    assert page.locator(ROOT + " .ea-apply").is_enabled()
+    assert "Staged a new app" in page.locator(ROOT + " .ea-messages").inner_text()
+    # A new app holds nothing yet, so it has no Clone button.
+    assert box.locator(".ea-clone").count() == 0
+    # The app filter cannot hide a staged box.
+    page.locator(ROOT + " .ea-app-filter").fill("zzz-no-such-app")
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 1
+    page.locator(ROOT + " .ea-app-filter").fill("")
+    shot(page, "app_management_new_app_staged")
+    # Its x drops it; nothing was staged into it, so there is no confirmation.
+    cross = box.locator(".ea-discard-app")
+    assert cross.get_attribute("aria-label").startswith("Discard new app UI Test New App")
+    cross.click()
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 0
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_discard_changes_drops_a_staged_app_and_its_id_is_taken_meanwhile(open_view):
+    page = _open(open_view)
+    _stage_new_app(page)
+    # The staged app holds its ID: another app cannot be staged under it.
+    page.locator(ROOT + ' button[data-fid="new-app"]').click()
+    _fill(page, "name", NEW_APP.upper())
+    assert "already exists" in page.locator(ROOT + " #ea-newapp-name-error").inner_text()
+    page.keyboard.press("Escape")
+    seen = _accept_dialogs(page)
+    assert page.locator(ROOT + " .ea-discard").inner_text() == "Discard changes to 1 app"
+    page.locator(ROOT + " .ea-discard").click()
+    assert seen == ["Discard the staged changes to 1 app? Nothing has been applied yet."]
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 0
+
+
+def test_a_staged_app_takes_copies_and_its_x_asks_first(open_view, macro):
+    """The selection bar copies into the staged box; its x then asks, and drops the copies with it."""
+    name = macro()
+    page = _open(open_view)
+    box = _stage_new_app(page)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option(NEW_APP)
+    page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
+    ghost = box.locator(".ea-ghost")
+    assert ghost.count() == 1 and ghost.locator(".ea-object-name").inner_text() == name
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 app and 1 object"
+    seen = _accept_dialogs(page)
+    box.locator(".ea-discard-app").click()
+    assert len(seen) == 1 and "1 object into it" in seen[0]
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 0
+    assert "copying to" not in _object(page, "search", name).inner_text()
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_dropping_an_object_on_a_staged_app_stages_a_move(open_view, macro):
+    name = macro()
+    page = _open(open_view)
+    box = _stage_new_app(page)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).drag_to(box)
+    moved = _object(page, NEW_APP, name)
+    assert moved.count() == 1 and "moving from search" in moved.inner_text()
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 app and 1 object"
+
+
+def test_clone_stages_a_copy_of_every_copyable_object_and_says_what_it_leaves_out(open_view, macro, shot):
+    name = macro()
+    page = _open(open_view)
+    source_label = page.locator(ROOT + ' .ea-app[data-app="search"] .ea-app-title').inner_text()
+    clone = page.locator(ROOT + ' button[data-fid="clone:search"]')
+    assert clone.get_attribute("aria-label").startswith("Clone app " + source_label)
+    clone.click()
+    form = _form(page)
+    assert form.locator("#ea-panel-title").inner_text() == "Clone " + source_label
+    assert form.locator('input[data-fid="newapp-name"]').input_value() == "search_copy"
+    assert form.locator('input[data-fid="newapp-label"]').input_value() == source_label + " (copy)"
+    assert form.locator('input[data-fid="newapp-version"]').input_value() == "1.0.0"
+    assert not form.locator('button[data-fid="newapp-stage"]').is_disabled()
+    # The ID must be free: an existing one is refused here, not at Apply.
+    _fill(page, "name", "launcher")
+    assert "already exists" in form.locator("#ea-newapp-name-error").inner_text()
+    assert form.locator('button[data-fid="newapp-stage"]').is_disabled()
+    _fill(page, "name", CLONE_APP)
+    page.locator(ROOT + ' button[data-fid="newapp-stage"]').click()
+
+    box = page.locator(ROOT + ' .ea-app[data-app="%s"]' % CLONE_APP)
+    assert "clone of " + source_label in box.locator(".ea-app-meta").inner_text()
+    # Its rows are dashed copies of the search app's, the new macro among them.
+    ghosts = box.locator(".ea-ghost")
+    total = ghosts.count()
+    assert total >= 1
+    assert box.locator('.ea-ghost .ea-object-name:text-is("%s")' % name).count() == 1
+    assert "copy from search" in ghosts.first.inner_text()
+    message = page.locator(ROOT + " .ea-messages").inner_text()
+    assert "Staged a copy of" in message and 'from "%s"' % source_label in message
+    # What splunkd cannot copy is listed by type, and the navigation is explained.
+    assert "Left out, because splunkd cannot copy them:" in message
+    assert "navigation menu" in message
+    shot(page, "app_management_clone_staged")
+
+    # One copy can be dropped on its own; the rest stay.
+    box.locator('.ea-ghost:has(.ea-object-name:text-is("%s")) .ea-discard-one' % name).click()
+    assert box.locator(".ea-ghost").count() == total - 1
+    assert box.locator('.ea-ghost .ea-object-name:text-is("%s")' % name).count() == 0
+    assert "copying to" not in _object(page, "search", name).inner_text()
+    # The box's x takes the remaining copies with it, after asking.
+    seen = _accept_dialogs(page)
+    box.locator(".ea-discard-app").click()
+    assert len(seen) == 1 and CLONE_APP in seen[0]
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % CLONE_APP).count() == 0
+    assert page.locator(ROOT + " .ea-apply").is_disabled()

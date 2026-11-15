@@ -37,8 +37,12 @@ def entry(type_id, name, app, owner="nobody", sharing="app", ns=None, local=True
 
 
 class FakeGateway(object):
-    def __init__(self, objects=(), app_names=("search", "myapp", "other"), refuse_acl=()):
+    def __init__(self, objects=(), app_names=("search", "myapp", "other"), refuse_acl=(),
+                 refuse_create=None, restart=False, capabilities=("edit_local_apps",)):
         self.app_names = list(app_names)
+        self.refuse_create = dict(refuse_create or {})   # app name -> HTTP status splunkd answers
+        self.restart = restart                           # True, False or a GatewayError to raise
+        self.capabilities = list(capabilities)
         self.objects = {}   # path -> (type_id, entry)
         for type_id, item in objects:
             self.objects[self._path(type_id, item)] = (type_id, item)
@@ -68,7 +72,19 @@ class FakeGateway(object):
         return ["admin", "alice"]
 
     def current_context(self):
-        return {"username": "admin", "theme": "dark"}
+        return {"username": "admin", "theme": "dark", "capabilities": self.capabilities}
+
+    def create_app(self, args):
+        self.calls.append(("create_app", dict(args)))
+        if args["name"] in self.refuse_create:
+            raise GatewayError("App '%s' already exists. Nothing was created." % args["name"],
+                               status=self.refuse_create[args["name"]])
+        self.app_names.append(args["name"])
+
+    def restart_required(self):
+        if isinstance(self.restart, Exception):
+            raise self.restart
+        return self.restart
 
     def get_object(self, path, full=False):
         self.calls.append(("get", path))
@@ -551,13 +567,9 @@ def test_private_object_settings_come_from_the_owners_folder():
 
 class ConfGateway(FakeGateway):
     def __init__(self, objects=(), capabilities=("admin_all_objects",), files=None):
-        FakeGateway.__init__(self, objects)
-        self.capabilities = list(capabilities)
+        FakeGateway.__init__(self, objects, capabilities=capabilities)
         self.files = files or {}
         self.reads = []
-
-    def current_context(self):
-        return {"username": "admin", "theme": None, "capabilities": self.capabilities}
 
     def read_own_conf(self, conf, app, user):
         self.reads.append((conf, app, user))
@@ -640,3 +652,156 @@ def test_deleting_it_is_refused_too():
                                                    delete=True)])["results"][0]
     assert outcome["status"] == "error" and "cannot be deleted" in outcome["message"]
     assert not [c for c in gateway.calls if c[0] == "delete"]
+
+
+# ------------------------------------------------------------- creating apps
+
+def new_app(name="my_app", **fields):
+    spec = {"name": name, "label": "My App"}
+    spec.update(fields)
+    return spec
+
+
+def test_new_app_sends_exactly_the_allowed_postargs():
+    gateway = FakeGateway()
+    result = apps.submit_changes(gateway, None, user="admin", raw_apps=[
+        new_app(description="Notes", author="alice", visible=False, version="2.1")])
+    assert gateway.calls == [("create_app", {"name": "my_app", "template": "barebones", "label": "My App",
+                                             "visible": "0", "version": "2.1", "description": "Notes",
+                                             "author": "alice"})]
+    assert result["apps"] == [{"name": "my_app", "status": "applied", "message": 'Created the app "my_app".'}]
+    assert (result["applied"], result["failed"], result["results"]) == (1, 0, [])
+
+
+def test_new_app_defaults_to_version_1_0_0_and_omits_empty_text():
+    gateway = FakeGateway()
+    apps.submit_changes(gateway, [], raw_apps=[new_app(description="", author="  ")])
+    assert gateway.calls[0][1] == {"name": "my_app", "template": "barebones", "label": "My App",
+                                   "visible": "1", "version": "1.0.0"}
+
+
+@pytest.mark.parametrize("spec, text", [
+    (new_app(filename="/tmp/x.tgz"), "filename"),
+    (new_app(template="sample_app"), "template"),
+    (new_app("has space"), "not a valid app ID"),
+    (new_app("a/b"), "not a valid app ID"),
+    (new_app(".."), "not a valid app ID"),
+    (new_app("-lead"), "not a valid app ID"),
+    (new_app("x" * 101), "longer than 100"),
+    (new_app(""), "needs an app ID"),
+    (new_app("system"), "already exists"),
+    (new_app("myapp"), "already exists"),
+    (new_app("MyApp"), "already exists"),
+    (new_app(label="abcd"), "at least 5"),
+    (new_app(label="x" * 81), "longer than 80"),
+    (new_app(label="Splunk for Things"), "Splunk for"),
+    (new_app(label="splunk FOR things"), "Splunk for"),
+    (new_app(label="    "), "label is required"),
+    (new_app(label=5), "must be text"),
+    (new_app(description="a\x00b"), "control characters"),
+    (new_app(author="a\nb"), "control characters"),
+    (new_app(version="1.0 beta"), "not a valid version"),
+    (new_app(version="../1"), "not a valid version"),
+    (new_app(visible="yes"), "true or false"),
+    ("my_app", "must be an object"),
+])
+def test_new_app_refusals_create_nothing(spec, text):
+    gateway = FakeGateway()
+    with pytest.raises(apps.EasyAdminError) as caught:
+        apps.submit_changes(gateway, None, raw_apps=[spec])
+    assert text in str(caught.value) and caught.value.status == 400
+    assert not [c for c in gateway.calls if c[0] == "create_app"]
+
+
+def test_new_apps_must_be_a_short_list_of_distinct_names():
+    gateway = FakeGateway()
+    with pytest.raises(apps.EasyAdminError, match="must be a list"):
+        apps.submit_changes(gateway, None, raw_apps={"name": "x"})
+    with pytest.raises(apps.EasyAdminError, match="At most 20"):
+        apps.submit_changes(gateway, None, raw_apps=[new_app("a%d" % n) for n in range(21)])
+    with pytest.raises(apps.EasyAdminError, match="named twice"):
+        apps.submit_changes(gateway, None, raw_apps=[new_app("one"), new_app("ONE")])
+    assert not [c for c in gateway.calls if c[0] == "create_app"]
+
+
+def test_creating_apps_needs_one_of_the_two_capabilities():
+    gateway = FakeGateway(capabilities=("search",))
+    with pytest.raises(apps.EasyAdminError) as caught:
+        apps.submit_changes(gateway, None, raw_apps=[new_app()])
+    assert caught.value.status == 403 and not [c for c in gateway.calls if c[0] == "create_app"]
+    for cap in apps.CREATE_APP_CAPS:
+        gateway = FakeGateway(capabilities=(cap,))
+        assert apps.submit_changes(gateway, None, raw_apps=[new_app()])["applied"] == 1
+
+
+def test_changes_alone_need_no_create_capability():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search"))], capabilities=())
+    assert apps.submit_changes(gateway, [change("macro", "m1", "search", delete=True)])["applied"] == 1
+
+
+def test_a_request_with_neither_apps_nor_changes_is_refused():
+    for changes, new in ((None, None), ([], []), ([], None)):
+        with pytest.raises(apps.EasyAdminError):
+            apps.submit_changes(FakeGateway(), changes, raw_apps=new)
+
+
+def test_apps_are_created_before_objects_are_copied_into_them():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search"))])
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="my_app")],
+                                 raw_apps=[new_app()])
+    kinds = [c[0] for c in gateway.calls]
+    assert kinds.index("create_app") < kinds.index("create")
+    assert result["results"][0]["status"] == "applied" and result["failed"] == 0 and result["applied"] == 2
+
+
+def test_a_change_into_an_app_that_was_not_created_is_not_attempted():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search")), ("macro", entry("macro", "m2", "search"))],
+                          refuse_create={"my_app": 409})
+    result = apps.submit_changes(gateway, [change("macro", "m1", "search", copy_to="my_app"),
+                                           change("macro", "m2", "search", move_to="my_app")],
+                                 raw_apps=[new_app()])
+    assert result["apps"][0]["status"] == "error"
+    assert result["apps"][0]["message"] == 'An app called "my_app" already exists, so it was not created.'
+    assert [r["message"] for r in result["results"]] == [
+        '"m1" was not copied: the app "my_app" was not created.',
+        '"m2" was not moved: the app "my_app" was not created.']
+    assert [r["status"] for r in result["results"]] == ["error", "error"]
+    assert (result["applied"], result["failed"]) == (0, 3)
+    assert not [c for c in gateway.calls if c[0] in ("create", "move")]
+
+
+def test_another_refusal_is_reported_per_app_and_the_rest_go_on():
+    gateway = FakeGateway(refuse_create={"first": 403})
+    result = apps.submit_changes(gateway, None, raw_apps=[new_app("first"), new_app("second")])
+    assert [a["status"] for a in result["apps"]] == ["error", "applied"]
+    assert result["apps"][0]["message"].startswith('The app "first" was not created: ')
+    assert "second" in gateway.app_names
+
+
+def test_restart_required_is_read_from_splunkd_after_everything_ran():
+    assert apps.submit_changes(FakeGateway(restart=True), None, raw_apps=[new_app()])["restart_required"] is True
+    assert apps.submit_changes(FakeGateway(restart=False), None, raw_apps=[new_app()])["restart_required"] is False
+
+
+def test_a_failed_restart_check_never_fails_the_apply():
+    gateway = FakeGateway(restart=GatewayError("no", status=403))
+    result = apps.submit_changes(gateway, None, raw_apps=[new_app()])
+    assert result["restart_required"] is False and result["applied"] == 1
+
+
+def test_post_carries_apps_and_changes_in_one_json_document():
+    gateway = FakeGateway([("macro", entry("macro", "m1", "search"))])
+    body = json.dumps({"apps": [new_app()], "changes": [change("macro", "m1", "search", copy_to="my_app")]})
+    status, result = apps.handle_request("POST", body, {}, gateway)
+    assert status == 200 and result["applied"] == 2
+    status, result = apps.handle_request("POST", json.dumps({"apps": [new_app("other_two")]}), {}, gateway)
+    assert status == 200 and result["applied"] == 1
+    status, result = apps.handle_request("POST", json.dumps({"apps": [new_app("third")]}), {},
+                                         FakeGateway(capabilities=()))
+    assert status == 403
+
+
+def test_model_says_whether_the_caller_can_create_apps():
+    for caps, expected in (((), False), (("search",), False), (("edit_local_apps",), True),
+                           (("admin_all_objects",), True)):
+        assert apps.read_model(FakeGateway(capabilities=caps))["can_create_apps"] is expected

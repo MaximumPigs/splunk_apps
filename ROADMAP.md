@@ -24,46 +24,7 @@ its format is fixed:
 | 1.2.0 | App management page: apps as boxes of knowledge objects, move, re-permission and delete, staged and applied at once (#17). |
 | 1.3.0 | Configuration precedence tab, btool-style (#19). |
 | 1.4.0 | Copy objects into another app (the default for objects in a default folder); discard one staged change; the object's own settings in the panel; locks from splunkd's `removable` flag (#20). |
-
-### 1. Create a new app, or clone one
-Status: in-progress
-
-Part of the original App management request.
-
-- Deleting an app makes splunkd ask for a restart (observed). Creating one
-  does not (probed on 10.6.1, 2026-11-15: no restart message after the
-  create or after creating objects in the new app), so the page shows the
-  restart notice only when splunkd asks for a restart.
-- The person fills in app id, label, visible, description, author and
-  version; the `barebones` template and version 1.0.0 are the defaults.
-- Creating and cloning are staged as pending changes and run by Apply; a
-  clone's objects show as pending copies that can be discarded one by one.
-- After a create or clone the page shows a notice to restart Splunk; it
-  does not restart.
-- [x] Clone means copying every copyable object into the new app. Props-based
-  objects, tags, lookup files and navigation cannot be copied through REST
-  (see the README), so a clone would be partial. Is a partial clone, with a
-  list of what was left out, acceptable?: Yes, that is acceptable.
-- [x] What does the person fill in to create an app? Options: (a) app id,
-  label and visible only; (b) also description, author and version;
-  (c) also a template (`barebones` or `sample_app`). Recommendation: (b),
-  using the `barebones` template and version 1.0.0 by default.: (b), as
-  recommended.
-- [x] Are creating and cloning staged as pending changes and run by Apply,
-  like every other change on the page, or done at once from a dialog?
-  Recommendation: staged, so a clone's objects show as pending copies that
-  can be discarded one by one before Apply.: Staged.
-- [x] After a create or clone, splunkd asks for a restart. Should the page
-  only show a notice ("restart Splunk to finish"), or also offer a restart
-  button? Recommendation: notice only; a restart from an admin page affects
-  every user, and whether Splunk Cloud allows it at all is unverified.:
-  Do not restart; notify only.
-
-Probe first: whether `apps/local` accepts a create (with `template`) for an
-admin on 9.3 and 10.x, and which of the new app's objects are visible before
-the restart. Splunk Cloud may refuse app creation through REST altogether
-(apps are installed there through ACS); confirm from Splunk's Cloud
-documentation and say so in the README if it does.
+| 1.5.0 | Create a new app (barebones template), or clone one with copies of its copyable objects, staged as pending boxes and run by Apply; a restart notice only when splunkd asks (creating needs none on 10.6.1). |
 
 ### 2. Export and import an app as JSON
 Status: blocked
