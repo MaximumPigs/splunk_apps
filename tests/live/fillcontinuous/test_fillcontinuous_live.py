@@ -100,8 +100,9 @@ def test_internal_fields_survive_a_multi_chunk_result(search):
     """150,000 rows (several input chunks) with a synthesised row first.
 
     Series aaa has a row only at T0+1h, so (T0, aaa) is synthesised and sorts
-    first. Pairs of rows share a host, so the only other gap is the odd one out at the
-    end (h75000, T0 only). Two rows are added in all.
+    first. Every other host has two rows, one in each hour, except h75000, which
+    has T0 only, so (T0+1h, h75000) is the second synthesised row. 150,000 real
+    rows plus 2 synthesised ones make 150,002.
     """
     rows = search(
         "| makeresults count=50000 | eval k=mvrange(0,3) | mvexpand k "
