@@ -304,28 +304,40 @@ work); the step finishes blocked and the item is done interactively.
 ### Running the loop on a server
 
 [docker/compose.yaml](docker/compose.yaml) runs the loop around the clock,
-for example on an Unraid server. It defines two containers: a Splunk instance
-(`splunk`) and the dev container (`dev`, [docker/dev/Dockerfile](docker/dev/Dockerfile)).
-The dev container holds Python, AppInspect, Playwright with Chromium, git, `gh`
-and a pinned Claude Code.
+for example on an Unraid server, in one container
+([docker/dev/Dockerfile](docker/dev/Dockerfile)). That container holds
+Python, AppInspect, Playwright with Chromium, git, `gh` and a pinned Claude
+Code. It tests against a Splunk instance that you run and manage separately:
+the `server` target in `config/targets.toml`, whose host and folders come
+from `SPLK_TARGET_*` variables, so they stay out of this public repo.
 
-1. Copy `docker/.env.example` to `docker/.env` and fill it in. Put the
-   Splunk Developer licence at `docker/licence/splunk.lic`; the Free licence
-   turns off users and roles, which the tests need.
-2. Start Splunk alone the first time: `docker compose up -d splunk`. Once
-   Splunk Web is up, create the `splk_test` index and a token
-   (Settings > Tokens), then put the token in `.env` as `SPLUNK_TOKEN`.
-3. `docker compose up -d --build`. On first start the dev container clones
-   the repo into its `work` volume. It then waits until `splk doctor`
-   passes, and runs `splk loop run` from then on.
-4. Control it with `docker compose exec -u loop -w /work/splunk_apps dev splk loop status` (or `pause`
-   or `resume`), and follow it with `docker compose logs -f dev`.
+1. **Prepare your Splunk instance.** It should be a dev instance with the
+   Developer licence (the Free licence turns off users and roles, which the
+   tests need). Give it a `splk_test` index and a token (Settings > Tokens).
+2. **Share a folder for packages.** `splk deploy` installs by telling
+   splunkd a path, so both sides need the same folder:
+   - `SPLK_STAGE_HOST_PATH` is the host folder, mounted at `/stage` in the
+     container;
+   - `SPLK_TARGET_SERVER_STAGE_DIR` is the same folder as splunkd sees it.
 
-The dev container gets an explicit list of variables, never the whole
-`.env`, so the Splunk admin password stays with Splunk. It starts as root
-only long enough to write its secrets to the clone's `.env`. It then drops
-to the `loop` user with a clean environment holding only
-`CLAUDE_CODE_OAUTH_TOKEN`, which steps need. No secret is left in an
+   The loop user (`LOOP_UID`/`LOOP_GID`; on Unraid shares, 99/100) must be
+   able to write it, and nothing else should: splunkd installs whatever is
+   there with admin rights. Keep it out of SMB/NFS exports that other
+   machines can write to.
+3. **Fill in `docker/.env`** from `docker/.env.example`.
+   `SPLK_TARGET_ALLOW_RESTART` is false unless you allow restarts. Without
+   it, a deploy that needs a restart fails and the loop stops for you.
+4. **Start it:** `docker compose up -d --build`. On first start the
+   container clones the repo into its `work` volume. It then waits until
+   `splk doctor` passes, and runs `splk loop run` from then on.
+5. **Control it** with
+   `docker compose exec -u loop -w /work/splunk_apps dev splk loop status`
+   (or `pause` or `resume`), and follow it with `docker compose logs -f dev`.
+
+The container gets an explicit list of variables, never the whole `.env`.
+It starts as root only long enough to write its secrets to the clone's
+`.env`. It then drops to the `loop` user with a clean environment holding
+only `CLAUDE_CODE_OAUTH_TOKEN`, which steps need. No secret is left in an
 environment the loop user can read, and `splk loop` keeps `.env` values out of
 every step.
 
@@ -335,11 +347,19 @@ under another user would close that. The ruleset on `main` is the boundary,
 as on Windows.
 
 On restart the loop refuses to start if the checked-out branch changed the
-tooling (`tools/`, hooks, loop settings, the packager), because the
-supervisor runs `splk` from that branch.
+tooling (`tools/`, hooks, loop and target settings, the packager), because
+the supervisor runs `splk` from that branch.
 
-Splunk Web listens on loopback unless `SPLUNK_WEB_BIND` says otherwise. It is
-plain HTTP with the admin account, so do not expose it beyond the LAN.
+The target settings are written to `.env` as well. In a loop step, `splk`
+reads the target name and the `SPLK_TARGET_*` overrides only from that file,
+never from the step's own environment. So one step command cannot send the
+Splunk token to another host or turn restarts on.
+
+`splk` sends the Splunk token with every request. With
+`SPLK_TARGET_VERIFY_TLS=false` (the default, for a self-signed certificate),
+anyone on the network path could impersonate splunkd and collect the token.
+Give splunkd a certificate the container trusts and set it to `true`, or keep
+both machines on a network you control.
 
 Not pinned yet: the base image digest, and checksums for the Claude Code
 installer and the `gh` apt key. Pin them on the first successful build.
