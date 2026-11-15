@@ -449,7 +449,7 @@ require([
         }
         var version = $.trim(draft.version) || DEFAULT_VERSION;
         if (version.length > VERSION_MAX || !VERSION_RE.test(version)) {
-            problems.version = 'Use letters, digits, "." , "-" and "+", starting with a letter or digit.';
+            problems.version = 'Use letters, digits, ".", "-" and "+", starting with a letter or digit.';
         }
         if ($.trim(draft.description).length > APP_TEXT_MAX) {
             problems.description = 'The description can be at most ' + APP_TEXT_MAX + ' characters.';
@@ -1760,7 +1760,7 @@ require([
             var $input = el('input').attr({ type: 'text', id: id, 'data-fid': 'newapp-' + field,
                 spellcheck: 'false', autocomplete: 'off', 'aria-describedby': id + '-error' }).val(draft[field]);
             if (required) { $input.attr('aria-required', 'true'); }
-            var $error = el('div', 'ea-field-error').attr({ id: id + '-error' });
+            var $error = el('div', 'ea-field-error').attr({ id: id + '-error', role: 'alert' });
             $input.on('input', function () {
                 draft[field] = $input.val();
                 touched[field] = true;
@@ -1769,8 +1769,8 @@ require([
             fields[field] = { $input: $input, $error: $error };
             $panel.append(el('div', 'ea-field').append(el('label', null, label).attr('for', id), $input, $error));
         };
-        addField('name', 'App ID (the directory name)', true);
-        addField('label', 'Label (shown in Splunk Web)', true);
+        addField('name', 'App ID (the directory name, required)', true);
+        addField('label', 'Label (shown in Splunk Web, required)', true);
         var $visible = el('label', 'ea-check');
         $visible.append(el('input').attr({ type: 'checkbox', 'data-fid': 'newapp-visible' }).prop('checked', !!draft.visible)
             .on('change', function () { draft.visible = this.checked; }));

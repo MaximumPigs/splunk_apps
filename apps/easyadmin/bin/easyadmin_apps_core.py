@@ -527,7 +527,7 @@ def _create_one(gateway, spec, user):
         gateway.create_app(create_app_args(spec))
     except GatewayError as error:
         logger.warning("user=%s action=create_app app=%s refused: status=%s %s",
-                       user, json.dumps(name), error.status, error)
+                       user, json.dumps(name), error.status, json.dumps(str(error)))
         if error.status == 409:
             message = 'An app called "%s" already exists, so it was not created.' % name
         else:
