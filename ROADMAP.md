@@ -160,3 +160,115 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app).
+
+### Proposed: Details panel makes two splunkd calls it does not need
+Status: proposed
+
+Opening an object's details panel runs `add_explicit`
+(`apps/easyadmin/bin/easyadmin_apps_core.py:357`), which calls
+`gateway.current_context()` only to check for `admin_all_objects`. In
+`AppsGateway.current_context` (`apps/easyadmin/bin/easyadmin_apps_rest.py`)
+that is two requests: `authentication/current-context`, then the user's
+`user-prefs` for the theme, which the panel never uses. So every object
+clicked costs four splunkd requests instead of two. Fix: pass a flag so the
+details path skips the theme lookup (or read capabilities alone), with a unit
+test on a fake gateway counting the calls. This is a small saving per click,
+read from the code and not timed; the dev target is too small to show it.
+
+- [ ] Confirm: should this be done? (Recommended, low priority: small, safe,
+  and every details click benefits.)
+
+## fillcontinuous
+
+### Proposed: Real rows lose `_raw` and other internal fields when the first row written is a filled one
+Status: proposed
+
+`FillContinuousCommand.transform` (`apps/fillcontinuous/bin/fillcontinuous.py:232`)
+yields the filled result without registering its field names in
+`self._record_writer.custom_fields`. splunklib fixes a chunk's output columns
+from the first record written (`lib/splunklib/searchcommands/internals.py:547-551`),
+and synthesised rows deliberately omit internal fields other than `_span`.
+So when the first row out is a synthesised one, every real row silently loses
+its other `_`-prefixed fields. Observed on the dev target (10.6.1.1):
+
+    | makeresults count=2 | streamstats count as n
+    | eval _time=if(n==1, 0, 7200), host=if(n==1,"b","a"), _raw="event ".n
+    | fields - n | fillcontinuous span=1h by host
+    | eval raw=_raw | table _time host raw
+
+returns `raw` on 0 rows; swap the hosts (so the first row is real) and it is
+on both real rows. The same happened with a user field `_extra`. The README
+says internal fields are omitted from *synthesised* rows only. Because the
+writer resets its columns per output chunk, a large result can hit this in
+any later chunk too. This breaks the rule in `.claude/rules/search-commands.md`
+("register every field name the chunk will produce before yielding the first
+record").
+
+Fix: before yielding, add the union of all output records' keys to
+`custom_fields`; a unit test with a stub writer copying the SDK's first-record
+behaviour; a live test with a synthesised first row and a multi-chunk result
+that checks `_raw` and a user `_` field through a downstream `table`. Patch
+version bump.
+
+- [ ] Confirm: should this be done? (Recommended: it is a silent data loss
+  bug, and the fix is a few lines.)
+
+## Tooling
+
+### Proposed: Audit step can change code that is then pushed unverified
+Status: proposed
+
+`phase_audit` (`tools/splk/loop.py:500`) commits whatever the audit step
+changed and goes straight to `publish`, with no `splk dev`/`splk test`. The
+audit prompt says "Edit ROADMAP.md only", but unlike `phase_groom`, which
+refuses anything else (`loop.py:459`, "Groom may only edit ROADMAP.md"),
+nothing enforces it. In loop mode, `guard_files` blocks hooks, prompts and
+`tools/splk`, but not `apps/`, so an audit step that "fixed" what it found
+would have its app change committed as the owner and pushed in a roadmap PR
+that no verify stage has seen. Fix: apply the groom check to the audit step
+(only `ROADMAP.md` outside `.agent/`), with a unit test. Found by reading the
+code. Not observed: no audit has gone wrong yet.
+
+- [ ] Confirm: should this be done? (Recommended: it is a one-line check like
+  groom's. It changes `tools/splk/`, which loop steps may not edit, so it
+  needs an interactive session.)
+
+### Proposed: Question issues are closed before the groom PR that answers them is merged
+Status: proposed
+
+`phase_groom` runs the groom step with `main` checked out and calls
+`sync_question_issues` (`tools/splk/loop.py:375-398`) before it creates the
+`roadmap/groom-*` branch. Any issue whose item no longer has an open question
+is closed at once, with the comment "Answers recorded in ROADMAP.md on branch
+main" (`loop.py:397`, `git branch --show-current` at that moment). The answers
+are not on main; they are on a branch waiting for the owner. If the owner
+closes that PR instead of merging, the issue is already closed, and the next
+groom opens a new issue for the same questions, so the earlier answer thread
+is lost from view. Fix: close the issues after the groom PR merges (in
+`phase_await` on `merged`), or name the real branch and PR in the comment.
+Found by reading the code, not observed on GitHub.
+
+- [ ] Confirm: should this be done? (Recommended: close on merge. Interactive
+  session, as above.)
+
+### Proposed: Console errors without a source in `splk shot`, and the UX audit missing the app's own REST failures
+Status: proposed
+
+`PageLog._on_console` (`tools/splk/ui.py:150`) keeps only `message.text`, so
+`splk shot easyadmin/app_management` reports six bare "Failed to load
+resource: ... 404" lines, with nothing to say whether they are the app's.
+The UX audit does keep the URL, and its report showed all six were Splunk
+Web's own `configs/conf-limits/structured_data_service` (the search app's
+search page shows five of the same). Separately, `own_console_errors`
+(`tools/splk/ux.py:234`) treats an error as the app's only when it points at
+`/static/app/<app>/`. A failing call to the app's own REST endpoint
+(`/splunkd/__raw/services/<app>/...`, say a 500 from the details panel or the
+precedence tab) is not counted, so it would pass the audit. Fix: record the
+URL in `PageLog` and print it in `splk shot`; also match
+`/splunkd/__raw/services/<app>/` in `own_console_errors`, with unit tests.
+The second half is inferred from the code: no app endpoint has failed during
+an audit yet.
+
+- [ ] Confirm: should this be done? (Recommended: the URL in `splk shot` at
+  least, since CLAUDE.md relies on it to "look before you claim". Interactive
+  session, as above.)
