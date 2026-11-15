@@ -207,20 +207,97 @@ Status: ready
 
 - Knowledge Objects staged for move should display in the origin app 
   with a strike-through as though they are being deleted.
+- Today a staged move lists the object only in its destination app
+  (`appOf`, `easyadmin_apps.js:265-268`); it stays listed there as now.
 
 ### Local knowledge objects should be able to be deleted even when a default one exists under it.
-Status: ready
+Status: blocked
 
 - Currently, no local knowledge object with a default one under it can be deleted from the app.
 - The option to delete the local one should be available.
 
+Already observed on 10.6.1 (README, "Why local settings cannot be
+deleted"): `DELETE .../configs/conf-<file>/<stanza>` on an object that ships
+in `default` is refused ("cannot be deleted in config"), and splunkd marks
+such objects `removable` 0, so the typed endpoints refuse it too. No REST
+call seen so far removes only the local layer.
+
+- [ ] If the probe below finds no REST call that removes only the local
+  layer, what then? Options: (a) drop the item, and say in the lock's
+  tooltip and the README that the object has local changes that only an
+  edit of the `local` file can remove; (b) a "reset to default" that posts
+  each local setting's default value back (observed: the key stays in
+  `local`, pinned to today's default, so a later app upgrade's new default
+  is hidden); (c) delete the local stanza from the file (not possible on
+  Splunk Cloud, fails vetting). Recommendation: (a), since (b) looks like a
+  revert but is not one. If a REST call is found, the delete reverts the
+  object to its default settings and leaves its permissions as they are.
+  Agree?
+
+Probe first: `DELETE` on the typed endpoint (for example
+`saved/searches/<name>`) and on `configs/conf-<file>/<stanza>` for an object
+with both a default and a local stanza, on 9.3 and 10.6, reading the
+`local` file back through splunkd afterwards.
+
 ### Delete single setting from knowledge object by removing whole knowledge object and recreating.
-Status: ready
+Status: blocked
 
 - There is no DELETE operation for stanza settings through the API
 - In place of this, explore the viability of caching the local knowledge object, deleting the whole object
   then recreating without the deleted setting.
 - Review this for security or functionality implications and raise issues before planning implementation.
+
+Issues raised from the code and the README (to be confirmed by the probes
+below, not yet observed):
+
+- Only objects with no `default` layer can be handled: splunkd refuses to
+  delete one that ships in `default` (see the item above), so its local
+  settings stay undeletable.
+- Only the types a copy can write: props-based objects, tags, navigation
+  menus and lookup files are excluded for the same reasons as copying.
+- splunkd's GET returns the merged settings (the stanza's own keys plus
+  `[default]` and system defaults). Recreating from them would write every
+  inherited value into `local`; the recreate must post only the stanza's own
+  keys, which the page cannot yet tell apart.
+- Between the delete and the create the object does not exist: a scheduled
+  search due in that gap is skipped, and other users get "not found".
+- A recreated saved search may lose scheduler state kept by name (alert
+  throttling, next run time); its permissions and owner must be restored as
+  a copy does.
+- If the create fails after the delete, the object is gone: Apply must
+  recreate the cached original and, if that fails too, show the cached
+  settings so the person can restore it by hand.
+- `_audit` records a delete and a create, not an edit; the app's own log
+  line should name it as one setting removal.
+- Security: the caller needs both delete and create rights on the object,
+  with their own session token, as every other write; no new privilege.
+
+- [ ] Given the issues above, build it? Options: (a) yes, for local-only
+  objects of copyable types, with the staged change and the Apply
+  confirmation saying the object is deleted and recreated (and, for a
+  scheduled search, what is reset); (b) as (a), but refuse scheduled
+  searches and alerts; (c) do not build it, and keep the README's advice to
+  edit the `local` file. Recommendation: (a), once the probes show the
+  recreate writes only the stanza's own keys.
+
+Probe first: whether splunkd can list a stanza's own keys apart from
+inherited ones (the precedence tab's reader, or `configs/conf-<file>` with
+`list_inherited` or similar); what a deleted and recreated scheduled search
+keeps (`next_scheduled_time`, alert suppression); on 9.3 and 10.6.
+
+### Proposed: No screenshot shows the "hidden by the filters" note
+Status: proposed
+
+Left by the splunk-reviewer on #51 (1.6.2), low. In
+`test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide`
+(`tests/ui/easyadmin/test_easyadmin_apps_ui.py:793`) the
+`app_management_clone_counts` screenshot is taken before the name filter
+is applied, and with the common types every copy is listed, so no image
+shows the `.ea-hidden-staged` note; the test asserts its text only. Fix: a
+second `shot` after the name filter, and open it. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, one line; it could
+  join "Tests the settings panel still lacks".)
 
 ## fillcontinuous
 
@@ -308,7 +385,9 @@ Status: interactive
 On #38, #39 and #40 the UX audit ran in dark only: `tools/splk/ux.py` asks
 for each theme with `?theme=`, but a page that follows the user's preference
 refuses it, and the audit records the theme Splunk actually drew (`ux.py:8-9`).
-The light theme of easyadmin has gone unaudited for three releases. The
+The light theme of easyadmin has gone unaudited for three releases (four
+with #51, 1.6.2, where the UX review left the new muted `.ea-hidden-staged`
+note, `easyadmin_apps.css:259`, unseen in light for the same reason). The
 audit also never opens a panel, so the settings panel added in #39 has no
 audit at all. Fix: switch the test user's theme preference through `sandbox`
 for each pass (restored afterwards), and let an app list panels to open per
@@ -339,3 +418,43 @@ Changes `tools/splk/`, so it would be built in an interactive session.
 - [x] Confirm: should this be done? (Recommended: yes, a small retry; it
   costs nothing when git succeeds, and a ref race should not need the owner.):
   Yes.
+
+### Proposed: A fix for owner feedback reaches the PR with no security or UX review
+Status: proposed
+
+On #51, the owner asked for staged moves and deletions to be counted too.
+The fix step (`.agent/loop/steps/20261116-085329-fix.json`) changed
+`easyadmin_apps.js` and the CSS, `splk dev easyadmin` was green, and the
+branch was pushed; the last security and UX reviews in the run log are from
+08:17 and 08:18, before the fix (`.agent/runs/2026-11-16.jsonl`). After a
+fix, `phase_fix` goes to `verify` with `after_verify="push"`
+(`tools/splk/loop.py:776-786`), and `phase_push` (`:788-804`) pushes without
+a review step and without notifying the owner, so the only notification for
+#51 was "ready to merge" from before the fix. CLAUDE.md's definition of done
+(items 5 and 6) wants a review recorded for every code change. Fix: after a
+fix that changed files under `apps/`, run the review step before `push`, and
+notify "PR #N updated" after the push, with unit tests. Changes
+`tools/splk/`, so it would be built in an interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes; the fix after owner
+  feedback is often the larger change, as on #51.)
+
+### Proposed: The implement step is not told to see a new test fail first
+Status: proposed
+
+On #51 the implement step reported "I edited the JS before running the new
+UI test, so there is no before-failure recorded for it"
+(`.agent/loop/steps/20261116-080830-implement.json`). CLAUDE.md asks to
+"prove a fix closes the original reproduction, before and after", but
+`.claude/loop/prompts/implement.md` lists only the definition of done items
+1 to 4; it says nothing about running the new tests against the old code.
+The plan for #40 asked for "a live test that must fail before the fix and
+pass after it" (`20261115-192038-plan.json`) and that run had the evidence;
+the #51 plan did not, and the step skipped it. Fix: one line in
+`implement.md` (and `plan.md`): write the new unit, live or UI test first
+and record it failing on the current code before changing the app, unless
+the item adds something that did not exist. Changes `.claude/loop/`, so it
+would be built in an interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a prompt line; it
+  costs one extra test run per item.)
