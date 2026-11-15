@@ -900,3 +900,127 @@
     flex: none;
     padding: 0 4px;
 }
+
+/*
+ * Editing a setting: code blocks with a Copy button on hover and focus, the
+ * staged edit outlined like every staged change (dashed, in the change colour,
+ * with old and new value labelled), and the filter and add form.
+ */
+#easyadmin-apps textarea {
+    color: var(--ea-input-fg);
+    background: var(--ea-input-bg);
+    border: 1px solid var(--ea-input-border);
+}
+
+#easyadmin-apps textarea:focus-visible {
+    outline: 2px solid var(--ea-focus);
+    outline-offset: 1px;
+}
+
+#easyadmin-apps .ea-setting-input {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-settings .ea-setting-value {
+    position: relative;
+}
+
+#easyadmin-apps .ea-settings .ea-code {
+    margin: 2px 0 0;
+    padding: 6px 8px;
+    max-height: 240px;
+    overflow: auto;
+    color: var(--ea-fg);
+    background: var(--ea-head);
+    border: 1px solid var(--ea-grid);
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+#easyadmin-apps .ea-settings .ea-code code {
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    white-space: inherit;
+}
+
+/* Hidden until the block is hovered or something in it has focus, so the
+   keyboard reaches it, and drawn over the block's corner. */
+#easyadmin-apps .ea-copy {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    min-height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
+    opacity: 0;
+    background: var(--ea-bg);
+}
+
+#easyadmin-apps .ea-setting-value:hover .ea-copy,
+#easyadmin-apps .ea-setting-value:focus-within .ea-copy {
+    opacity: 1;
+}
+
+#easyadmin-apps .ea-setting-inherited {
+    margin-left: 6px;
+    font-weight: normal;
+}
+
+#easyadmin-apps .ea-settings dd.ea-setting {
+    margin-bottom: 4px;
+}
+
+#easyadmin-apps .ea-settings dd.ea-setting-staged {
+    padding: 6px 8px;
+    color: var(--ea-fg);
+    background: var(--ea-changed-bg);
+    border: 2px dashed var(--ea-changed);
+}
+
+#easyadmin-apps .ea-setting-label {
+    margin-top: 4px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+#easyadmin-apps .ea-setting-old .ea-code code {
+    text-decoration: line-through;
+}
+
+#easyadmin-apps .ea-setting-note {
+    margin: 4px 0;
+    font-family: inherit;
+    white-space: normal;
+}
+
+#easyadmin-apps .ea-setting-staged .ea-setting-note {
+    color: var(--ea-fg);
+}
+
+#easyadmin-apps .ea-setting-edit,
+#easyadmin-apps .ea-show-default {
+    margin-top: 4px;
+}
+
+#easyadmin-apps .ea-show-default {
+    padding-left: 0;
+}
+
+#easyadmin-apps .ea-setting-filter {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#easyadmin-apps .ea-setting-problem {
+    min-height: 1em;
+}

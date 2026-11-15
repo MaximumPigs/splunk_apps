@@ -330,8 +330,8 @@ def build_details(type_id, entry):
 
 # The .conf file whose [<object name>] stanza holds each type's own settings.
 # Dashboards, navigation and panels are XML files (all their settings are
-# their own), props-based objects are a single setting, and lookup files are
-# files, so they are not here.
+# their own), props-based objects are a single line of a shared stanza (see
+# PROPS_TYPES), and lookup files are files, so they are not here.
 STANZA_CONFS = {
     "savedsearch": "savedsearches", "macro": "macros", "eventtype": "eventtypes", "tag": "tags",
     "transform": "transforms", "lookupdef": "transforms", "workflow": "workflow_actions",
@@ -339,57 +339,158 @@ STANZA_CONFS = {
     "alertaction": "alert_actions",
 }
 
+# Objects that are one line of a props.conf stanza (``EXTRACT-x``,
+# ``FIELDALIAS-y``...): the entry names the stanza (``content.stanza``) and the
+# line (``content.attribute``), and the stanza is shared with other objects, so
+# only that one line may be written.
+PROPS_TYPES = ("extraction", "fieldalias", "calcfield", "autolookup", "sourcetyperename")
+PROPS_CONF = "props"
+
+# Why a type is not editable here, for the page: view, nav and panel are one
+# XML document each (the owner's decision: Splunk's own editors suit them
+# better), and a lookup table file is a CSV file with no settings.
+# Every other listed type is editable.
+NOT_EDITABLE = ("view", "nav", "panel", "lookupfile")
+
+# Types for which splunkd's ``fields`` are not the conf keys of the stanza
+# (observed on 10.6.1: tags reports ``tags`` and ``tag\..*``, alert actions
+# only ``eai:data``), so a new setting is free text there.
+FREE_TEXT_TYPES = ("tag", "alertaction")
+
 # Where an object's own stanza can be, lowest priority first: the app's
 # default folder, its local folder, then the owner's private folder.
 OWN_LAYERS = ("default", "local", "user")
 
+# Bounds on a staged settings edit.
+MAX_SETTINGS_PER_OBJECT = 200
+MAX_SETTING_NAME = 256
+MAX_SETTING_VALUE = 65536
+# Control characters refused in a value: a newline and a tab are ordinary in
+# searches and macros, anything else (NUL, CR, escape...) is not.
+VALUE_CONTROL_RE = re.compile(u"[\u0000-\u0008\u000b-\u001f\u007f]")
 
-def explicit_settings(files, stanza):
-    """The settings set in an object's own stanza, as {name, value, layer}.
 
-    ``files`` maps a layer (default, local, user) to that file's text. Like
-    btool, a later layer overrides an earlier one; ``layer`` says where the
-    value in effect comes from. [default] stanzas and other apps' files are
-    not read: what they provide is what the object inherits. Secret values
-    are masked as on the precedence tab.
+def own_setting_target(type_id, entry, name):
+    """Where an object's own settings live: (conf, stanza, only_attribute) or None.
+
+    Stanza types use the object's name as stanza. A props-based object is one
+    line of a stanza shared with other objects, so both the stanza and the
+    line come from splunkd's own entry for it, never from the request, and
+    ``only_attribute`` is that line.
     """
-    found = {}
+    if type_id in STANZA_CONFS:
+        return STANZA_CONFS[type_id], name, None
+    if type_id in PROPS_TYPES:
+        content = entry.get("content") or {}
+        stanza = as_text(content.get("stanza"))
+        attribute = as_text(content.get("attribute"))
+        if stanza and attribute:
+            return PROPS_CONF, stanza, attribute
+    return None
+
+
+def _own_history(files, stanza, only=None):
+    """{setting: [(layer, raw value), ...]}, lowest layer first, for one stanza."""
+    history = {}
     for layer in OWN_LAYERS:
         text = files.get(layer)
         if text is None:
             continue
-        for name, attrs in conf_core.parse_conf(text):
-            if name != stanza:
+        for stanza_name, attrs in conf_core.parse_conf(text):
+            if stanza_name != stanza:
                 continue
             for attr, value in attrs.items():
-                found[attr] = {"name": attr, "layer": layer, "value": value}
+                if only is not None and attr != only:
+                    continue
+                history.setdefault(attr, []).append((layer, value))
+    return history
+
+
+def _shown(attr, value):
+    """(text, truncated) of a value as the panel may see it: masked, capped."""
+    text = conf_core.MASK if conf_core.is_secret(attr) and value else value
+    return text[:MAX_DETAIL_VALUE], len(text) > MAX_DETAIL_VALUE
+
+
+def explicit_settings(files, stanza, only=None):
+    """The settings set in an object's own stanza, as {name, value, layer, ...}.
+
+    ``files`` maps a layer (default, local, user) to that file's text. Like
+    btool, a later layer overrides an earlier one; ``layer`` says where the
+    value in effect comes from, and ``overrides`` lists the values it hides
+    (lowest layer first) so the page can show the default on request.
+    [default] stanzas and other apps' files are not read: what they provide
+    is what the object inherits. Secret values are masked as on the
+    precedence tab, in ``overrides`` too. ``only`` limits the answer to one
+    setting (a props-based object is one line of a shared stanza).
+    """
+    history = _own_history(files, stanza, only)
     settings = []
-    for attr in sorted(found, key=str.lower):
-        item = found[attr]
-        value = conf_core.MASK if conf_core.is_secret(attr) and item["value"] else item["value"]
-        settings.append({"name": attr, "layer": item["layer"], "value": value[:MAX_DETAIL_VALUE],
-                         "truncated": len(value) > MAX_DETAIL_VALUE})
+    for attr in sorted(history, key=str.lower):
+        layer, raw = history[attr][-1]
+        value, truncated = _shown(attr, raw)
+        overrides = []
+        for lower_layer, lower_raw in history[attr][:-1]:
+            lower_value, lower_truncated = _shown(attr, lower_raw)
+            overrides.append({"layer": lower_layer, "value": lower_value, "truncated": lower_truncated})
+        settings.append({"name": attr, "layer": layer, "value": value, "truncated": truncated,
+                         "secret": conf_core.is_secret(attr), "overrides": overrides})
     return settings
 
 
-def add_explicit(details, gateway, type_id, ns, app, name):
+def _wildcards(fields):
+    patterns = []
+    for pattern in fields.get("wildcard") or []:
+        try:
+            patterns.append(re.compile("^(?:%s)$" % pattern))
+        except re.error:
+            continue
+    return patterns
+
+
+def add_explicit(details, gateway, type_id, ns, app, name, entry=None):
     """Add the object's own settings to ``details``, or say why they are absent.
 
     Reading files bypasses splunkd's per-object permissions, so, as on the
-    precedence tab, only callers with admin_all_objects get them.
+    precedence tab, only callers with admin_all_objects get them. The same
+    holds for editing, whose result is verified by reading the files.
+    ``editable`` says whether this caller may stage settings edits, and
+    ``edit_note`` why not.
     """
-    conf = STANZA_CONFS.get(type_id)
-    details["explicit"] = None
-    if conf is None:
+    entry = entry or {}
+    details.update({"explicit": None, "editable": False, "edit_layer": None, "edit_note": None,
+                    "addable": [], "addable_patterns": [], "free_text": False})
+    target = own_setting_target(type_id, entry, name)
+    if target is None:
         details["explicit_note"] = "kind"
+        details["edit_note"] = "kind"
         return details
+    conf, stanza, only = target
     if "admin_all_objects" not in (gateway.current_context().get("capabilities") or []):
         details["explicit_note"] = "capability"
+        details["edit_note"] = "capability"
         return details
     files = gateway.read_own_conf(conf, app, ns if ns != "nobody" else None)
-    details["explicit"] = explicit_settings(files, name)
+    details["explicit"] = explicit_settings(files, stanza, only)
     details["explicit_note"] = None
     details["explicit_conf"] = conf
+    acl = entry.get("acl") or {}
+    if not _is_true(acl.get("can_write", False)):
+        details["edit_note"] = "write"
+        return details
+    details["editable"] = True
+    details["edit_layer"] = "user" if as_text(acl.get("sharing")) == "user" else "local"
+    if only is not None:
+        return details    # a props-based object is its one line: nothing to add
+    if type_id in FREE_TEXT_TYPES:
+        details["free_text"] = True
+        return details
+    fields = entry.get("fields") or {}
+    own = set(s["name"] for s in details["explicit"])
+    names = set(fields.get("required") or []) | set(fields.get("optional") or [])
+    details["addable"] = sorted((n for n in names if not n.startswith("eai:") and n not in own
+                                 and not conf_core.is_secret(n)), key=str.lower)
+    details["addable_patterns"] = [p for p in (fields.get("wildcard") or []) if isinstance(p, str)]
     return details
 
 
@@ -538,6 +639,56 @@ def _create_one(gateway, spec, user):
     return {"name": name, "status": "applied", "message": 'Created the app "%s".' % name}
 
 
+def parse_settings(raw, type_id, where):
+    """Validate the settings edits of one change: [{name, value, previous}].
+
+    ``previous`` is the value the page saw (null for a setting the object did
+    not have), checked again at Apply so an edit never overwrites a change
+    made elsewhere. Names are checked against what the object may hold when
+    it is applied (that needs splunkd's own entry for it); here only their
+    shape. Secrets are masked on the page, so they are not edited here.
+    """
+    if type_id in NOT_EDITABLE:
+        raise EasyAdminError("%s: the settings of %s objects cannot be edited here." % (
+            where, TYPES[type_id]["label"].lower()))
+    if not isinstance(raw, list) or not raw:
+        raise EasyAdminError("%s: 'settings' must be a non-empty list." % where)
+    if len(raw) > MAX_SETTINGS_PER_OBJECT:
+        raise EasyAdminError("%s: at most %d settings can be changed on one object." % (
+            where, MAX_SETTINGS_PER_OBJECT))
+    settings = []
+    seen = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            raise EasyAdminError("%s: each setting must be an object." % where)
+        name = item.get("name")
+        if not isinstance(name, str) or not name or len(name) > MAX_SETTING_NAME:
+            raise EasyAdminError("%s: a setting needs a name of 1 to %d characters." % (where, MAX_SETTING_NAME))
+        if (CONTROL_RE.search(name) or "=" in name or name[0] in "[#" or name != name.strip()
+                or name.startswith("eai:")):
+            raise EasyAdminError("%s: %r is not a name a setting can have." % (where, name))
+        if conf_core.is_secret(name):
+            raise EasyAdminError('%s: "%s" looks like a secret, and secrets are not edited here.' % (where, name))
+        if name in seen:
+            raise EasyAdminError("%s: the setting \"%s\" is listed twice." % (where, name))
+        seen.add(name)
+        value = item.get("value")
+        if not isinstance(value, str):
+            raise EasyAdminError('%s: the value of "%s" must be text.' % (where, name))
+        if len(value) > MAX_SETTING_VALUE:
+            raise EasyAdminError('%s: the value of "%s" is longer than %d characters.' % (
+                where, name, MAX_SETTING_VALUE))
+        if VALUE_CONTROL_RE.search(value):
+            raise EasyAdminError('%s: the value of "%s" contains control characters.' % (where, name))
+        if "previous" not in item:
+            raise EasyAdminError('%s: "%s" needs the value it had when the page loaded ("previous").' % (where, name))
+        previous = item.get("previous")
+        if previous is not None and (not isinstance(previous, str) or len(previous) > MAX_SETTING_VALUE):
+            raise EasyAdminError('%s: "previous" of "%s" must be text or null.' % (where, name))
+        settings.append({"name": name, "value": value, "previous": previous})
+    return settings
+
+
 def parse_changes(raw, allow_empty=False):
     """Validate the page's change list. One entry per object, all of its edits.
 
@@ -564,14 +715,17 @@ def parse_changes(raw, allow_empty=False):
             raise EasyAdminError("%s repeats an object listed earlier: \"%s\"." % (where, name))
         seen.add(key)
         change = {"key": key, "type": type_id, "ns": ns, "app": app, "name": name,
-                  "move_to": None, "copy_to": None, "acl": None, "delete": False}
+                  "move_to": None, "copy_to": None, "acl": None, "delete": False, "settings": None}
 
         if entry.get("delete") is not None:
             if entry.get("delete") is not True:
                 raise EasyAdminError("%s: 'delete' must be true when present." % where)
-            if any(entry.get(k) is not None for k in ("move_to", "copy_to", "acl")):
+            if any(entry.get(k) is not None for k in ("move_to", "copy_to", "acl", "settings")):
                 raise EasyAdminError("%s: a deleted object cannot also be moved, copied or changed." % where)
             change["delete"] = True
+
+        if entry.get("settings") is not None:
+            change["settings"] = parse_settings(entry.get("settings"), type_id, where)
 
         if entry.get("move_to") is not None and entry.get("copy_to") is not None:
             raise EasyAdminError("%s: an object is either moved or copied, not both." % where)
@@ -602,7 +756,7 @@ def parse_changes(raw, allow_empty=False):
                 clean["write"] = _clean_roles(acl.get("write", []), "%s write" % where)
             change["acl"] = clean
 
-        if not (change["delete"] or change["move_to"] or change["copy_to"] or change["acl"]):
+        if not (change["delete"] or change["move_to"] or change["copy_to"] or change["acl"] or change["settings"]):
             raise EasyAdminError("%s for \"%s\" changes nothing." % (where, name))
         changes.append(change)
     return changes
@@ -713,8 +867,127 @@ def _copy_one(gateway, change, entry, user):
     return "applied", 'Copied %s "%s" to "%s".' % (label, name, target)
 
 
+def _squash(text):
+    """Whitespace-insensitive form, to compare a value with what the file holds.
+
+    A conf file keeps a multi-line value with continuation backslashes, and
+    trims the ends, so the comparison ignores the whitespace layout only.
+    """
+    return " ".join((text or "").replace("\\\n", "\n").split())
+
+
+def _apply_settings(gateway, change, user):
+    """Write the staged settings of one object. Returns (status, message).
+
+    The write goes to ``configs/conf-<conf>/<stanza>`` and not to the type's
+    own endpoint: on 10.6.1 that wrote exactly the posted keys into the app's
+    local file (or the owner's folder for a private object, or etc/system/
+    local), kept the object's sharing and roles, and created the file when
+    the app had none. The type endpoints refuse partial edits (a macro needs
+    ``definition`` and ``args`` again, a transform its REGEX) and one dropped
+    an alias that was not posted. splunkd can answer 200 and write nothing
+    for props and tags, so the result is read back from the files.
+    """
+    type_id, ns, app, name = change["type"], change["ns"], change["app"], change["name"]
+    label = TYPES[type_id]["label"].lower()
+    settings = change["settings"]
+    try:
+        entry = get_in_app(gateway, type_id, ns, app, name, full=True)
+    except GatewayError as error:
+        if error.status == 404:
+            return ("error", '"%s" is no longer in "%s": it was moved, renamed or deleted elsewhere. '
+                    "Reload to see where it is now." % (name, app))
+        raise
+    target = own_setting_target(type_id, entry, name)
+    if target is None:
+        return "error", 'The settings of "%s" cannot be edited here.' % name
+    if "admin_all_objects" not in (gateway.current_context().get("capabilities") or []):
+        return "error", "Editing settings needs the admin_all_objects capability, as it reads the configuration files."
+    acl = entry.get("acl") or {}
+    if not _is_true(acl.get("can_write", False)):
+        return "error", 'Your account cannot write to "%s".' % name
+    conf, stanza, only = target
+    reader_user = ns if ns != "nobody" else None
+    layer = "user" if as_text(acl.get("sharing")) == "user" else "local"
+
+    history = _own_history(gateway.read_own_conf(conf, app, reader_user), stanza, only)
+    # Compare with the value in effect in the object's own files, where the
+    # page saw it: a change made elsewhere since is not silently overwritten.
+    for item in settings:
+        current = history[item["name"]][-1][1] if item["name"] in history else None
+        if current != item["previous"]:
+            return "error", ('The settings of "%s" changed since the page loaded ("%s" is not as it was). '
+                             "Reload to see the current values and decide again." % (name, item["name"]))
+
+    fields = entry.get("fields") or {}
+    allowed = set(fields.get("required") or []) | set(fields.get("optional") or [])
+    wildcards = _wildcards(fields)
+    for item in settings:
+        setting = item["name"]
+        if only is not None:
+            # An object is exactly one line of a stanza shared with others:
+            # any other key would change other objects.
+            ok = setting == only
+        else:
+            ok = (setting in history or type_id in FREE_TEXT_TYPES or setting in allowed
+                  or any(w.match(setting) for w in wildcards))
+        if not ok:
+            return "error", ('"%s" is not a setting splunkd lists for %s "%s", so it was not written.' % (
+                setting, label, name) if only is None else
+                '%s "%s" is the single setting "%s"; other settings of its stanza belong to other objects.' % (
+                    TYPES[type_id]["label"], name, only))
+
+    gateway.set_conf(ns, app, conf, stanza, dict((s["name"], s["value"]) for s in settings))
+
+    after = _own_history(gateway.read_own_conf(conf, app, reader_user), stanza, only)
+    missing = []
+    for item in settings:
+        seen = dict(after.get(item["name"], []))
+        if layer not in seen or _squash(seen[layer]) != _squash(item["value"]):
+            missing.append(item["name"])
+    if missing:
+        logger.warning("user=%s action=settings type=%s app=%s owner_ns=%s name=%s keys=%s did not reach the %s file",
+                       user, type_id, app, ns, json.dumps(name), json.dumps(missing), layer)
+        return "error", ('splunkd accepted the change to "%s" but %s did not reach %s\'s %s file; '
+                         "nothing was changed for %s." % (name, ", ".join('"%s"' % m for m in missing), app,
+                                                          "private" if layer == "user" else "local",
+                                                          "them" if len(missing) > 1 else "it"))
+    # Names only: a value can be a search, a path or a credential in a custom key.
+    logger.info("user=%s action=settings type=%s app=%s owner_ns=%s name=%s keys=%s",
+                user, type_id, app, ns, json.dumps(name), json.dumps([s["name"] for s in settings]))
+    return "applied", 'Changed %s of %s "%s".' % (plural_settings(len(settings)), label, name)
+
+
+def plural_settings(count):
+    return "%d setting%s" % (count, "" if count == 1 else "s")
+
+
 def _apply_one(gateway, change, user):
-    """Apply one object's edits. Returns (status, message, moved_to)."""
+    """Apply one object's edits. Returns (status, message, moved_to).
+
+    Settings go first, so the values checked against ``previous`` are the
+    ones the page saw before anything moved. Each later step reports what
+    already happened if it fails.
+    """
+    if not change.get("settings"):
+        return _apply_object(gateway, change, user)
+    status, message = _apply_settings(gateway, change, user)
+    if status == "error":
+        return status, message, None
+    change["settings_applied"] = True
+    if not (change["move_to"] or change["copy_to"] or change["acl"]):
+        return status, message, None
+    try:
+        rest = _apply_object(gateway, change, user)
+    except GatewayError as error:
+        return ("error", 'The settings of "%s" were changed, but the rest was not: %s' % (change["name"], error), None)
+    if rest[0] == "error":
+        return "error", 'The settings of "%s" were changed, but the rest was not: %s' % (change["name"], rest[1]), rest[2]
+    return "applied", "%s %s" % (message, rest[1]), rest[2]
+
+
+def _apply_object(gateway, change, user):
+    """Apply one object's move, copy, permissions or delete. (status, message, moved_to)."""
     type_id, ns, app, name = change["type"], change["ns"], change["app"], change["name"]
     label = TYPES[type_id]["label"].lower()
     path = object_path(type_id, ns, app, name)
@@ -820,7 +1093,7 @@ def submit_changes(gateway, raw_changes, user="unknown", raw_apps=None):
         target = change["move_to"] or change["copy_to"]
         if target in not_created:
             results.append({"key": change["key"], "status": "error", "moved_to": None, "copied_to": None,
-                            "copy_instead": False,
+                            "copy_instead": False, "settings_applied": False,
                             "message": '"%s" was not %s: the app "%s" was not created.' % (
                                 change["name"], "moved" if change["move_to"] else "copied", target)})
             continue
@@ -836,7 +1109,9 @@ def submit_changes(gateway, raw_changes, user="unknown", raw_apps=None):
         # moved, and it can be copied; the page offers to stage a copy.
         results.append({"key": change["key"], "status": status, "message": message,
                         "moved_to": moved_to, "copied_to": change["copy_to"] if change.get("copied") else None,
-                        "copy_instead": bool(change.get("copy_instead"))})
+                        "copy_instead": bool(change.get("copy_instead")),
+                        # The settings were written even if a later step failed.
+                        "settings_applied": bool(change.get("settings_applied"))})
     everything = app_results + results
     return {
         "apps": app_results,
@@ -894,8 +1169,8 @@ def handle_request(method, body, query, gateway, user="unknown"):
         if method == "GET":
             if query.get("type") is not None:
                 type_id, ns, app, name = parse_object_ref(query, "Object")
-                details = build_details(type_id, get_in_app(gateway, type_id, ns, app, name, full=True))
-                return 200, add_explicit(details, gateway, type_id, ns, app, name)
+                found = get_in_app(gateway, type_id, ns, app, name, full=True)
+                return 200, add_explicit(build_details(type_id, found), gateway, type_id, ns, app, name, found)
             return 200, read_model(gateway)
         if method == "POST":
             document = extract_document(body)

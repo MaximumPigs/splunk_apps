@@ -53,6 +53,17 @@ def _open(open_view, builtin=True):
     return page
 
 
+def _room_to_drag(page):
+    """Make the window tall enough to hold every app box.
+
+    Playwright's drag starts with a press and one move: when the target box is
+    outside the window the browser never starts the drag (observed once the dev
+    target had 30 apps: no dragstart, nothing staged), so a drag needs both ends
+    on screen.
+    """
+    page.set_viewport_size({"width": 1440, "height": 2600})
+
+
 def _object(page, app, name):
     """The row of the object called exactly ``name`` (not one whose badges contain the text)."""
     return page.locator('%s .ea-app[data-app="%s"] .ea-object:has(.ea-object-name:text-is("%s"))'
@@ -211,6 +222,7 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     """Dragging an object onto another app's box stages a move, marked on the object; Apply moves it."""
     name = macro()
     page = _open(open_view)
+    _room_to_drag(page)
     page.locator(ROOT + " .ea-filter").fill(name)
     # Dropped back on its own app: nothing is staged, and the page says so.
     _object(page, "search", name).drag_to(page.locator(ROOT + ' .ea-app[data-app="search"] .ea-app-head'))
@@ -376,6 +388,7 @@ def test_dragging_a_default_object_stages_a_copy(open_view, sandbox_client, clea
     name = _shipped_search_macro(sandbox_client)
     cleanup_launcher_macros.append(name)
     page = _open(open_view)
+    _room_to_drag(page)
     page.locator(ROOT + " .ea-filter").fill(name)
     source = _object(page, "search", name)
     assert source.get_attribute("draggable") == "true"
@@ -687,6 +700,7 @@ def test_dropping_an_object_on_a_staged_app_stages_a_move(open_view, macro):
     name = macro()
     page = _open(open_view)
     box = _stage_new_app(page)
+    _room_to_drag(page)
     page.locator(ROOT + " .ea-filter").fill(name)
     _object(page, "search", name).drag_to(box)
     moved = _object(page, NEW_APP, name)

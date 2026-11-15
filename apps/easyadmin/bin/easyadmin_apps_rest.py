@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from splunk.persistconn.application import PersistentServerConnectionApplication  # noqa: E402
 
 import easyadmin_apps_core as apps_core  # noqa: E402
+import easyadmin_conf_core as conf_core  # noqa: E402
 import easyadmin_conf_rest as conf_rest  # noqa: E402  (a module: its handler class stays out of this one)
 import easyadmin_core as core  # noqa: E402
 import easyadmin_rest as roles_rest  # noqa: E402  (a module, so its handler class stays out of this one)
@@ -117,6 +118,19 @@ class AppsGateway(roles_rest.SplunkdGateway):
 
     def set_acl(self, path, postargs):
         self._request(path + "/acl", method="POST", postargs=postargs)
+
+    def set_conf(self, ns, app, conf, stanza, postargs):
+        # Writes only the posted keys of one stanza of <conf>.conf, in the
+        # object's app (local, or the owner's folder for a private object).
+        # The configs endpoint is used rather than the object type's own,
+        # which refuses partial edits (see easyadmin_apps_core._apply_settings).
+        # ``conf`` is chosen by the core from a fixed map, never from the
+        # request: refuse anything else so it cannot alter the path.
+        if not conf_core.CONF_NAME_RE.match(conf):
+            raise core.GatewayError("Not a configuration file name.", status=400)
+        self._request("/servicesNS/%s/%s/configs/conf-%s/%s" % (
+            quote(ns, safe=""), quote(app, safe=""), conf, quote(stanza, safe="")),
+            method="POST", postargs=dict(postargs))
 
     def delete_object(self, path):
         self._request(path, method="DELETE")

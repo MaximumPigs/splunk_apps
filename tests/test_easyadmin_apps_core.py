@@ -18,7 +18,7 @@ HOST = "https://127.0.0.1:8089"
 
 
 def entry(type_id, name, app, owner="nobody", sharing="app", ns=None, local=True,
-          read=("*",), write=("admin",), can_change_perms=True, content=None, fields=None):
+          read=("*",), write=("admin",), can_change_perms=True, content=None, fields=None, can_write=True):
     ns = ns or (owner if sharing == "user" else "nobody")
     links = {"edit": "x", "list": "x"}
     if local:
@@ -29,7 +29,7 @@ def entry(type_id, name, app, owner="nobody", sharing="app", ns=None, local=True
         "acl": {"app": app, "owner": owner, "sharing": sharing,
                 "perms": None if sharing == "user" else {"read": list(read), "write": list(write)},
                 "can_change_perms": can_change_perms, "can_share_app": True,
-                "can_share_global": True, "removable": local},
+                "can_share_global": True, "removable": local, "can_write": can_write},
         "links": links,
         "fields": fields or {},
         "content": dict(content or {"disabled": False}),
@@ -557,12 +557,14 @@ def test_explicit_settings_merge_the_objects_own_layers():
 
 def test_explicit_settings_mask_secrets_and_ignore_the_default_stanza():
     settings = apps.explicit_settings({"local": "[a]\npassword = hunter2\n[default]\nx = 1\n"}, "a")
-    assert settings == [{"name": "password", "layer": "local", "value": "********", "truncated": False}]
+    assert settings == [{"name": "password", "layer": "local", "value": "********", "truncated": False,
+                         "secret": True, "overrides": []}]
 
 
 def test_private_object_settings_come_from_the_owners_folder():
     settings = apps.explicit_settings({"local": "[m]\ndefinition = shared\n", "user": "[m]\ndefinition = mine\n"}, "m")
-    assert settings == [{"name": "definition", "layer": "user", "value": "mine", "truncated": False}]
+    assert settings == [{"name": "definition", "layer": "user", "value": "mine", "truncated": False,
+                         "secret": False, "overrides": [{"layer": "local", "value": "shared", "truncated": False}]}]
 
 
 class ConfGateway(FakeGateway):
@@ -582,7 +584,8 @@ def test_details_include_the_objects_own_settings_for_admins():
     status, body = apps.handle_request("GET", None, {"type": "macro", "ns": "nobody", "app": "search", "name": "m1"},
                                        gateway)
     assert status == 200
-    assert body["explicit"] == [{"name": "definition", "layer": "local", "value": "x", "truncated": False}]
+    assert body["explicit"] == [{"name": "definition", "layer": "local", "value": "x", "truncated": False,
+                                 "secret": False, "overrides": []}]
     assert body["explicit_conf"] == "macros" and body["explicit_note"] is None
     assert gateway.reads == [("macros", "search", None)]
     assert len(body["settings"]) == 2   # the full list is still there, for "show all"

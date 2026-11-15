@@ -25,6 +25,7 @@ its format is fixed:
 | 1.3.0 | Configuration precedence tab, btool-style (#19). |
 | 1.4.0 | Copy objects into another app (the default for objects in a default folder); discard one staged change; the object's own settings in the panel; locks from splunkd's `removable` flag (#20). |
 | 1.5.0 | Create a new app (barebones template), or clone one with copies of its copyable objects, staged as pending boxes and run by Apply; a restart notice only when splunkd asks (creating needs none on 10.6.1). |
+| 1.6.0 | Edit the individual settings of a knowledge object from its panel: filter, copy, show the default value, edit and add settings, staged with the old and new value and written to the app's local configuration by Apply. No delete of a local setting: splunkd has no REST call for it. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -86,65 +87,6 @@ Probe first: whether a lookup file's contents can be written through REST
 or a search on 9.3 and 10.x without Splunk's upload staging folder (for
 example `outputlookup` run in the target app's namespace), and the largest
 JSON body the page's REST endpoint accepts (upload and paste).
-
-### 3. Edit individual settings of a knowledge object
-Status: in-progress
-
-From inside the object's settings in the details panel.
-
-- Changes to default settings are made in the object's local config.
-- If the app has no local file yet, it is created in that app, and the
-  object keeps its sharing and permissions.
-- When viewing settings, each one shows where it is set (default or local).
-  (Partly done in 1.4.0: own settings are badged `default`, `local` or
-  `private`.)
-- A setting set in both can show the default value on request.
-- Local settings can be deleted.
-- A filter searches the settings; when it has text, it shows every
-  matching setting, including ones otherwise hidden (inherited defaults).
-- Settings are shown in code blocks or similar, with a "copy" button on
-  hover.
-- An edit is staged as a pending change, showing the old and new value, and
-  written by Apply.
-- A new setting can be added from the settings splunkd reports for that
-  object type, with free text as a fallback for types where splunkd lists
-  none.
-- Covers every listed type except dashboards, navigation menus and prebuilt
-  panels, which are better edited in Splunk's own editors.
-- If a single local setting cannot be removed through REST, delete is left
-  out and the README says why.
-- [x] Is an edit staged as a pending change and written by Apply, like the
-  page's other changes, or saved at once? Recommendation: staged, with the
-  old and new value shown on the pending change.: Staged.
-- [x] Can the person add a setting the object does not have yet, or only
-  edit and delete existing ones? Options: (a) existing only; (b) add any
-  name as free text; (c) add from the settings splunkd reports for that
-  object type. Recommendation: (c), with free text as a fallback for types
-  where splunkd lists none.: (c), as recommended.
-- [x] Which object types does this cover? Dashboards, navigation menus and
-  prebuilt panels are one XML document each (their only setting is the
-  XML). Recommendation: every listed type except those three, which are
-  better edited in Splunk's own editors.: Agreed, as recommended.
-- [x] If the probe below shows a single local setting cannot be removed
-  through REST, what should "delete" do? Options: (a) leave delete out and
-  say why in the README; (b) "reset to default" by writing the default value
-  into local, which stops inheriting later changes to the default; (c) offer
-  delete on Splunk Enterprise only, through file writes, if AppInspect
-  allows it. Recommendation: (a), since (b) looks like a delete but is not
-  one.: (a).
-
-Probe result (10.6.1, 2026-11-15): no REST call removes one local
-setting (`properties` key DELETE: "Key deletion is not supported"; the
-`configs` stanza DELETE of a default-backed object is refused; writing the
-default or an empty value keeps the key in local), so delete is left out.
-Edits are written with `configs/conf-<file>/<stanza>`, which wrote only the
-posted keys into the app's local (or the owner's) folder and kept sharing.
-
-Probe first: splunkd's REST API sets a value but has no call to remove
-one attribute from local while keeping the default. Posting an empty value
-overrides it with empty instead. Deleting a local setting may need the
-configuration endpoints (merged, see the copy lessons) or file writes, which
-Splunk Cloud does not allow.
 
 ### Low priority: Deployment apps portal
 Status: blocked
