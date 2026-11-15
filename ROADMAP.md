@@ -161,7 +161,7 @@ Notes:
   app): see the open question above.
 
 ### Proposed: Details panel makes two splunkd calls it does not need
-Status: ready
+Status: in-progress
 
 Opening an object's details panel runs `add_explicit`
 (`apps/easyadmin/bin/easyadmin_apps_core.py:375`), which calls
