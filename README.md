@@ -467,7 +467,7 @@ sees it either way.
 ```bash
 pip install splunk-appinspect
 python scripts/package_app.py fillcontinuous --outdir dist
-splunk-appinspect inspect dist/fillcontinuous-1.1.1.spl --mode test
+splunk-appinspect inspect dist/fillcontinuous-1.1.2.spl --mode test
 ```
 
 Or `splk inspect fillcontinuous`, which does both steps and also fails on any

@@ -9,6 +9,7 @@ from fillcontinuous_core import (
     DEFAULT_MAX_BUCKETS,
     FillContinuousError,
     build_grid,
+    field_names,
     fill,
     infer_span,
     parse_span,
@@ -408,3 +409,41 @@ def test_fill_allows_a_product_within_the_row_limit():
 def test_fill_treats_none_max_rows_as_the_default():
     records = [_record(100, "A", "x", 1), _record(300, "A", "x", 3)]
     assert fill(records, ["host"], span=100, max_rows=None).bucket_count == 3
+
+
+# ---------------------------------------------------------------------------
+# field_names
+# ---------------------------------------------------------------------------
+
+def test_field_names_is_the_ordered_union_without_duplicates():
+    records = [{"b": 1, "a": 2}, {"a": 3, "c": 4}, {"d": 5, "b": 6}]
+    assert field_names(records) == ["b", "a", "c", "d"]
+
+
+def test_field_names_of_nothing_is_empty():
+    assert field_names([]) == []
+
+
+def test_field_names_sees_internal_fields_that_only_a_later_real_row_has():
+    # A synthesised row sorts first and omits _raw and _extra; the real row
+    # after it carries them. The union must include both.
+    records = [
+        {"_time": "0", "host": "a", "count": "5"},
+        {"_time": "3600", "host": "a", "count": "1", "_raw": "r", "_extra": "x"},
+    ]
+    result = fill(records, ["host"], span=HOUR)
+    assert result.records[0].get("_raw") is None
+    names = field_names(result.records)
+    assert "_raw" in names and "_extra" in names
+    assert len(names) == len(set(names))
+
+
+def test_field_names_includes_a_field_only_a_passthrough_row_carries():
+    records = [
+        {"_time": "0", "host": "a", "count": "1"},
+        {"_time": "7200", "host": "a", "count": "2"},
+        {"host": "a", "count": "3", "only_here": "y"},      # no _time
+    ]
+    result = fill(records, ["host"], span=HOUR)
+    assert result.skipped_count == 1
+    assert "only_here" in field_names(result.records)

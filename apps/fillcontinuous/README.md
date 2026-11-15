@@ -176,7 +176,9 @@ want the field genuinely empty.
   consistent columns.
 - **`_span` is carried through** with the span in seconds when the input had it.
   Other internal (`_`-prefixed) fields are omitted from synthesised rows, since
-  there is no meaningful zero for them.
+  there is no meaningful zero for them. Real rows always keep every field they
+  arrived with, including `_raw` and other `_` fields, even when a synthesised
+  row is the first one written.
 - **Output is ordered by `_time`, then by the group-by values**, matching the
   ordering of the `stats by _time, ...` that almost always precedes it.
 

@@ -8,6 +8,9 @@ They require the vendored splunklib under apps/fillcontinuous/lib/, which the
 module under test puts on sys.path itself.
 """
 
+import csv
+import io
+
 import pytest
 
 fillcontinuous = pytest.importorskip(
@@ -28,6 +31,12 @@ def command():
     # write_* go through the record writer, which only exists once process()
     # has run, so collect the messages instead.
     instance.messages = []
+
+    # transform registers field names on the real writer. Use the SDK's own
+    # RecordWriterV2 so first-record column semantics are the real ones, not a
+    # copy of them.
+    from splunklib.searchcommands.internals import RecordWriterV2
+    instance._record_writer = RecordWriterV2(io.BytesIO())
 
     def _recorder(level):
         def writer(message, *args, **kwargs):
@@ -229,3 +238,51 @@ def test_transform_clears_its_buffer_between_runs(command):
     command._finished = True
     list(command.transform(iter([{"_time": "0", "host": "A", "count": "1"}])))
     assert command._buffered == []
+
+
+def _written_rows(command, records):
+    """Drive transform the way the SDK does and parse what reaches the wire."""
+    command._finished = True
+    command._record_writer.write_records(command.transform(iter(records)))
+    text = command._record_writer._buffer.getvalue()
+    # The first CSV block is the header plus rows; __mv_ columns are SDK noise.
+    rows = list(csv.DictReader(io.StringIO(text)))
+    return [{k: v for k, v in row.items() if not k.startswith("__mv_")} for row in rows]
+
+
+def test_real_rows_keep_internal_fields_when_a_filled_row_comes_first(command):
+    command.fieldnames = ["host"]
+    command.span = "1h"
+    command.prepare()
+
+    # host b at 0 and host a at 7200: the first row out is a synthesised
+    # (0, a). Without registering the union on custom_fields this test fails,
+    # because the chunk's columns come from that synthesised row.
+    rows = _written_rows(command, [
+        {"_time": "0", "host": "b", "_raw": "event 1", "_extra": "x1"},
+        {"_time": "7200", "host": "a", "_raw": "event 2", "_extra": "x2"},
+    ])
+
+    assert rows[0]["host"] == "a" and rows[0]["_time"] == "0"      # synthesised first
+    real = {(r["_time"], r["host"]): r for r in rows if r["_raw"]}
+    assert real[("0", "b")]["_raw"] == "event 1"
+    assert real[("0", "b")]["_extra"] == "x1"
+    assert real[("7200", "a")]["_raw"] == "event 2"
+    assert real[("7200", "a")]["_extra"] == "x2"
+    synthesised = [r for r in rows if (r["_time"], r["host"]) not in real]
+    assert len(synthesised) == 4
+    assert all(r["_raw"] == "" and r["_extra"] == "" for r in synthesised)
+
+
+def test_a_passthrough_row_keeps_a_field_no_timed_row_has(command):
+    command.fieldnames = ["host"]
+    command.span = "1h"
+    command.prepare()
+
+    rows = _written_rows(command, [
+        {"_time": "0", "host": "a", "count": "1"},
+        {"_time": "7200", "host": "a", "count": "2"},
+        {"host": "a", "count": "3", "only_here": "y"},
+    ])
+
+    assert [r["only_here"] for r in rows if r["only_here"]] == ["y"]
