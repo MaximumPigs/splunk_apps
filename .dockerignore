@@ -5,7 +5,6 @@
 .agent
 .env
 **/.env
-docker/licence
 dist
 build
 packages

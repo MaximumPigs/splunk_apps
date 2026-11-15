@@ -71,6 +71,72 @@ def test_unknown_target_lists_known_ones(targets_file):
         config.resolve_target("nope", path=targets_file, environ={})
 
 
+FROM_ENV = """\
+default_target = "local"
+
+[targets.local]
+host = "127.0.0.1"
+
+[targets.server]
+from_env = true
+host = "splunk.invalid"
+allow_restart = false
+stage_dir = "/stage"
+"""
+
+
+def test_from_env_target_takes_overrides(tmp_path):
+    path = tmp_path / "targets.toml"
+    path.write_text(FROM_ENV)
+    environ = {"SPLUNK_TOKEN": "t", "SPLK_TARGET_HOST": "splunk.lan", "SPLK_TARGET_PORT": "18089",
+               "SPLK_TARGET_ALLOW_RESTART": "true", "SPLK_TARGET_VERIFY_TLS": "yes",
+               "SPLK_TARGET_SERVER_STAGE_DIR": "/mnt/stage", "SPLK_TARGET_WEB_URL": "http://splunk.lan:8000"}
+    target = config.resolve_target("server", path=str(path), environ=environ)
+    assert (target.host, target.port, target.allow_restart, target.verify_tls) == ("splunk.lan", 18089, True, True)
+    assert (target.stage_dir, target.server_stage_dir) == ("/stage", "/mnt/stage")
+    assert target.web_url == "http://splunk.lan:8000"
+
+
+def test_from_env_defaults_apply_without_overrides(tmp_path):
+    path = tmp_path / "targets.toml"
+    path.write_text(FROM_ENV)
+    target = config.resolve_target("server", path=str(path), environ={"SPLUNK_TOKEN": "t"})
+    assert target.host == "splunk.invalid" and target.allow_restart is False
+
+
+def test_targets_without_from_env_ignore_overrides(tmp_path):
+    path = tmp_path / "targets.toml"
+    path.write_text(FROM_ENV)
+    target = config.resolve_target("local", path=str(path),
+                                   environ={"SPLUNK_TOKEN": "t", "SPLK_TARGET_HOST": "evil.example"})
+    assert target.host == "127.0.0.1"
+
+
+def test_loop_steps_take_target_settings_from_env_file_only(tmp_path, monkeypatch):
+    path = tmp_path / "targets.toml"
+    path.write_text(FROM_ENV)
+    env_file = tmp_path / ".env"
+    env_file.write_text("SPLK_TARGET=server\nSPLK_TARGET_HOST=splunk.lan\n")
+    monkeypatch.setattr(config.paths, "ENV_FILE", str(env_file))
+    # A step overriding the host or restarts in its own environment is ignored.
+    environ = {"SPLK_LOOP": "1", "SPLUNK_TOKEN": "t", "SPLK_TARGET": "local",
+               "SPLK_TARGET_HOST": "attacker.example", "SPLK_TARGET_ALLOW_RESTART": "true"}
+    target = config.resolve_target(path=str(path), environ=environ)
+    assert (target.name, target.host, target.allow_restart) == ("server", "splunk.lan", False)
+    # An explicit --target must match the pinned one.
+    assert config.resolve_target("server", path=str(path), environ=environ).name == "server"
+    with pytest.raises(config.ConfigError, match="not allowed"):
+        config.resolve_target("local", path=str(path), environ=environ)
+
+
+@pytest.mark.parametrize("key,value", [("SPLK_TARGET_PORT", "eighty"), ("SPLK_TARGET_ALLOW_RESTART", "maybe")])
+def test_bad_override_values_fail_loudly(tmp_path, key, value):
+    path = tmp_path / "targets.toml"
+    path.write_text(FROM_ENV)
+    with pytest.raises(config.ConfigError, match=key):
+        config.resolve_target("server", path=str(path), environ={"SPLUNK_TOKEN": "t", key: value})
+
+
 def test_unknown_key_fails_loudly(tmp_path):
     path = tmp_path / "targets.toml"
     path.write_text('default_target = "a"\n[targets.a]\nhost = "h"\nverfy_tls = false\n')

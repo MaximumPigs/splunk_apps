@@ -1,6 +1,6 @@
 # Dev container for `splk loop`: everything the roadmap loop needs to build,
-# vet, deploy and test the apps against the Splunk container in
-# docker/compose.yaml. Build from the repo root:
+# vet, deploy and test the apps against a Splunk instance the owner runs
+# separately (config/targets.toml [targets.server]). Build from the repo root:
 #
 #   docker build -f docker/dev/Dockerfile -t splunk-apps-dev .
 #
@@ -14,6 +14,7 @@ FROM python:3.13-slim-bookworm
 # silently. Bump deliberately (the same version as the desktop install).
 ARG CLAUDE_CODE_VERSION=2.1.325
 ARG LOOP_UID=1000
+ARG LOOP_GID=1000
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -49,11 +50,13 @@ RUN pip install -r /tmp/requirements.txt \
  && python -m playwright install --with-deps chromium \
  && rm /tmp/requirements.txt /tmp/pyproject.toml
 
-# The loop runs as an unprivileged user, never root. /stage is shared with
-# the Splunk container (splunkd installs packages from it); a named volume
-# copies this directory's owner on first use, so the loop user can write it.
-RUN useradd --create-home --uid "${LOOP_UID}" --shell /bin/bash loop \
- && install -d -o loop -g loop /work /stage
+# The loop runs as an unprivileged user, never root. /stage is the mount
+# point for a folder the owner's Splunk instance can also read (splunkd
+# installs packages from it); LOOP_UID/LOOP_GID must be able to write that
+# folder. The group may already exist (gid 100 is "users" on Debian).
+RUN if ! getent group "${LOOP_GID}" >/dev/null; then groupadd --gid "${LOOP_GID}" loop; fi \
+ && useradd --create-home --uid "${LOOP_UID}" --gid "${LOOP_GID}" --shell /bin/bash loop \
+ && install -d -o loop -g "${LOOP_GID}" /work /stage
 
 USER loop
 ENV PATH=/home/loop/.local/bin:${PATH}

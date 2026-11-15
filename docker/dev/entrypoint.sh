@@ -27,10 +27,15 @@ set -euo pipefail
 REPO_DIR=/work/splunk_apps
 SECRETS_DIR=/run/loop-secrets
 SECRETS_FILE="$SECRETS_DIR/secrets.env"
+# Written to the clone's .env. The target settings go there too, not into the
+# loop user's environment: in a loop step splk reads them only from .env, so
+# a step cannot point the token at another host or turn restarts on.
 SECRETS=(GH_TOKEN SPLUNK_TOKEN SPLUNK_WEB_USERNAME SPLUNK_WEB_PASSWORD
-         SPLK_LOOP_GH_TOKEN SPLK_NTFY_TOPIC SPLK_NTFY_TOKEN)
+         SPLK_LOOP_GH_TOKEN SPLK_NTFY_TOPIC SPLK_NTFY_TOKEN
+         SPLK_TARGET SPLK_TARGET_HOST SPLK_TARGET_PORT SPLK_TARGET_VERIFY_TLS
+         SPLK_TARGET_ALLOW_RESTART SPLK_TARGET_SERVER_STAGE_DIR SPLK_TARGET_WEB_URL)
 # Plain settings passed to stage 2 (no secrets except the one steps need).
-PASS_THROUGH=(REPO_URL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL SPLK_TARGET CLAUDE_CODE_OAUTH_TOKEN TZ)
+PASS_THROUGH=(REPO_URL GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL CLAUDE_CODE_OAUTH_TOKEN TZ)
 # What the supervisor runs or trusts from the clone (targets.toml says where
 # the Splunk token goes). A branch that changed any of it must not run with
 # the secrets loaded. This catches accidental or unreviewed tooling changes;
@@ -66,7 +71,8 @@ stage_root() {
       if [ -n "${!key:-}" ]; then printf '%s=%s\n' "$key" "${!key}"; fi
     done > "$SECRETS_FILE"
   )
-  chown loop:loop "$SECRETS_FILE"
+  # Numeric ids: the loop user's group may be an existing one (e.g. users).
+  chown "$(id -u loop):$(id -g loop)" "$SECRETS_FILE"
 
   local env_args=(HOME=/home/loop USER=loop LOGNAME=loop SHELL=/bin/bash
                   "PATH=/home/loop/.local/bin:/usr/local/bin:/usr/bin:/bin"
@@ -74,7 +80,7 @@ stage_root() {
   for key in "${PASS_THROUGH[@]}"; do
     if [ -n "${!key:-}" ]; then env_args+=("$key=${!key}"); fi
   done
-  exec setpriv --reuid=loop --regid=loop --init-groups \
+  exec setpriv --reuid="$(id -u loop)" --regid="$(id -g loop)" --init-groups \
     env -i "${env_args[@]}" bash "$0" --as-loop "$@"
 }
 
@@ -109,7 +115,7 @@ write_env() { (umask 077; printf '%s' "$secrets" > .env); }
 
 wait_for_splunk() {
   until splk doctor; do
-    log "Splunk target ${SPLK_TARGET:-default} not ready (first boot takes minutes; a missing token needs SPLUNK_TOKEN); retrying in 60 s"
+    log "Splunk target not reachable or token rejected (check SPLK_TARGET_HOST and SPLUNK_TOKEN); retrying in 60 s"
     sleep 60
   done
 }
