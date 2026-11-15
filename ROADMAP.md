@@ -88,7 +88,7 @@ example `outputlookup` run in the target app's namespace), and the largest
 JSON body the page's REST endpoint accepts (upload and paste).
 
 ### 3. Edit individual settings of a knowledge object
-Status: ready
+Status: in-progress
 
 From inside the object's settings in the details panel.
 
@@ -132,6 +132,13 @@ From inside the object's settings in the details panel.
   delete on Splunk Enterprise only, through file writes, if AppInspect
   allows it. Recommendation: (a), since (b) looks like a delete but is not
   one.: (a).
+
+Probe result (10.6.1, 2026-11-15): no REST call removes one local
+setting (`properties` key DELETE: "Key deletion is not supported"; the
+`configs` stanza DELETE of a default-backed object is refused; writing the
+default or an empty value keeps the key in local), so delete is left out.
+Edits are written with `configs/conf-<file>/<stanza>`, which wrote only the
+posted keys into the app's local (or the owner's) folder and kept sharing.
 
 Probe first: splunkd's REST API sets a value but has no call to remove
 one attribute from local while keeping the default. Posting an empty value
