@@ -58,6 +58,11 @@ HANDOFF_DIR = os.path.join(LOOP_DIR, "handoff")
 ITEM_FILE = os.path.join(INBOX_DIR, "item.md")
 ANSWERS_FILE = os.path.join(INBOX_DIR, "answers.md")
 FEEDBACK_FILE = os.path.join(INBOX_DIR, "feedback.md")
+# Review findings left unfixed: the review step writes them to handoff/, the
+# supervisor moves them to inbox/ when it opens the PR, and the next groom
+# adds them to ROADMAP.md as proposals, then the supervisor archives them.
+FINDINGS_HANDOFF = os.path.join(HANDOFF_DIR, "findings.md")
+FINDINGS_FILE = os.path.join(INBOX_DIR, "findings.md")
 PLAN_FILE = os.path.join(HANDOFF_DIR, "plan.md")
 PR_TITLE_FILE = os.path.join(HANDOFF_DIR, "pr-title.txt")
 PR_BODY_FILE = os.path.join(HANDOFF_DIR, "pr-body.md")
@@ -180,7 +185,7 @@ def step_environment():
 
 def clear_handoff():
     """Start an item with no plan, PR text or feedback left from the previous one."""
-    for path in (PLAN_FILE, PR_TITLE_FILE, PR_BODY_FILE, FEEDBACK_FILE):
+    for path in (PLAN_FILE, PR_TITLE_FILE, PR_BODY_FILE, FEEDBACK_FILE, FINDINGS_HANDOFF):
         if os.path.exists(path):
             os.remove(path)
 
@@ -315,6 +320,7 @@ def run_step(name, state, settings, model_key=None, extra=None):
         "item_file": paths.display(ITEM_FILE), "answers_file": paths.display(ANSWERS_FILE),
         "feedback_file": paths.display(FEEDBACK_FILE), "plan_file": paths.display(PLAN_FILE),
         "pr_title_file": paths.display(PR_TITLE_FILE), "pr_body_file": paths.display(PR_BODY_FILE),
+        "findings_file": paths.display(FINDINGS_HANDOFF), "review_findings_file": paths.display(FINDINGS_FILE),
         "app": item.get("app") or "(none: repo-wide work)", "title": item.get("title", ""),
         "branch": item.get("branch", ""), "attempt": state.get("attempt", 0) + 1,
         "last_failure": state.get("last_failure") or "(none)",
@@ -368,15 +374,16 @@ def roadmap_items():
 
 def question_issues():
     raw = gh("issue", "list", "--label", QUESTION_LABEL, "--state", "open", "--limit", "100",
-             "--json", "number,title,url")
+             "--json", "number,title,url,body")
     return json.loads(raw or "[]")
 
 
 def sync_question_issues(state, items, settings):
-    """One open issue per item waiting on the owner; close the rest. Returns new issue URLs.
+    """One open issue per item waiting on the owner; close the rest.
 
-    A parked item's questions live on its branch, not in the roadmap being
-    read, so its issue is kept open explicitly.
+    Returns the URLs of issues created or whose questions changed. A parked
+    item's questions live on its branch, not in the roadmap being read, so
+    its issue is kept open explicitly.
     """
     gh("label", "create", QUESTION_LABEL, "--color", "D93F0B", "--force",
        "--description", "The roadmap loop needs an answer", check=False)
@@ -384,11 +391,21 @@ def sync_question_issues(state, items, settings):
     wanted = {loop_core.issue_title(item): item for item in loop_core.awaiting_owner(items)}
     keep = set(wanted) | {p.get("issue_title") for p in (state.get("parked") or {}).values()}
     created = []
+    body_path = os.path.join(LOOP_DIR, "issue-body.md")
     for title, item in wanted.items():
+        body = loop_core.issue_body(item)
         if title in existing:
+            # Groom adds questions to an item that already has an issue; the
+            # body was written once and never updated, so the owner did not
+            # see the new ones. Only the body changes: a comment would be
+            # posted with the owner's login and read back as an answer.
+            issue = existing[title]
+            if (issue.get("body") or "").strip() != body.strip():
+                write_file(body_path, body)
+                gh("issue", "edit", str(issue["number"]), "--body-file", body_path)
+                created.append(issue["url"])
             continue
-        body_path = os.path.join(LOOP_DIR, "issue-body.md")
-        write_file(body_path, loop_core.issue_body(item))
+        write_file(body_path, body)
         url = gh("issue", "create", "--title", title, "--label", QUESTION_LABEL, "--body-file", body_path)
         created.append(url)
     for title, issue in existing.items():
@@ -425,6 +442,29 @@ def collect_answers(state, since=None):
     return new
 
 
+def hand_over_findings(item, pr_url):
+    """Queue the review's left-over findings for the next groom, tagged with their PR."""
+    entry = loop_core.findings_entry(item["section"], item["title"], pr_url, read_file(FINDINGS_HANDOFF))
+    if entry:
+        # Appended: two PRs can publish with no groom step between them (a
+        # resumed parked item skips the groom step on its way to publish).
+        previous = read_file(FINDINGS_FILE).strip()
+        write_file(FINDINGS_FILE, (previous + "\n\n" if previous else "") + entry)
+        log.info("Queued review findings from %s for the next groom", pr_url)
+    if os.path.exists(FINDINGS_HANDOFF):
+        os.remove(FINDINGS_HANDOFF)
+
+
+def archive_findings():
+    """After a groom has read them, keep the findings out of the next groom's
+    input but on disk, so a groom that dropped one can be checked later."""
+    if not read_file(FINDINGS_FILE).strip():
+        return
+    target = os.path.join(INBOX_DIR, "findings-groomed-%s.md" % time.strftime("%Y%m%d-%H%M%S"))
+    os.replace(FINDINGS_FILE, target)
+    log.info("Groom read the queued review findings; archived to %s", paths.display(target))
+
+
 def stages_apps():
     from splk import stages
     return stages.discover_apps()
@@ -457,6 +497,7 @@ def phase_groom(state, settings):
     stray = [f for f in changed_files() if f != "ROADMAP.md" and not f.startswith(".agent/")]
     if stray:
         raise LoopError("Groom may only edit ROADMAP.md but changed %s" % ", ".join(stray))
+    archive_findings()
 
     items = roadmap_items()
     created = sync_question_issues(state, items, settings)
@@ -494,7 +535,7 @@ def phase_groom(state, settings):
         notify(state, "Loop waiting on your answers: %s. %s" % (
             "; ".join(waiting) or "nothing to do", " ".join(created)), settings)
     if created and state["phase"] != "blocked":
-        notify(state, "New roadmap questions: %s" % " ".join(created), settings)
+        notify(state, "New or changed roadmap questions: %s" % " ".join(created), settings)
 
 
 def phase_audit(state, settings):
@@ -604,6 +645,7 @@ def phase_publish(state, settings):
     for path in (PR_TITLE_FILE, PR_BODY_FILE):
         if os.path.exists(path):
             os.remove(path)
+    hand_over_findings(item, url)
     state.update(phase="await", pr=number, pr_url=url, feedback_since=utc_now(), fix_attempts=0)
     notify(state, "PR #%s ready to merge: %s %s" % (number, title, url), settings)
 

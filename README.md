@@ -250,7 +250,13 @@ groom -> plan -> implement -> verify -> review -> verify -> retro -> publish -> 
   and adds `- [ ]` questions wherever an implementer would have to guess. An
   item with an open question never starts. Each blocked item gets a GitHub
   issue labelled `loop-question`. Answer there (only the owner's comments
-  are read) and the next groom records the answer in the roadmap.
+  are read) and the next groom records the answer in the roadmap. When
+  groom adds questions to an item that already has an issue, the issue's
+  body is updated to list them all.
+- Findings the **review** step leaves unfixed go in the PR's "Open findings"
+  and are queued for the next groom, which adds each as a `Status: proposed`
+  item (or folds it into an item that already covers it), so the owner
+  confirms or declines it like an audit proposal.
 - The loop takes the **first actionable item**, skipping blocked ones. With
   nothing actionable, it reviews the code for bugs, security, efficiency and
   refactoring, then adds up to eight `Status: proposed` items. Each has a

@@ -4,6 +4,7 @@ The supervisor's side effects (claude, git, gh) are exercised by running the
 loop; what is tested here is every decision it makes from their output.
 """
 
+import json
 import os
 import subprocess
 
@@ -138,6 +139,44 @@ def test_branch_and_issue_names():
     body = loop_core.issue_body(items()[0])
     assert "- [ ] Is a partial clone acceptable?" in body
     body.encode("ascii")
+
+
+WRAPPED = """## easyadmin
+
+### 1. Import
+Status: blocked
+
+- [ ] Can the target app be new? Options:
+  (a) existing apps only; (b) a new name stages a create first.
+  Recommendation: (b).
+- [ ] Second question
+  continued here.
+  - a nested entry is not a continuation
+- [x] Answered: yes,
+  with a reason on the next line.
+
+Probe first:
+  an indented note after a blank line is not part of a question.
+"""
+
+
+def test_wrapped_questions_are_read_whole():
+    item = loop_core.parse_roadmap(WRAPPED)[0]
+    assert item.open_questions == [
+        "Can the target app be new? Options: (a) existing apps only; (b) a new name stages a create first. "
+        "Recommendation: (b).",
+        "Second question continued here."]
+    assert item.answered == ["Answered: yes, with a reason on the next line."]
+    body = loop_core.issue_body(item)
+    assert "- [ ] Can the target app be new? Options: (a) existing apps only;" in body
+    assert "Recommendation: (b)." in body
+
+
+def test_findings_entry_names_the_pr_and_skips_empty_text():
+    assert loop_core.findings_entry("easyadmin", "Import", "https://x/pull/9", "  \n") == ""
+    entry = loop_core.findings_entry("easyadmin", "Import", "https://x/pull/9", "### easyadmin: thing\n")
+    assert entry.startswith("## easyadmin / Import (https://x/pull/9)\n")
+    assert "### easyadmin: thing" in entry
 
 
 # ----------------------------------------------------------- step results
@@ -344,6 +383,60 @@ def test_repeated_errors_get_stuck(loop_dir):
     loop._step_failed(state, settings, "error", {})
     with pytest.raises(loop.LoopError):
         loop._step_failed(state, settings, "error", {})
+
+
+@pytest.fixture
+def findings_dirs(loop_dir, monkeypatch):
+    inbox, handoff = loop_dir / "inbox", loop_dir / "handoff"
+    monkeypatch.setattr(loop, "INBOX_DIR", str(inbox))
+    monkeypatch.setattr(loop, "FINDINGS_FILE", str(inbox / "findings.md"))
+    monkeypatch.setattr(loop, "FINDINGS_HANDOFF", str(handoff / "findings.md"))
+    return inbox, handoff
+
+
+def test_review_findings_reach_groom_once(findings_dirs):
+    inbox, handoff = findings_dirs
+    item = {"section": "easyadmin", "title": "Import"}
+    loop.write_file(str(handoff / "findings.md"), "### easyadmin: first\n")
+    loop.hand_over_findings(item, "https://x/pull/1")
+    assert not (handoff / "findings.md").exists()
+    loop.write_file(str(handoff / "findings.md"), "### easyadmin: second\n")
+    loop.hand_over_findings(item, "https://x/pull/2")
+    queued = (inbox / "findings.md").read_text(encoding="utf-8")
+    # Both PRs' findings wait for the next groom; neither overwrites the other.
+    assert "pull/1" in queued and "first" in queued and "pull/2" in queued and "second" in queued
+    loop.archive_findings()
+    assert not (inbox / "findings.md").exists()
+    archived = list(inbox.glob("findings-groomed-*.md"))
+    assert len(archived) == 1 and "second" in archived[0].read_text(encoding="utf-8")
+
+
+def test_no_findings_queues_nothing(findings_dirs):
+    inbox, _ = findings_dirs
+    loop.hand_over_findings({"section": "a", "title": "b"}, "https://x/pull/1")
+    loop.archive_findings()
+    assert not inbox.exists() or not list(inbox.iterdir())
+
+
+def test_question_issue_body_is_refreshed_when_questions_change(loop_dir, monkeypatch):
+    item = loop_core.parse_roadmap(WRAPPED)[0]
+    title = loop_core.issue_title(item)
+    calls, issue = [], {"number": 30, "title": title, "url": "https://x/issues/30", "body": "old, truncated"}
+
+    def fake_gh(*args, **kwargs):
+        calls.append(args)
+        return json.dumps([issue]) if args[:2] == ("issue", "list") else ""
+
+    monkeypatch.setattr(loop, "gh", fake_gh)
+    assert loop.sync_question_issues({}, [item], {}) == ["https://x/issues/30"]
+    assert ("issue", "edit", "30", "--body-file", os.path.join(str(loop_dir), "issue-body.md")) in calls
+    assert not [c for c in calls if c[:2] == ("issue", "create")]
+
+    # Unchanged questions: no edit, nothing to notify.
+    issue["body"] = loop_core.issue_body(item)
+    calls[:] = []
+    assert loop.sync_question_issues({}, [item], {}) == []
+    assert not [c for c in calls if c[:2] == ("issue", "edit")]
 
 
 def test_shipped_settings_and_prompts_are_complete():

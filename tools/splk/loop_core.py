@@ -31,6 +31,9 @@ _STATUS = re.compile(r"^Status:\s*([a-z-]+)\s*$", re.IGNORECASE)
 _OPEN_Q = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+?)\s*$")
 _DONE_Q = re.compile(r"^\s*[-*]\s+\[[xX]\]\s+(.+?)\s*$")
 _NUMBER = re.compile(r"^\d+\.\s*")
+# An indented, non-blank line that is not itself a list entry continues the
+# question above it.
+_CONTINUATION = re.compile(r"^\s+(?![-*]\s)\S")
 
 
 class Item(object):
@@ -95,18 +98,30 @@ def parse_roadmap(text):
 
 def _finish(raw):
     status, open_q, answered = None, [], []
+    # The list the last question went into: groom wraps a question (options,
+    # recommendation) over indented lines, and only reading the first line
+    # sent the owner issues with half a question.
+    last = None
     for line in raw["lines"][1:]:
         match = _STATUS.match(line.strip())
         if match and status is None:
             status = match.group(1).lower()
+            last = None
             continue
         match = _OPEN_Q.match(line)
         if match:
             open_q.append(match.group(1))
+            last = open_q
             continue
         match = _DONE_Q.match(line)
         if match:
             answered.append(match.group(1))
+            last = answered
+            continue
+        if last is not None and _CONTINUATION.match(line):
+            last[-1] += " " + line.strip()
+        else:
+            last = None
     if status not in STATUSES:
         # A missing or misspelt status must not make an item look ready.
         log.warning("Roadmap item %r (line %d) has status %r; treating it as blocked",
@@ -177,6 +192,18 @@ def issue_body(item):
              "Item: %s / %s" % (item.section, item.title), ""]
     lines.extend("- [ ] %s" % q for q in item.open_questions)
     return "\n".join(lines) + "\n"
+
+
+def findings_entry(section, title, pr_url, text):
+    """One PR's left-over review findings, as groom reads them.
+
+    The review step leaves findings for the owner in the PR body; this copy
+    is what puts them in the roadmap, so they are not forgotten once merged.
+    """
+    text = (text or "").strip()
+    if not text:
+        return ""
+    return "## %s / %s (%s)\n\n%s\n" % (section, title, pr_url or "no PR", text)
 
 
 # --------------------------------------------------------------- step results

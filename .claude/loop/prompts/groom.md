@@ -16,6 +16,21 @@ Read all of ROADMAP.md, then the owner's answers in {{answers_file}}.
    proposal, `done` only when it is shipped (and move it to the app's Done
    table instead). Keep `in-progress` as it is.
 4. Keep the roadmap's priority order; never reorder items.
+5. Read {{review_findings_file}} if it exists: findings the review step left
+   unfixed on recent PRs. For each one, check it still applies on this
+   branch (read the file it names). If an item already covers it, add the
+   finding to that item. Otherwise add it at the end of its app's section
+   (repo-wide ones under `## Tooling`) as:
+
+       ### Proposed: <short title>
+       Status: proposed
+
+       <what, where (file:line), why it matters, the PR it came from>
+
+       - [ ] Confirm: should this be done? (<your recommendation>)
+
+   Drop a finding only when the code shows it is already fixed, and say so
+   in your summary. Adding these items is not reordering.
 
 Edit ROADMAP.md only. Status `done` when the roadmap is groomed (even if
 nothing is ready), `failed` only if you could not edit it.
