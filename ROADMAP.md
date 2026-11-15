@@ -26,11 +26,14 @@ its format is fixed:
 | 1.4.0 | Copy objects into another app (the default for objects in a default folder); discard one staged change; the object's own settings in the panel; locks from splunkd's `removable` flag (#20). |
 
 ### 1. Create a new app, or clone one
-Status: ready
+Status: in-progress
 
 Part of the original App management request.
 
-- Creating or deleting an app makes splunkd ask for a restart (observed).
+- Deleting an app makes splunkd ask for a restart (observed). Creating one
+  does not (probed on 10.6.1, 2026-11-15: no restart message after the
+  create or after creating objects in the new app), so the page shows the
+  restart notice only when splunkd asks for a restart.
 - The person fills in app id, label, visible, description, author and
   version; the `barebones` template and version 1.0.0 are the defaults.
 - Creating and cloning are staged as pending changes and run by Apply; a
