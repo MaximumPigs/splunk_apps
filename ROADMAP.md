@@ -162,23 +162,23 @@ Notes:
   app): see the open question above.
 
 ### Proposed: A clone's box says "0 objects" while copies are staged into it
-Status: proposed
+Status: ready
 
 Left by the UX review on #38 (1.5.0). The box header counts only real
 objects (`easyadmin_apps.js:1378`, `realCount` skips `ghostOf` entries), so
 a staged clone reads "0 objects" with its copies listed underneath. Staged
 copies of types hidden by the Types filter are not listed at all, although
 the Apply confirmation counts them. Fix: count staged copies in the header
-(for example "0 objects, 12 staged") and list or count copies hidden by the
-filter. Also left on #39 as polish: `.ea-setting-label` and `.ea-code` use
-11px and 12px fonts (`easyadmin_apps.css`), below the page's body size.
+as "N objects, M staged" (agreed wording), and list or count copies hidden
+by the filter. Also left on #39 as polish: `.ea-setting-label` and `.ea-code`
+use 11px and 12px fonts (`easyadmin_apps.css`), below the page's body size.
 
-- [ ] Confirm: should this be done? (Recommended: yes, the count; the review
+- [x] Confirm: should this be done? (Recommended: yes, the count; the review
   left it only because the wording is a design choice. Proposed wording:
-  "N objects, M staged".)
+  "N objects, M staged".): Yes.
 
 ### Proposed: No cap on the total size of one settings Apply
-Status: proposed
+Status: ready
 
 Left by the security review on #39 (1.6.0), low. Each object may carry 200
 settings of up to 64 KB (`easyadmin_apps_core.py:365-367`, checked at
@@ -188,11 +188,21 @@ one request can ask splunkd for gigabytes of writes. Only a caller with
 total byte cap across the request, refused with a clear message, plus a
 unit test.
 
-- [ ] Confirm: should this be done? (Recommended: yes, small and cheap; the
-  web server's own body limit may already stop it, so probe that first.)
+Agreed: probe, then set the cap. The person sees the error when they stage
+the first change that takes the total above the cap, not at Apply; the
+server-side refusal stays as the backstop.
+
+- [x] Confirm: should this be done? (Recommended: yes, small and cheap; the
+  web server's own body limit may already stop it, so probe that first.):
+  Yes, probe and set the cap, but show the error when the first change above
+  the cap is staged, not at Apply.
+
+Probe first: the largest request body the page's REST endpoint accepts
+through Splunk Web on the dev target, so the cap sits below it and the
+staging check measures the same size the server counts.
 
 ### Proposed: Tests the settings panel still lacks
-Status: proposed
+Status: ready
 
 Left on #39 (1.6.0). No UI test covers the hint on masked or too-long
 settings, nor staged settings staying listed under a filter; no live test
@@ -204,8 +214,8 @@ the live test that the details panel no longer reads `user-prefs`
 make the `user-prefs` check wait for a later marker request before
 asserting absence.
 
-- [ ] Confirm: should this be done? (Recommended: yes, tests only, no
-  behaviour change.)
+- [x] Confirm: should this be done? (Recommended: yes, tests only, no
+  behaviour change.): Yes, add the tests.
 
 ## fillcontinuous
 
@@ -216,7 +226,7 @@ asserting absence.
 | 1.1.2 | Real rows keep `_raw` and other `_` fields when a filled row is the first one written: the command registers every output field name with the record writer before yielding. |
 
 ### Proposed: `power` can change the command stanzas
-Status: proposed
+Status: ready
 
 Left by the security review on #41 (1.1.2), low, predating that change.
 `metadata/default.meta` grants `write : [ admin, sc_admin, power ]` on `[]`
@@ -224,8 +234,8 @@ and `[commands]`, while its own comment says "writable only by admins". A
 `power` user can change or unexport the commands for everyone. Fix: drop
 `power` from both write lists, and check AppInspect stays clean.
 
-- [ ] Confirm: should this be done? (Recommended: yes, admins only, as the
-  file's comment already says.)
+- [x] Confirm: should this be done? (Recommended: yes, admins only, as the
+  file's comment already says.): Admins only.
 
 ## Tooling
 
@@ -288,7 +298,7 @@ an audit yet.
   session, as above.): Yes.
 
 ### Proposed: The UX audit covers only the theme the signed-in user prefers
-Status: proposed
+Status: interactive
 
 On #38, #39 and #40 the UX audit ran in dark only: `tools/splk/ux.py` asks
 for each theme with `?theme=`, but a page that follows the user's preference
@@ -299,11 +309,12 @@ audit at all. Fix: switch the test user's theme preference through `sandbox`
 for each pass (restored afterwards), and let an app list panels to open per
 view. Changes `tools/splk/`, so it would be built in an interactive session.
 
-- [ ] Confirm: should this be done? (Recommended: yes, the theme switch at
-  least; CLAUDE.md's definition of done assumes both themes are audited.)
+- [x] Confirm: should this be done? (Recommended: yes, the theme switch at
+  least; CLAUDE.md's definition of done assumes both themes are audited.):
+  Yes.
 
 ### Proposed: One failed `git pull` after a merge leaves the loop stuck until resumed
-Status: proposed
+Status: interactive
 
 On 2026-11-15T19:43:24Z, after #41 merged, the loop notified "Loop stuck in
 await: git pull -q failed: error: cannot lock ref 'refs/remotes/origin/main':
@@ -320,5 +331,6 @@ owner. Fix: retry the post-merge `git pull` (and other read-only git calls in
 `await`) a few times with a short wait before raising, with a unit test.
 Changes `tools/splk/`, so it would be built in an interactive session.
 
-- [ ] Confirm: should this be done? (Recommended: yes, a small retry; it
-  costs nothing when git succeeds, and a ref race should not need the owner.)
+- [x] Confirm: should this be done? (Recommended: yes, a small retry; it
+  costs nothing when git succeeds, and a ref race should not need the owner.):
+  Yes.
