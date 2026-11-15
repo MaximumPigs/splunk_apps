@@ -66,10 +66,21 @@ included. Private user objects are in scope.
   roles dropped, each flagged on the pending change.: Agreed, as
   recommended.
 - [ ] Can the target app name be an app that does not exist yet? Options:
-  (a) existing apps only; (b) a new name stages a create first, as in item 1
-  (same fields, defaults from the JSON's app label, description, author and
-  version, and the same restart notice). Recommendation: (b), so an app can
-  be moved to another instance in one step; it means building item 1 first.
+  (a) existing apps only; (b) a new name stages a create first, as 1.5.0's
+  "create a new app" does (same fields, defaults from the JSON's app label,
+  description, author and version, and the same restart notice).
+  Recommendation: (b), so an app can be moved to another instance in one
+  step; the create path already exists since 1.5.0.
+- [ ] When the target app already exists, what happens to its objects that
+  are not in the JSON? Options: (a) left alone (an import only creates and
+  overwrites); (b) staged for deletion, so the target ends up matching the
+  JSON. Recommendation: (a), since a delete is not undoable and the person
+  can still stage deletes by hand on the page.
+- [ ] When the target app already exists, are its app-level settings (label,
+  description, version, visibility) changed to the JSON's? Options: (a) never,
+  objects only; (b) staged as one "changed" entry for the app, discardable
+  like any other. Recommendation: (a), keeping the import to knowledge
+  objects; the label and version belong to whoever owns the target app.
 
 Probe first: whether a lookup file's contents can be written through REST
 or a search on 9.3 and 10.x without Splunk's upload staging folder (for
@@ -194,7 +205,7 @@ Notes:
 Status: ready
 
 Opening an object's details panel runs `add_explicit`
-(`apps/easyadmin/bin/easyadmin_apps_core.py:357`), which calls
+(`apps/easyadmin/bin/easyadmin_apps_core.py:375`), which calls
 `gateway.current_context()` only to check for `admin_all_objects`. In
 `AppsGateway.current_context` (`apps/easyadmin/bin/easyadmin_apps_rest.py`)
 that is two requests: `authentication/current-context`, then the user's
