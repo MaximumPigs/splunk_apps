@@ -11,7 +11,7 @@ paths:
   `local.meta`: AppInspect fails a Cloud package that contains them.
 - `app.conf`:
   - `[launcher] version` and `[id] version` must match; bump both (and
-    `app.manifest`) together.
+    `app.manifest`) together (`tests/test_app_versions.py` fails otherwise).
   - `[id] name` must equal the app's directory name.
   - `[install] is_configured = true` is a **hard AppInspect failure**; keep
     `false` unless the app really has a setup page.
