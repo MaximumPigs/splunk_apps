@@ -358,8 +358,10 @@ def ensure_trusted(cwd, state_file=None):
         # On Windows a CLI holding the file open makes the replace fail. A step
         # that runs untrusted is better than a supervisor that stops.
         log.warning("Could not mark %s trusted in %s (%s); steps may run untrusted", key, path, exc)
-        if os.path.exists(tmp):
+        try:
             os.remove(tmp)
+        except OSError:
+            pass  # Already gone, or held open: a stale tmp is harmless, a crash is not.
         return False
     log.info("Marked %s trusted in %s for headless steps", key, path)
     return True
