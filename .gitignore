@@ -92,3 +92,6 @@ desktop.ini
 CLAUDE.local.md
 .claude/settings.local.json
 .claude/agent-memory-local/
+
+# Splunk licence files for the Docker setup (docker/licence/).
+*.lic

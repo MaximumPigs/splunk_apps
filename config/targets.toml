@@ -33,3 +33,18 @@ test_index = "splk_test"
 # Splunk Web, not splunkd. localhost rather than a host alias: see the
 # Windows environment rule.
 web_url = "http://localhost:8000"
+
+[targets.docker]
+# The Splunk container in docker/compose.yaml, seen from the dev container
+# (selected there with SPLK_TARGET=docker). A dev instance like local.
+host = "splunk"
+port = 8089
+scheme = "https"
+verify_tls = false
+allow_restart = true
+test_index = "splk_test"
+# splunkd cannot read the dev container's dist/: packages are copied to the
+# shared stage volume, mounted at /stage in both containers.
+stage_dir = "/stage"
+server_stage_dir = "/stage"
+web_url = "http://splunk:8000"

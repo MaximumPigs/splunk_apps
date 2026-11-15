@@ -301,6 +301,49 @@ Repo-wide Tooling items that change `tools/splk/` or the packager cannot be
 built by the loop (steps may not edit what verifies and packages their own
 work); the step finishes blocked and the item is done interactively.
 
+### Running the loop on a server
+
+[docker/compose.yaml](docker/compose.yaml) runs the loop around the clock,
+for example on an Unraid server. It defines two containers: a Splunk instance
+(`splunk`) and the dev container (`dev`, [docker/dev/Dockerfile](docker/dev/Dockerfile)).
+The dev container holds Python, AppInspect, Playwright with Chromium, git, `gh`
+and a pinned Claude Code.
+
+1. Copy `docker/.env.example` to `docker/.env` and fill it in. Put the
+   Splunk Developer licence at `docker/licence/splunk.lic`; the Free licence
+   turns off users and roles, which the tests need.
+2. Start Splunk alone the first time: `docker compose up -d splunk`. Once
+   Splunk Web is up, create the `splk_test` index and a token
+   (Settings > Tokens), then put the token in `.env` as `SPLUNK_TOKEN`.
+3. `docker compose up -d --build`. On first start the dev container clones
+   the repo into its `work` volume. It then waits until `splk doctor`
+   passes, and runs `splk loop run` from then on.
+4. Control it with `docker compose exec -u loop -w /work/splunk_apps dev splk loop status` (or `pause`
+   or `resume`), and follow it with `docker compose logs -f dev`.
+
+The dev container gets an explicit list of variables, never the whole
+`.env`, so the Splunk admin password stays with Splunk. It starts as root
+only long enough to write its secrets to the clone's `.env`. It then drops
+to the `loop` user with a clean environment holding only
+`CLAUDE_CODE_OAUTH_TOKEN`, which steps need. No secret is left in an
+environment the loop user can read, and `splk loop` keeps `.env` values out of
+every step.
+
+The `.env` file is still readable by the loop user, so a step that
+deliberately looked could read the supervisor's token. Only running steps
+under another user would close that. The ruleset on `main` is the boundary,
+as on Windows.
+
+On restart the loop refuses to start if the checked-out branch changed the
+tooling (`tools/`, hooks, loop settings, the packager), because the
+supervisor runs `splk` from that branch.
+
+Splunk Web listens on loopback unless `SPLUNK_WEB_BIND` says otherwise. It is
+plain HTTP with the admin account, so do not expose it beyond the LAN.
+
+Not pinned yet: the base image digest, and checksums for the Claude Code
+installer and the `gh` apt key. Pin them on the first successful build.
+
 ## Packaging
 
 ```bash
