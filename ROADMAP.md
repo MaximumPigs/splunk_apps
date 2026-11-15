@@ -26,6 +26,7 @@ its format is fixed:
 | 1.4.0 | Copy objects into another app (the default for objects in a default folder); discard one staged change; the object's own settings in the panel; locks from splunkd's `removable` flag (#20). |
 | 1.5.0 | Create a new app (barebones template), or clone one with copies of its copyable objects, staged as pending boxes and run by Apply; a restart notice only when splunkd asks (creating needs none on 10.6.1). |
 | 1.6.0 | Edit the individual settings of a knowledge object from its panel: filter, copy, show the default value, edit and add settings, staged with the old and new value and written to the app's local configuration by Apply. No delete of a local setting: splunkd has no REST call for it. |
+| 1.6.1 | The details panel, settings edits, app creation and the precedence view read only the caller's capabilities from splunkd, not the theme preference as well: one splunkd request fewer per details click. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -159,23 +160,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Proposed: Details panel makes two splunkd calls it does not need
-Status: in-progress
-
-Opening an object's details panel runs `add_explicit`
-(`apps/easyadmin/bin/easyadmin_apps_core.py:375`), which calls
-`gateway.current_context()` only to check for `admin_all_objects`. In
-`AppsGateway.current_context` (`apps/easyadmin/bin/easyadmin_apps_rest.py`)
-that is two requests: `authentication/current-context`, then the user's
-`user-prefs` for the theme, which the panel never uses. So every object
-clicked costs four splunkd requests instead of two. Fix: pass a flag so the
-details path skips the theme lookup (or read capabilities alone), with a unit
-test on a fake gateway counting the calls. This is a small saving per click,
-read from the code and not timed; the dev target is too small to show it.
-
-- [x] Confirm: should this be done? (Recommended, low priority: small, safe,
-  and every details click benefits.): Implement, but low priority.
 
 ## fillcontinuous
 

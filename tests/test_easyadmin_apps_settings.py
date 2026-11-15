@@ -322,3 +322,10 @@ def test_the_audit_log_names_the_settings_and_never_their_values(caplog):
                             user="admin")
     lines = [r.getMessage() for r in caplog.records if "action=settings" in r.getMessage()]
     assert len(lines) == 1 and '"definition"' in lines[0] and "TOPSECRETVALUE" not in lines[0]
+
+
+def test_applying_a_settings_change_does_not_read_the_theme():
+    gateway = macro_gateway()
+    body = apps.submit_changes(gateway, [edit("macro", "m1", [setting("definition", "new", "old")])], user="admin")
+    assert body["results"][0]["status"] == "applied"
+    assert gateway.context_reads and set(gateway.context_reads) == {"caller_capabilities"}

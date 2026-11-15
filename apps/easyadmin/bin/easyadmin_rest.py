@@ -140,11 +140,21 @@ class SplunkdGateway(object):
         entries = self._entries(self._request("/services/authorization/capabilities"))
         return core.as_list(entries[0]["content"].get("capabilities")) if entries else []
 
-    def current_context(self):
+    def _context_content(self):
+        """The caller's authentication/current-context content, or {} when none."""
         entries = self._entries(self._request("/services/authentication/current-context"))
-        if not entries:
+        return entries[0]["content"] if entries else {}
+
+    def caller_capabilities(self):
+        # The capability checks need only this. They skip _user_theme, a second
+        # request (user-prefs) that only the page model uses. A failed request
+        # still raises GatewayError: callers must not treat it as "no capability".
+        return core.as_list(self._context_content().get("capabilities"))
+
+    def current_context(self):
+        content = self._context_content()
+        if not content:
             return {}
-        content = entries[0]["content"]
         return {"capabilities": core.as_list(content.get("capabilities")),
                 "roles": core.as_list(content.get("roles")),
                 "theme": self._user_theme(content.get("username"))}

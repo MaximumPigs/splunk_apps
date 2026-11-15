@@ -89,8 +89,7 @@ class AppsGateway(roles_rest.SplunkdGateway):
             "/services/authentication/users", getargs={"count": 0, "f": "realname"}))]
 
     def current_context(self):
-        entries = self._entries(self._request("/services/authentication/current-context"))
-        content = entries[0]["content"] if entries else {}
+        content = self._context_content()
         username = content.get("username")
         return {"username": username, "theme": self._user_theme(username),
                 "capabilities": core.as_list(content.get("capabilities"))}

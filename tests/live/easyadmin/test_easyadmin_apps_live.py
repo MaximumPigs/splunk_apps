@@ -340,3 +340,25 @@ def test_shipped_reports_are_not_offered_as_movable(splunk):
         assert "move" in entry["links"]   # the misleading link is still there
         assert shipped[0]["movable"] is False and shipped[0]["removable"] is False
         assert shipped[0]["copyable"] is True
+
+
+def test_details_and_precedence_do_not_read_the_theme_preference(splunk, sandbox, objects, search):
+    # The capability check behind the details panel and the precedence view
+    # needs current-context only. Reading the theme (user-prefs) as well cost
+    # a second splunkd request per click, so splunkd's own access log must
+    # show current-context for this user and never user-prefs. The model GET
+    # does read the theme, so this sandbox user must never call it: the
+    # object is found with the admin client.
+    import easyadmin_live_support as ea
+    name = objects.macro()
+    obj = find(model(splunk), "macro", name)
+    user, password = sandbox.create_user(roles=["admin"], label="easyadmin_details_calls")
+    client = splunk.as_user(user, password)
+    details = _details(client, obj)
+    assert details["explicit"] is not None   # the capability check still sees admin_all_objects
+    assert client.request("GET", "/services/easyadmin/conf")["confs"]
+    context = ea.wait_for_access_rows(search, user, "/services/authentication/current-context*")
+    assert context, "no current-context request by %s in splunkd_access within 90s" % user
+    prefs = search('search index=_internal sourcetype=splunkd_access user="%s" uri="/servicesNS/*/user-prefs/*"'
+                   ' | table _time uri' % user, earliest="-15m", latest="now")
+    assert prefs == [], "the theme preference was read: %s" % prefs

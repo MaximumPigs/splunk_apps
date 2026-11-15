@@ -195,7 +195,8 @@ class ConfHandler(PersistentServerConnectionApplication):
                 if isinstance(pair, (list, tuple)) and len(pair) == 2:
                     query[pair[0]] = pair[1]
             gateway = roles_rest.SplunkdGateway(session.get("authtoken"))
-            context = gateway.current_context()
+            # Only capabilities are read, so skip the theme lookup.
+            context = {"capabilities": gateway.caller_capabilities()}
             context["user"] = session.get("user") or "unknown"
             status, payload = conf_core.handle_request(
                 request.get("method"), query, ConfFileReader(os.environ["SPLUNK_HOME"]), context)
