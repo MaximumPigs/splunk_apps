@@ -639,6 +639,9 @@ def _create_one(gateway, spec, user):
     return {"name": name, "status": "applied", "message": 'Created the app "%s".' % name}
 
 
+RESERVED_FORM_KEYS = frozenset(("output_mode", "name", "owner", "sharing", "app", "count", "f"))
+
+
 def parse_settings(raw, type_id, where):
     """Validate the settings edits of one change: [{name, value, previous}].
 
@@ -667,6 +670,10 @@ def parse_settings(raw, type_id, where):
         if (CONTROL_RE.search(name) or "=" in name or name[0] in "[#" or name != name.strip()
                 or name.startswith("eai:")):
             raise EasyAdminError("%s: %r is not a name a setting can have." % (where, name))
+        if name in RESERVED_FORM_KEYS:
+            # These are splunkd's own form parameters, not settings: sent in the
+            # POST body they would change the request, not the object.
+            raise EasyAdminError('%s: "%s" is reserved by splunkd and cannot be a setting.' % (where, name))
         if conf_core.is_secret(name):
             raise EasyAdminError('%s: "%s" looks like a secret, and secrets are not edited here.' % (where, name))
         if name in seen:

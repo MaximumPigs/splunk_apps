@@ -1850,6 +1850,10 @@ require([
                     focusFid('setting-edit-value:' + setting.name);
                 }));
         }
+        if (!inherited && details.editable && (setting.secret || setting.truncated)) {
+            $dd.append(el('div', 'ea-muted', setting.secret ? 'Masked value: edit it in the .conf file.' :
+                'Too long to edit here: edit it in the .conf file.'));
+        }
         $dl.append($dd);
     }
 
@@ -1958,7 +1962,8 @@ require([
 
         if (text) {
             // Everything that matches: own settings, then inherited ones.
-            var shown = $.grep(own, matches);
+            // Staged settings stay listed whatever the filter says, so a stage never seems to vanish.
+            var shown = $.grep(own, function (setting) { return matches(setting) || !!staged[setting.name]; });
             var inheritedNames = newMap();
             $.each(details.settings, function (i, setting) {
                 if (ownNames[setting.name] || staged[setting.name] || !matches(setting)) { return; }
@@ -2000,9 +2005,8 @@ require([
                 $panel.append(el('p', 'ea-muted', 'This object is the one line shown: the other lines of its stanza ' +
                     'belong to other objects, so settings are not added here.'));
             }
-            $panel.append(el('p', 'ea-muted ea-no-delete', 'A local setting cannot be removed here: splunkd has no ' +
-                'call that removes one setting from a file while keeping the default, so there is no delete. ' +
-                'Writing the default value back would not remove it either.'));
+            $panel.append(el('p', 'ea-muted ea-no-delete', 'A local setting cannot be removed here, so there is no delete. ' +
+                'Writing the default value back would not remove it either: edit the .conf file to remove it.'));
         }
     }
 
