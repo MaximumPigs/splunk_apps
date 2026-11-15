@@ -24,7 +24,7 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | lesson | [Shell cannot read Splunk etc/](lessons/splk-shell-cannot-read-splunk-etc.md): "permission denied" proves nothing; read through splunkd. |
 | 1 | pattern | [One persist handler class per script](lessons/splunkd-persist-one-handler-class-per-script.md): a second subclass, even imported, 500s every endpoint in it. Playbook `rest-endpoint-behind-page`. |
 | 1 | skill | [Token auth lags a restart](lessons/splk-token-auth-lags-restart.md): 401 for ~30 s after `--restart`; rerun `splk doctor`. `dev-loop`. |
-| 1 | pattern | [Creating/deleting apps needs a restart](lessons/splunkd-app-create-delete-needs-restart.md): live tests move objects between `search` and `launcher`. Playbook `splunkd-knowledge-objects-rest`. |
+| 2 | pattern | [Creating/deleting apps needs a restart](lessons/splunkd-app-create-delete-needs-restart.md): live tests move objects between `search` and `launcher`. Playbook `splunkd-knowledge-objects-rest`. |
 | 1 | pattern | [Filter hid the drop target](lessons/ux-filter-hides-drop-target.md): filters narrow items, never target containers. Playbook `custom-page-classic-js`. |
 | 1 | skill | [Untested panel control shipped a Major](lessons/ux-every-control-needs-a-ui-test.md): every control gets its own UI test. `write-ui-test`. |
 | 1 | lesson | [etc/system/default lacks some confs](lessons/conf-system-default-not-every-file.md): no `macros.conf` on 10.6.1; any precedence layer can be absent. |
@@ -50,7 +50,7 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | rule | [SDK metadata overstated its Python floor](lessons/vendoring-sdk-python-metadata.md): vendor without `ai/`. |
 | 1 | lesson | [Branch tracking main pushed by editor Sync](lessons/git-branch-tracking-main-editor-push.md): use `checkout --no-track`; ruleset is the real guard. Candidate rule. |
 | 1 | lesson | [Unattended agent escape routes](lessons/security-unattended-agent-escape-routes.md): spelling variants, inherited env, own comments read as owner. Test variants. |
-| 1 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): cannot prompt; reload after permission change. |
+| 2 | lesson | [Skill `!` preamble needs allowlist](lessons/splk-skill-preamble-needs-allowlist.md): cannot prompt; reload after permission change. |
 | 1 | pattern | [Probe guards before designing on them](lessons/process-probe-guards-before-designing-on-them.md): `.agent/` write denied. Playbook `observe-tool-behaviour-first`. |
 | 1 | lesson | [PowerShell mangled JSON argument](lessons/windows-powershell-json-arguments.md): spawn from Python with an arg list. |
 | 1 | pattern | [Narrowing a guard regex reopened bypasses](lessons/security-guard-regex-narrowing-reopens-bypasses.md): `+main`, quotes, `bash -c`, `~0` slipped; test the deny corpus first, boundaries = what a ref cannot contain. Playbook `probe-a-hook-with-decide`. |
