@@ -207,6 +207,12 @@ asserting absence.
 - [ ] Confirm: should this be done? (Recommended: yes, tests only, no
   behaviour change.)
 
+### Staged moved knowledge objects should not disappear from their origin app
+Status: ready
+
+- Knowledge Objects staged for move should display in the origin app 
+  with a strike-through as though they are being deleted.
+
 ## fillcontinuous
 
 ### Done
