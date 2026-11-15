@@ -213,6 +213,20 @@ Status: ready
 - Knowledge Objects staged for move should display in the origin app 
   with a strike-through as though they are being deleted.
 
+### Local knowledge objects should be able to be deleted even when a default one exists under it.
+Status: ready
+
+- Currently, no local knowledge object with a default one under it can be deleted from the app.
+- The option to delete the local one should be available.
+
+### Delete single setting from knowledge object by removing whole knowledge object and recreating.
+Status: ready
+
+- There is no DELETE operation for stanza settings through the API
+- In place of this, explore the viability of caching the local knowledge object, deleting the whole object
+  then recreating without the deleted setting.
+- Review this for security or functionality implications and raise issues before planning implementation.
+
 ## fillcontinuous
 
 ### Done
