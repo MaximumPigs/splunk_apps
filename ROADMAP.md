@@ -164,7 +164,7 @@ Notes:
 ## fillcontinuous
 
 ### Proposed: Real rows lose `_raw` and other internal fields when the first row written is a filled one
-Status: ready
+Status: in-progress
 
 `FillContinuousCommand.transform` (`apps/fillcontinuous/bin/fillcontinuous.py:232`)
 yields the filled result without registering its field names in
