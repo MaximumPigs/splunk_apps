@@ -502,6 +502,21 @@ def test_loop_digest_shows_each_step_and_repeated_stderr_once():
     assert text.count(warn) == 1 and "Stderr: same as above." in text
     assert "- 2026-11-15T19:43:24Z Loop stuck in await" in text
     assert "Nothing happened" in loop_core.loop_digest([], [])
+    odd = loop_core.loop_digest([("x.json", ["not", "a", "dict"]), ("y.json", {"cost_usd": "lots"})], [])
+    assert "x.json" in odd and "y.json" in odd and "$0.00" in odd
+
+
+def test_ensure_trusted_survives_a_failed_write(tmp_path, monkeypatch):
+    state = tmp_path / ".claude.json"
+    state.write_text("{}", encoding="utf-8")
+
+    def locked(*args):
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(loop.os, "replace", locked)
+    assert loop.ensure_trusted("/work/repo", str(state)) is False
+    assert state.read_text(encoding="utf-8") == "{}"
+    assert not (tmp_path / ".claude.json.splk-tmp").exists()
 
 
 def test_write_loop_digest_reads_records_and_notifications_since_the_last_groom(loop_dir, monkeypatch):

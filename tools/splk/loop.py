@@ -325,10 +325,11 @@ def ensure_trusted(cwd, state_file=None):
     path = state_file or CLAUDE_STATE_FILE
     key = loop_core.trust_key(cwd)
     try:
+        before = os.stat(path)
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
     except FileNotFoundError:
-        data = {}
+        before, data = None, {}
     except (OSError, ValueError) as exc:
         # Never rewrite a file we could not parse: it holds the CLI's sign-in.
         log.warning("Cannot read %s (%s); steps may run untrusted", path, exc)
@@ -336,10 +337,30 @@ def ensure_trusted(cwd, state_file=None):
     if not loop_core.with_trust(data, key):
         return False
     tmp = path + ".splk-tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2)
-    # Atomic, so an interactive session reading it never sees half a file.
-    os.replace(tmp, path)
+    # The file holds the sign-in: keep its mode (0600 on POSIX), not the umask's.
+    mode = (before.st_mode & 0o777) if before else 0o600
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+        if os.name != "nt":
+            os.chmod(tmp, mode)  # os.open's mode is filtered by the umask
+        # A running CLI may have written it since we read it; replacing now
+        # would drop that write. Skip: the next step tries again.
+        now = os.stat(path) if before else None
+        if before and (now.st_mtime_ns, now.st_size) != (before.st_mtime_ns, before.st_size):
+            os.remove(tmp)
+            log.warning("%s changed while marking the repo trusted; retrying before the next step", path)
+            return False
+        # Atomic, so an interactive session reading it never sees half a file.
+        os.replace(tmp, path)
+    except OSError as exc:
+        # On Windows a CLI holding the file open makes the replace fail. A step
+        # that runs untrusted is better than a supervisor that stops.
+        log.warning("Could not mark %s trusted in %s (%s); steps may run untrusted", key, path, exc)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
     log.info("Marked %s trusted in %s for headless steps", key, path)
     return True
 

@@ -245,15 +245,21 @@ def loop_digest(records, notifications, limit=60):
         lines += ["(%d older step records not shown; read them in .agent/loop/steps/.)" % skipped, ""]
     seen_stderr = set()
     for name, rec in records[skipped:]:
-        out = rec.get("output") or {}
+        # A corrupt record must not stop every groom from running.
+        rec = rec if isinstance(rec, dict) else {"detail": "step record is not an object"}
+        out = rec.get("output") if isinstance(rec.get("output"), dict) else {}
+        try:
+            cost = float(rec.get("cost_usd") or 0)
+        except (TypeError, ValueError):
+            cost = 0.0
         lines.append("## %s: %s (%s), %s, exit %s, %ss, $%.2f" % (
             name, rec.get("step"), rec.get("model"), rec.get("kind"), rec.get("exit"),
-            rec.get("seconds"), rec.get("cost_usd") or 0))
+            rec.get("seconds"), cost))
         if out:
             lines.append("Status %s: %s" % (out.get("status"), out.get("summary", "")))
         if rec.get("detail"):
-            lines.append("Detail: %s" % rec["detail"][:500])
-        stderr = (rec.get("stderr") or "").strip()
+            lines.append("Detail: %s" % str(rec["detail"])[:500])
+        stderr = str(rec.get("stderr") or "").strip()
         if stderr:
             if stderr in seen_stderr:
                 lines.append("Stderr: same as above.")
