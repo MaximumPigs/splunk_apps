@@ -163,7 +163,7 @@ Notes:
   app): see the open question above.
 
 ### Proposed: No cap on the total size of one settings Apply
-Status: ready
+Status: in-progress
 
 Left by the security review on #39 (1.6.0), low. Each object may carry 200
 settings of up to 64 KB (`easyadmin_apps_core.py:365-367`, checked at
