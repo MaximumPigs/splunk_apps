@@ -16,7 +16,8 @@ from splk import loop, loop_core
     # The first entry's leading space is part of the format.
     (" M ROADMAP.md\0", ["ROADMAP.md"]),
     ("M  a.py\0 M b.py\0?? new dir/c d.md\0", ["a.py", "b.py", "new dir/c d.md"]),
-    ("R  new.md\0old.md\0 M x.py\0", ["new.md", "x.py"]),
+    ("R  new.md\0old.md\0 M x.py\0", ["new.md", "old.md", "x.py"]),
+    ("R  ROADMAP.md\0tools/splk/x.py\0", ["ROADMAP.md", "tools/splk/x.py"]),
     ("", []),
 ])
 def test_parse_porcelain_z(output, expected):

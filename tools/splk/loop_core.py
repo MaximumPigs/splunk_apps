@@ -288,13 +288,16 @@ def parse_porcelain_z(output):
     Each entry is "XY path" with a two-character status (the first may be a
     space, so the output must never be stripped). -z gives paths verbatim,
     without quoting, and a rename or copy is followed by its source path as a
-    separate entry, which is skipped.
+    separate entry. The source is reported too, so a rename onto ROADMAP.md
+    cannot hide the file it came from from the groom check.
     """
     entries = output.split("\0")
     paths, skip = [], False
     for entry in entries:
         if skip:
             skip = False
+            if entry:
+                paths.append(entry)
             continue
         if len(entry) < 4:
             continue
