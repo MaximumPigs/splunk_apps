@@ -162,7 +162,7 @@ Notes:
   app): see the open question above.
 
 ### Proposed: A clone's box says "0 objects" while copies are staged into it
-Status: ready
+Status: in-progress
 
 Left by the UX review on #38 (1.5.0). The box header counts only real
 objects (`easyadmin_apps.js:1378`, `realCount` skips `ghostOf` entries), so
