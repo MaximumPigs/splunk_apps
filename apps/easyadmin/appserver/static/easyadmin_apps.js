@@ -1367,6 +1367,8 @@ require([
         // While Apply runs the change has already been sent: keep it, so a
         // failure can still be retried.
         if (!obj || !DISCARD[kind] || state.busy) { return; }
+        // The refusal described the state before this discard.
+        state.capRefusal = null;
         // Its words, taken before it is cleared, for the message.
         var part = $.grep(changeParts(obj), function (p) { return p.kind === kind; })[0];
         var edits = $.extend({}, DISCARD[kind]);
@@ -1727,7 +1729,7 @@ require([
         }
         if (pending) {
             $actions.append(el('button', 'btn', 'Undo staged changes').attr({ type: 'button', 'data-fid': 'panel-undo' })
-                .on('click', function () { delete state.pending[obj.key]; rerender(); }));
+                .on('click', function () { state.capRefusal = null; delete state.pending[obj.key]; rerender(); }));
         }
         $panel.append($actions);
 
