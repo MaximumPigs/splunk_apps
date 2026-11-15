@@ -65,3 +65,57 @@ def test_marker_flags_only_synthesised_rows(search):
     real = {(T0, "web01"), (T0, "web02"), (T0 + 7200, "web01")}
     assert {k for k, v in flags.items() if v == "0"} == real
     assert sum(1 for v in flags.values() if v == "1") == 3
+
+
+def test_real_rows_keep_internal_fields_when_a_filled_row_comes_first(search):
+    """_raw and a user _ field survive when a synthesised row is written first.
+
+    host b at T0 and host a at T0+2h: the first row out is the synthesised
+    (T0, a). splunklib fixes the output columns from the first record, so the
+    command must register every field name up front.
+    """
+    rows = search(
+        "| makeresults count=2 | streamstats count as n "
+        "| eval _time=%d + if(n==2, 7200, 0), host=if(n==1, \"b\", \"a\"), "
+        "_raw=\"event \".n, _extra=\"x\".n "
+        "| fields - n "
+        "| fillcontinuous span=1h by host "
+        "| eval epoch=_time, raw=_raw, extra=_extra "
+        "| table epoch host raw extra" % T0
+    )
+    grid = _grid(rows)
+    assert len(grid) == 6
+
+    assert grid[(T0, "b")]["raw"] == "event 1"
+    assert grid[(T0, "b")]["extra"] == "x1"
+    assert grid[(T0 + 7200, "a")]["raw"] == "event 2"
+    assert grid[(T0 + 7200, "a")]["extra"] == "x2"
+
+    for key in set(grid) - {(T0, "b"), (T0 + 7200, "a")}:
+        assert not grid[key].get("raw"), key
+        assert not grid[key].get("extra"), key
+
+
+def test_internal_fields_survive_a_multi_chunk_result(search):
+    """150,000 rows (several input chunks) with a synthesised row first.
+
+    Series aaa has a row only at T0+1h, so (T0, aaa) is synthesised and sorts
+    first. Every other host has two rows, one in each hour, except h75000, which
+    has T0 only, so (T0+1h, h75000) is the second synthesised row. 150,000 real
+    rows plus 2 synthesised ones make 150,002.
+    """
+    rows = search(
+        "| makeresults count=50000 | eval k=mvrange(0,3) | mvexpand k "
+        "| streamstats count as n "
+        "| eval _time=%d + 3600*(n%%2), host=if(n==1, \"aaa\", \"h\".floor(n/2)), "
+        "_raw=\"event \".n, _extra=\"x\".n "
+        "| fields - n k "
+        "| fillcontinuous span=1h by host "
+        "| eval raw=_raw, extra=_extra "
+        "| stats count count(raw) as with_raw count(extra) as with_extra" % T0
+    )
+    assert len(rows) == 1
+    # Pre-fix on the dev target: with_raw=0 and with_extra=0.
+    assert rows[0]["count"] == "150002"
+    assert rows[0]["with_raw"] == "150000"
+    assert rows[0]["with_extra"] == "150000"

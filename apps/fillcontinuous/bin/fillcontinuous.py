@@ -45,6 +45,7 @@ from fillcontinuous_core import (  # noqa: E402
     DEFAULT_MAX_BUCKETS,
     DEFAULT_MAX_ROWS,
     FillContinuousError,
+    field_names,
     fill,
     parse_span,
 )
@@ -228,6 +229,12 @@ class FillContinuousCommand(EventingCommand):
                 result.bucket_count,
                 result.series_count,
             )
+
+        # splunklib fixes the output chunk's columns from the first record
+        # written plus custom_fields. Synthesised rows omit internal fields such
+        # as _raw, so when one sorts first every real row would silently lose
+        # them. Register the union once, before the first yield.
+        self._record_writer.custom_fields.update(field_names(result.records))
 
         for record in result.records:
             yield record

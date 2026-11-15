@@ -163,38 +163,11 @@ Notes:
 
 ## fillcontinuous
 
-### Proposed: Real rows lose `_raw` and other internal fields when the first row written is a filled one
-Status: ready
+### Done
 
-`FillContinuousCommand.transform` (`apps/fillcontinuous/bin/fillcontinuous.py:232`)
-yields the filled result without registering its field names in
-`self._record_writer.custom_fields`. splunklib fixes a chunk's output columns
-from the first record written (`lib/splunklib/searchcommands/internals.py:547-551`),
-and synthesised rows deliberately omit internal fields other than `_span`.
-So when the first row out is a synthesised one, every real row silently loses
-its other `_`-prefixed fields. Observed on the dev target (10.6.1.1):
-
-    | makeresults count=2 | streamstats count as n
-    | eval _time=if(n==1, 0, 7200), host=if(n==1,"b","a"), _raw="event ".n
-    | fields - n | fillcontinuous span=1h by host
-    | eval raw=_raw | table _time host raw
-
-returns `raw` on 0 rows; swap the hosts (so the first row is real) and it is
-on both real rows. The same happened with a user field `_extra`. The README
-says internal fields are omitted from *synthesised* rows only. Because the
-writer resets its columns per output chunk, a large result can hit this in
-any later chunk too. This breaks the rule in `.claude/rules/search-commands.md`
-("register every field name the chunk will produce before yielding the first
-record").
-
-Fix: before yielding, add the union of all output records' keys to
-`custom_fields`; a unit test with a stub writer copying the SDK's first-record
-behaviour; a live test with a synthesised first row and a multi-chunk result
-that checks `_raw` and a user `_` field through a downstream `table`. Patch
-version bump.
-
-- [x] Confirm: should this be done? (Recommended: it is a silent data loss
-  bug, and the fix is a few lines.): Yes, implement.
+| Version | What |
+| --- | --- |
+| 1.1.2 | Real rows keep `_raw` and other `_` fields when a filled row is the first one written: the command registers every output field name with the record writer before yielding. |
 
 ## Tooling
 

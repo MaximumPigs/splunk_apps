@@ -43,6 +43,7 @@ __all__ = [
     "FillContinuousError",
     "FillResult",
     "build_grid",
+    "field_names",
     "fill",
     "infer_span",
     "parse_span",
@@ -96,6 +97,25 @@ FillResult = collections.namedtuple(
     "FillResult",
     ["records", "span", "bucket_count", "series_count", "filled_count", "skipped_count"],
 )
+
+
+def field_names(records):
+    """Every field name used by any record, in first-seen order.
+
+    splunklib fixes a chunk's output columns from the first record written, so
+    the command wrapper must register every name up front. Synthesised rows omit
+    internal fields such as ``_raw``; when one sorts first, real rows would
+    otherwise lose them. First-seen order (not a set) keeps the columns
+    deterministic.
+    """
+    seen = set()
+    names = []
+    for record in records:
+        for name in record:
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
 
 
 class FillContinuousError(ValueError):
