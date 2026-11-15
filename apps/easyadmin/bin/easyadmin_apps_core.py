@@ -115,6 +115,26 @@ MAX_DETAIL_VALUE = 4000
 APP_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
 CONTROL_RE = re.compile(u"[\u0000-\u001f\u007f]")
 
+# Creating an app. Limits on one request, as for changes. The label rule is
+# from Splunk's REST reference (5 to 80 characters, not starting "Splunk for").
+MAX_NEW_APPS = 20
+MAX_APP_NAME = 100
+LABEL_MIN = 5
+LABEL_MAX = 80
+MAX_APP_TEXT = 1024
+MAX_VERSION = 64
+# The only template offered (the owner's choice); the client cannot pick one.
+APP_TEMPLATE = "barebones"
+DEFAULT_APP_VERSION = "1.0.0"
+VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.\-+]*$")
+# The keys a new app may carry. Anything else is refused, above all
+# ``filename``, ``update`` and ``explicit_appname``: apps/local uses those to
+# install a package from a path or a URL, which this page must never do.
+NEW_APP_KEYS = ("name", "label", "visible", "description", "author", "version")
+# What splunkd names in its 403 for apps/local (observed on 10.6.1): either
+# capability allows a create.
+CREATE_APP_CAPS = ("admin_all_objects", "edit_local_apps")
+
 
 def _is_true(value):
     if isinstance(value, bool):
@@ -203,6 +223,9 @@ def build_app(entry):
         "visible": _is_true(content.get("visible", True)),
         "disabled": _is_true(content.get("disabled", False)),
         "version": as_text(content.get("version")),
+        # Pre-fill a clone's form; capped here so a huge value cannot bloat the model.
+        "description": as_text(content.get("description"))[:MAX_APP_TEXT],
+        "author": as_text(content.get("author"))[:MAX_APP_TEXT],
         "target": True,
     }
 
@@ -254,7 +277,13 @@ def build_model(app_entries, objects_by_type, failures, roles, users, context):
         "users": sorted(set(users), key=lambda u: u.lower()),
         "user": context.get("username") or "",
         "theme": context.get("theme"),
+        "can_create_apps": can_create_apps(context),
     }
+
+
+def can_create_apps(context):
+    caps = context.get("capabilities") or []
+    return any(cap in caps for cap in CREATE_APP_CAPS)
 
 
 def read_model(gateway):
@@ -409,16 +438,119 @@ def _clean_roles(value, what):
 
 # ----------------------------------------------------------------- changes
 
-def parse_changes(raw):
+def _app_text(value, what, maximum, required=False):
+    if value is None or value == "":
+        if required:
+            raise EasyAdminError("%s is required." % what)
+        return ""
+    if not isinstance(value, str):
+        raise EasyAdminError("%s must be text." % what)
+    value = value.strip()
+    if required and not value:
+        raise EasyAdminError("%s is required." % what)
+    if len(value) > maximum:
+        raise EasyAdminError("%s is longer than %d characters." % (what, maximum))
+    if CONTROL_RE.search(value):
+        raise EasyAdminError("%s contains control characters." % what)
+    return value
+
+
+def parse_new_apps(raw, existing_names=()):
+    """Validate the apps to create. Returns a list of clean specs.
+
+    ``existing_names`` are the apps already on the target. Names are compared
+    case-insensitively, as app directories are on Windows and macOS file
+    systems, so "Search" is refused beside "search".
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise EasyAdminError("'apps' must be a list.")
+    if len(raw) > MAX_NEW_APPS:
+        raise EasyAdminError("At most %d apps can be created at once." % MAX_NEW_APPS)
+    taken = set(name.lower() for name in existing_names)
+    taken.add(SYSTEM_APP)
+    specs = []
+    for position, entry in enumerate(raw, 1):
+        where = "App %d" % position
+        if not isinstance(entry, dict):
+            raise EasyAdminError("%s must be an object." % where)
+        unknown = sorted(str(key) for key in entry if key not in NEW_APP_KEYS)
+        if unknown:
+            raise EasyAdminError("%s has settings that are not accepted: %s." % (where, ", ".join(unknown)))
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise EasyAdminError("%s needs an app ID." % where)
+        name = name.strip()
+        if len(name) > MAX_APP_NAME:
+            raise EasyAdminError("%s: the app ID is longer than %d characters." % (where, MAX_APP_NAME))
+        if not APP_NAME_RE.match(name) or name in (".", ".."):
+            raise EasyAdminError('%s: "%s" is not a valid app ID. Use letters, digits, "_", "-" and ".", '
+                                 "starting with a letter, digit or \"_\"." % (where, name))
+        if name.lower() in taken:
+            raise EasyAdminError('%s: an app called "%s" already exists, or is named twice in this request.'
+                                 % (where, name))
+        taken.add(name.lower())
+        label = _app_text(entry.get("label"), "%s: the label" % where, LABEL_MAX, required=True)
+        if len(label) < LABEL_MIN:
+            raise EasyAdminError("%s: the label must be at least %d characters." % (where, LABEL_MIN))
+        if label.lower().startswith("splunk for"):
+            raise EasyAdminError('%s: the label cannot start with "Splunk for".' % where)
+        visible = entry.get("visible", True)
+        if not isinstance(visible, bool):
+            raise EasyAdminError("%s: 'visible' must be true or false." % where)
+        version = _app_text(entry.get("version"), "%s: the version" % where, MAX_VERSION) or DEFAULT_APP_VERSION
+        if not VERSION_RE.match(version):
+            raise EasyAdminError("%s: \"%s\" is not a valid version." % (where, version))
+        specs.append({
+            "name": name, "label": label, "visible": visible, "version": version,
+            "description": _app_text(entry.get("description"), "%s: the description" % where, MAX_APP_TEXT),
+            "author": _app_text(entry.get("author"), "%s: the author" % where, MAX_APP_TEXT),
+        })
+    return specs
+
+
+def create_app_args(spec):
+    """The exact form fields for POST apps/local; nothing else is ever sent."""
+    args = {"name": spec["name"], "template": APP_TEMPLATE, "label": spec["label"],
+            "visible": "1" if spec["visible"] else "0", "version": spec["version"]}
+    for field in ("description", "author"):
+        if spec.get(field):
+            args[field] = spec[field]
+    return args
+
+
+def _create_one(gateway, spec, user):
+    """Create one app; returns its per-app result."""
+    name = spec["name"]
+    try:
+        gateway.create_app(create_app_args(spec))
+    except GatewayError as error:
+        logger.warning("user=%s action=create_app app=%s refused: status=%s %s",
+                       user, json.dumps(name), error.status, json.dumps(str(error)))
+        if error.status == 409:
+            message = 'An app called "%s" already exists, so it was not created.' % name
+        else:
+            message = 'The app "%s" was not created: %s' % (name, error)
+        return {"name": name, "status": "error", "message": message}
+    logger.info("user=%s action=create_app app=%s label=%s version=%s",
+                user, json.dumps(name), json.dumps(spec["label"]), json.dumps(spec["version"]))
+    return {"name": name, "status": "applied", "message": 'Created the app "%s".' % name}
+
+
+def parse_changes(raw, allow_empty=False):
     """Validate the page's change list. One entry per object, all of its edits.
 
     Each entry addresses the object where the page last saw it (type, ns,
     app, name) and carries any of: ``move_to`` or ``copy_to`` (an app name),
     ``acl`` (sharing, owner, read, write) and ``delete`` (true, alone).
+    ``allow_empty`` is for a request that creates apps and changes nothing.
     """
+    if raw is None and allow_empty:
+        return []
     if not isinstance(raw, list):
         raise EasyAdminError("'changes' must be a list.")
-    if not raw:
+    if not raw and not allow_empty:
         raise EasyAdminError("There are no changes to apply.")
     if len(raw) > MAX_CHANGES:
         raise EasyAdminError("At most %d objects can be changed at once." % MAX_CHANGES)
@@ -662,15 +794,36 @@ def _apply_one(gateway, change, user):
     return ("applied", 'Changed the permissions of %s "%s".' % (label, name), None)
 
 
-def submit_changes(gateway, raw_changes, user="unknown"):
-    """Apply every change, one object at a time, and report each outcome.
+def submit_changes(gateway, raw_changes, user="unknown", raw_apps=None):
+    """Create the requested apps, then apply every change, and report each outcome.
 
     splunkd has no transaction across objects, so a failure on one does not
-    stop the rest; the page keeps the failed ones pending to retry.
+    stop the rest; the page keeps the failed ones pending to retry. Apps come
+    first so that a change can copy or move an object into one of them. A
+    change aimed at an app that could not be created is not attempted.
     """
-    changes = parse_changes(raw_changes)
+    if raw_apps is not None and not isinstance(raw_apps, list):
+        raise EasyAdminError("'apps' must be a list.")
+    wants_apps = bool(raw_apps)
+    if wants_apps and not can_create_apps(gateway.current_context()):
+        # splunkd would refuse as well; saying so first creates nothing.
+        raise EasyAdminError("Creating apps needs the admin_all_objects or edit_local_apps capability.",
+                             status=403)
+    specs = parse_new_apps(raw_apps, [a.get("name") or "" for a in gateway.list_apps()]) if wants_apps else []
+    changes = parse_changes(raw_changes, allow_empty=wants_apps)
+    if not specs and not changes:
+        raise EasyAdminError("There is nothing to apply.")
+    app_results = [_create_one(gateway, spec, user) for spec in specs]
+    not_created = set(r["name"] for r in app_results if r["status"] != "applied")
     results = []
     for change in changes:
+        target = change["move_to"] or change["copy_to"]
+        if target in not_created:
+            results.append({"key": change["key"], "status": "error", "moved_to": None, "copied_to": None,
+                            "copy_instead": False,
+                            "message": '"%s" was not %s: the app "%s" was not created.' % (
+                                change["name"], "moved" if change["move_to"] else "copied", target)})
+            continue
         try:
             status, message, moved_to = _apply_one(gateway, change, user)
         except GatewayError as error:
@@ -684,11 +837,23 @@ def submit_changes(gateway, raw_changes, user="unknown"):
         results.append({"key": change["key"], "status": status, "message": message,
                         "moved_to": moved_to, "copied_to": change["copy_to"] if change.get("copied") else None,
                         "copy_instead": bool(change.get("copy_instead"))})
+    everything = app_results + results
     return {
+        "apps": app_results,
         "results": results,
-        "applied": sum(1 for r in results if r["status"] == "applied"),
-        "failed": sum(1 for r in results if r["status"] == "error"),
+        "applied": sum(1 for r in everything if r["status"] == "applied"),
+        "failed": sum(1 for r in everything if r["status"] == "error"),
+        "restart_required": _restart_required(gateway),
     }
+
+
+def _restart_required(gateway):
+    """Whether splunkd now asks for a restart; a failed check never fails the apply."""
+    try:
+        return bool(gateway.restart_required())
+    except GatewayError as error:
+        logger.warning("Could not check whether a restart is required: %s", error)
+        return False
 
 
 def extract_document(body):
@@ -734,7 +899,8 @@ def handle_request(method, body, query, gateway, user="unknown"):
             return 200, read_model(gateway)
         if method == "POST":
             document = extract_document(body)
-            return 200, submit_changes(gateway, document.get("changes"), user=user)
+            return 200, submit_changes(gateway, document.get("changes"), user=user,
+                                       raw_apps=document.get("apps"))
         return 405, error_payload("Method %s is not supported." % method)
     except EasyAdminError as error:
         return error.status, error_payload(str(error))

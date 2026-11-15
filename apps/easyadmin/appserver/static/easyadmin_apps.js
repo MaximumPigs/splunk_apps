@@ -154,6 +154,8 @@ require([
         typeLabels: newMap(),  // type id -> label
         apps: newMap(),        // app name -> app
         pending: newMap(),     // object key -> {moveTo, acl, del}
+        newApps: newMap(),     // app name -> {name, label, visible, description, author, version, cloneOf}
+        restartNotice: false,  // splunkd asked for a restart after an Apply
         selected: newMap(),    // object key -> true
         details: newMap(),     // object key -> settings from the server, or 'loading' / {error}
         showAllSettings: newMap(),  // object key -> true to list inherited settings too
@@ -177,7 +179,7 @@ require([
             single: Object.create(null)    // stanza -> true to show settings set once
         },
         showBuiltin: false,
-        panel: null,           // {mode: 'object', key} or {mode: 'bulk'}
+        panel: null,           // {mode: 'object', key}, {mode: 'bulk'} or {mode: 'newapp', cloneOf, draft}
         busy: false,
         message: null,         // {kind: 'error' | 'success' | 'info', lines: [..]}
         dragKeys: null
@@ -371,6 +373,219 @@ require([
         state.message = { kind: 'info', lines: lines };
     }
 
+    // ------------------------------------------------------------ new apps
+    //
+    // Creating and cloning are staged like every other change: a new app is a
+    // pending box that objects can be copied or moved into, and Apply creates
+    // it first. The rules below mirror bin/easyadmin_apps_core.parse_new_apps,
+    // which checks them again on the server.
+
+    var APP_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.\-]*$/;
+    var VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.\-+]*$/;
+    var APP_NAME_MAX = 100;
+    var LABEL_MIN = 5;
+    var LABEL_MAX = 80;
+    var APP_TEXT_MAX = 1024;
+    var VERSION_MAX = 64;
+    var DEFAULT_VERSION = '1.0.0';
+    var MAX_CHANGES = 2000;
+    var MAX_NEW_APPS = 20;
+    var RESTART_NOTICE = 'Splunk asks for a restart to finish some of these changes. Restart it from ' +
+        'Settings > Server controls when it suits your users; this page does not restart Splunk.';
+
+    // The apps from the server plus the pending ones, as app-like entries.
+    function appList() {
+        var list = state.data.apps.slice();
+        $.each(keys(state.newApps), function (i, name) {
+            var spec = state.newApps[name];
+            var source = spec.cloneOf && state.apps[spec.cloneOf];
+            list.push({ name: name, label: spec.label, builtin: false, visible: spec.visible, disabled: false,
+                version: spec.version, target: true, pending: true,
+                cloneOf: spec.cloneOf ? (source ? source.label : spec.cloneOf) : null });
+        });
+        return list.sort(function (a, b) {
+            var x = a.label.toLowerCase();
+            var y = b.label.toLowerCase();
+            return x < y ? -1 : x > y ? 1 : (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1);
+        });
+    }
+
+    function syncApps() {
+        // Build the list first: a pending clone looks its source up in the old map.
+        var list = appList();
+        state.apps = newMap();
+        $.each(list, function (i, app) { state.apps[app.name] = app; });
+    }
+
+    function appNameTaken(name) {
+        var lower = name.toLowerCase();
+        var found = lower === 'system';
+        $.each(appList(), function (i, app) {
+            if (app.name.toLowerCase() === lower) { found = true; }
+        });
+        return found;
+    }
+
+    // The reason each field is not acceptable, as {field: text}; {} when valid.
+    function newAppProblems(draft) {
+        var problems = {};
+        var name = $.trim(draft.name);
+        var label = $.trim(draft.label);
+        if (!name) {
+            problems.name = 'Enter an app ID.';
+        } else if (name.length > APP_NAME_MAX) {
+            problems.name = 'The app ID can be at most ' + APP_NAME_MAX + ' characters.';
+        } else if (!APP_NAME_RE.test(name)) {
+            problems.name = 'Use letters, digits, "_", "-" and ".", starting with a letter, digit or "_".';
+        } else if (appNameTaken(name)) {
+            problems.name = 'An app with this ID already exists (IDs are compared ignoring case).';
+        }
+        if (!label) {
+            problems.label = 'Enter a label.';
+        } else if (label.length < LABEL_MIN || label.length > LABEL_MAX) {
+            problems.label = 'The label must be ' + LABEL_MIN + ' to ' + LABEL_MAX + ' characters.';
+        } else if (label.toLowerCase().indexOf('splunk for') === 0) {
+            problems.label = 'The label cannot start with "Splunk for".';
+        }
+        var version = $.trim(draft.version) || DEFAULT_VERSION;
+        if (version.length > VERSION_MAX || !VERSION_RE.test(version)) {
+            problems.version = 'Use letters, digits, ".", "-" and "+", starting with a letter or digit.';
+        }
+        if ($.trim(draft.description).length > APP_TEXT_MAX) {
+            problems.description = 'The description can be at most ' + APP_TEXT_MAX + ' characters.';
+        }
+        if ($.trim(draft.author).length > APP_TEXT_MAX) {
+            problems.author = 'The author can be at most ' + APP_TEXT_MAX + ' characters.';
+        }
+        return problems;
+    }
+
+    // A free app ID based on ``base`` (name_copy, name_copy_2, ...).
+    function freeAppName(base) {
+        var name = base.slice(0, APP_NAME_MAX - 6);
+        var tries = 1;
+        var candidate = name;
+        while (appNameTaken(candidate)) {
+            tries += 1;
+            candidate = name + '_' + tries;
+        }
+        return candidate;
+    }
+
+    function newAppDraft(sourceName) {
+        var source = sourceName ? state.apps[sourceName] : null;
+        if (!source) {
+            return { name: '', label: '', visible: true, description: '', author: state.data.user || '',
+                version: DEFAULT_VERSION };
+        }
+        return { name: freeAppName(source.name + '_copy'),
+            label: source.label.slice(0, LABEL_MAX - ' (copy)'.length) + ' (copy)',
+            visible: true, description: source.description || '',
+            author: source.author || state.data.user || '', version: DEFAULT_VERSION };
+    }
+
+    // Objects of ``source`` that a clone copies: all of them, whatever the
+    // filters show, except those with a staged move, copy or delete.
+    function cloneCandidates(source) {
+        var copy = [];
+        var left = newMap();
+        var skipped = 0;
+        $.each(state.data.objects, function (i, obj) {
+            if (obj.app !== source) { return; }
+            if (!obj.copyable) {
+                var label = state.typeLabels[obj.type] || obj.type;
+                left[label] = (left[label] || 0) + 1;
+                return;
+            }
+            var before = state.pending[obj.key];
+            if (before && (before.moveTo || before.copyTo || before.del)) { skipped += 1; return; }
+            copy.push(obj);
+        });
+        return { copy: copy, left: left, skipped: skipped };
+    }
+
+    function stageNewApp(draft, cloneOf) {
+        var spec = { name: $.trim(draft.name), label: $.trim(draft.label), visible: !!draft.visible,
+            description: $.trim(draft.description), author: $.trim(draft.author),
+            version: $.trim(draft.version) || DEFAULT_VERSION, cloneOf: cloneOf || null };
+        var lines = [];
+        var plan = cloneOf ? cloneCandidates(cloneOf) : null;
+        var staged = size(state.pending) + (plan ? plan.copy.length : 0);
+        if (size(state.newApps) >= MAX_NEW_APPS) {
+            state.message = { kind: 'error', lines: ['At most ' + MAX_NEW_APPS + ' new apps can be staged at once. ' +
+                'Apply or discard some first.'] };
+            return false;
+        }
+        if (staged > MAX_CHANGES) {
+            state.message = { kind: 'error', lines: ['This clone would stage ' + plural(staged, 'object') +
+                ', and at most ' + MAX_CHANGES + ' can be applied at once. Nothing was staged.'] };
+            return false;
+        }
+        state.newApps[spec.name] = spec;
+        syncApps();
+        lines.push('Staged a new app ' + appText(spec.name) + '. Apply to create it.');
+        if (plan) {
+            $.each(plan.copy, function (i, obj) { setPending(obj, { copyTo: spec.name, del: false }); });
+            lines.push('Staged a copy of ' + plural(plan.copy.length, 'object') + ' from ' + appText(cloneOf) + '.');
+            var leftTypes = keys(plan.left);
+            if (leftTypes.length) {
+                lines.push('Left out, because splunkd cannot copy them: ' + $.map(leftTypes.sort(), function (label) {
+                    return plural(plan.left[label], label.toLowerCase());
+                }).join(', ') + '. The new app gets the template\'s own navigation menu.');
+            }
+            if (plan.skipped) {
+                lines.push(plural(plan.skipped, 'object') + (plan.skipped === 1 ? ' was' : ' were') +
+                    ' not copied because ' + (plan.skipped === 1 ? 'it has' : 'they have') +
+                    ' a staged move, copy or deletion already.');
+            }
+        }
+        state.message = { kind: 'info', lines: lines };
+        return true;
+    }
+
+    // Drop a pending app and every staged move or copy into it.
+    function discardNewApp(name) {
+        var into = $.grep(keys(state.pending), function (objKey) {
+            var pending = state.pending[objKey];
+            return pending.moveTo === name || pending.copyTo === name;
+        });
+        if (!state.newApps[name] || state.busy) { return; }
+        if (into.length && !window.confirm('Discard the new app ' + appText(name) + ' and the staged changes ' +
+                'that put ' + plural(into.length, 'object') + ' into it? Nothing has been applied yet.')) {
+            return;
+        }
+        $.each(into, function (i, objKey) {
+            var obj = state.byKey[objKey];
+            var pending = state.pending[objKey];
+            if (!obj) { return; }
+            setPending(obj, pending.moveTo === name ? { moveTo: obj.app } : { copyTo: obj.app });
+        });
+        var text = appText(name);
+        delete state.newApps[name];
+        syncApps();
+        state.message = { kind: 'info', lines: ['Discarded the new app ' + text + (into.length ? ' and ' +
+            plural(into.length, 'staged change') + ' into it' : '') + '.'] };
+        render();
+        var $found = $root.find('[data-fid="apply"]');
+        if ($found.length) { $found[0].focus(); }
+    }
+
+    // What is staged, for the Apply and Discard buttons and the tab: objects and apps.
+    function stagedText() {
+        var parts = [];
+        if (size(state.newApps)) { parts.push(plural(size(state.newApps), 'app')); }
+        if (size(state.pending)) { parts.push(plural(size(state.pending), 'object')); }
+        return parts.join(' and ');
+    }
+
+    function collectNewApps() {
+        return $.map(keys(state.newApps), function (name) {
+            var spec = state.newApps[name];
+            return { name: spec.name, label: spec.label, visible: spec.visible, description: spec.description,
+                author: spec.author, version: spec.version };
+        });
+    }
+
     function collectChanges() {
         var changes = [];
         $.each(keys(state.pending), function (i, objKey) {
@@ -402,6 +617,7 @@ require([
         $.each(data.types, function (i, type) { state.typeLabels[type.id] = type.label; });
         $.each(data.apps, function (i, app) { state.apps[app.name] = app; });
         $.each(data.objects, function (i, obj) { state.byKey[obj.key] = obj; });
+        syncApps();
     }
 
     function load() {
@@ -425,6 +641,28 @@ require([
                 setTimeout(loadConf, 0);
             }
             state.details = newMap();
+            // An app staged here that now exists (created elsewhere, since)
+            // is dropped with what was staged into it: copying into someone
+            // else's app is not what was asked for.
+            var staleApps = [];
+            $.each(keys(state.newApps), function (i, name) {
+                var lower = name.toLowerCase();
+                if ($.grep(data.apps, function (app) { return app.name.toLowerCase() === lower; }).length) {
+                    staleApps.push(name);
+                    delete state.newApps[name];
+                    $.each(keys(state.pending), function (j, objKey) {
+                        var pending = state.pending[objKey];
+                        if (pending.moveTo === name || pending.copyTo === name) { delete state.pending[objKey]; }
+                    });
+                }
+            });
+            if (staleApps.length) {
+                syncApps();
+                state.message = { kind: 'info', lines: ['The staged new ' + (staleApps.length === 1 ? 'app' : 'apps') +
+                    ' ' + $.map(staleApps, quoted).join(', ') + ' now exist' + (staleApps.length === 1 ? 's' : '') +
+                    ', so ' + (staleApps.length === 1 ? 'it was' : 'they were') + ' dropped with the changes ' +
+                    'staged into ' + (staleApps.length === 1 ? 'it' : 'them') + '.'] };
+            }
             // Staged changes for objects that no longer exist where they were
             // (moved, renamed or deleted elsewhere) cannot be applied.
             var dropped = 0;
@@ -479,7 +717,8 @@ require([
 
     function apply() {
         var changes = collectChanges();
-        if (!changes.length) { return; }
+        var newApps = collectNewApps();
+        if (!changes.length && !newApps.length) { return; }
         var moves = 0;
         var copies = 0;
         var acls = 0;
@@ -491,11 +730,12 @@ require([
             if (change.acl) { acls += 1; }
         });
         var parts = [];
+        if (newApps.length) { parts.push('create ' + plural(newApps.length, 'app')); }
         if (moves) { parts.push('move ' + plural(moves, 'object')); }
         if (copies) { parts.push('copy ' + plural(copies, 'object') + ' into another app'); }
         if (acls) { parts.push('change the permissions of ' + plural(acls, 'object')); }
         if (deletes) { parts.push('delete ' + plural(deletes, 'object')); }
-        var prompt = 'Apply changes to ' + plural(changes.length, 'object') + ': ' + parts.join(', ') + '?';
+        var prompt = 'Apply changes to ' + stagedText() + ': ' + parts.join(', ') + '?';
         if (deletes) {
             prompt += '\n\nDeleting cannot be undone.';
         }
@@ -504,14 +744,14 @@ require([
         }
 
         state.busy = true;
-        state.busyText = 'Applying ' + plural(changes.length, 'change') + '...';
+        state.busyText = 'Applying ' + plural(changes.length + newApps.length, 'change') + '...';
         state.message = null;
         render();
         $.ajax({
             url: ENDPOINT + '?output_mode=json',
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ changes: changes }),
+            data: JSON.stringify({ apps: newApps, changes: changes }),
             dataType: 'json',
             // Splunk Web rejects a state-changing request without its CSRF token.
             headers: {
@@ -520,8 +760,21 @@ require([
             }
         }).done(function (body) {
             var failures = [];
+            var appLines = [];
             var copiesInstead = 0;
             var aclOnOriginal = [];
+            // An app that was created is a real app now; one that was not
+            // stays staged, with its copies, so Apply can try again.
+            $.each(body.apps || [], function (i, result) {
+                if (result.status === 'error') {
+                    failures.push(result.message);
+                } else {
+                    appLines.push(result.message);
+                    delete state.newApps[result.name];
+                }
+            });
+            syncApps();
+            if (body.restart_required) { state.restartNotice = true; }
             $.each(body.results || [], function (i, result) {
                 var obj = state.byKey[result.key];
                 var pending = state.pending[result.key];
@@ -561,7 +814,7 @@ require([
             });
             if (body.failed) {
                 state.message = { kind: 'error', lines: ['Applied ' + plural(body.applied, 'change') + '; ' +
-                    plural(body.failed, 'object') + ' could not be changed and still show as staged:']
+                    plural(body.failed, 'item') + ' could not be changed and still show as staged:']
                     .concat(failures).concat(copiesInstead ? [plural(copiesInstead, 'move was', 'moves were') +
                         ' staged as a copy instead, because ' + (copiesInstead === 1 ? 'that object' : 'those objects') +
                         ' cannot be moved. Apply again to copy ' + (copiesInstead === 1 ? 'it.' : 'them.')] : [])
@@ -572,8 +825,12 @@ require([
                 // Say what was done, object by object (the server words each one).
                 var done = $.map($.grep(body.results || [], function (r) { return r.status !== 'error'; }),
                     function (r) { return r.message; });
-                state.message = { kind: 'success', lines: ['Applied changes to ' + plural(body.applied, 'object') + ':']
-                    .concat(done.slice(0, 10)).concat(done.length > 10 ? ['...and ' + (done.length - 10) + ' more.'] : []) };
+                var heading = appLines.length ?
+                    plural(appLines.length, 'app') + ' created' + (done.length ? ', and changes applied to ' +
+                        plural(done.length, 'object') : '') + ':' :
+                    'Applied changes to ' + plural(done.length, 'object') + ':';
+                state.message = { kind: 'success', lines: [heading].concat(appLines).concat(done.slice(0, 10))
+                    .concat(done.length > 10 ? ['...and ' + (done.length - 10) + ' more.'] : []) };
             }
             load();
         }).fail(function (xhr) {
@@ -629,7 +886,8 @@ require([
     // dragging it elsewhere, is the main use). Apps are hidden only by the app
     // filter and the built-in toggle, and a box with staged changes always shows.
     function visibleApps(byApp) {
-        return $.grep(state.data.apps, function (app) {
+        return $.grep(appList(), function (app) {
+            if (app.pending) { return true; }   // staged: always on show, whatever the filters say
             if (byApp[app.name] && $.grep(byApp[app.name], function (item) {
                 return state.pending[(item.ghostOf || item).key];
             }).length) {
@@ -640,7 +898,7 @@ require([
     }
 
     function targetApps() {
-        return $.grep(state.data.apps, function (app) { return app.target; });
+        return $.grep(appList(), function (app) { return app.target; });
     }
 
     // ------------------------------------------------------------- render
@@ -687,6 +945,7 @@ require([
 
     function announce() {
         var text = state.message ? state.message.lines.join(' ') : '';
+        if (state.restartNotice) { text = (text ? text + ' ' : '') + RESTART_NOTICE; }
         if (state.busy) { text = state.busyText || 'Loading apps and knowledge objects...'; }
         if (state.tab === 'conf' && state.data) {
             var conf = state.conf;
@@ -702,6 +961,21 @@ require([
         var error = !state.busy && state.message && state.message.kind === 'error';
         if ($liveAlert.text() !== (error ? text : '')) { $liveAlert.text(error ? text : ''); }
         if ($liveStatus.text() !== (error ? '' : text)) { $liveStatus.text(error ? '' : text); }
+    }
+
+    // Kept until dismissed, unlike the message above it, which the next
+    // action replaces: a restart still has to happen after the person moves on.
+    function renderRestartNotice() {
+        var $notice = el('div', 'ea-message ea-info ea-restart-notice');
+        $notice.append(el('span', null, RESTART_NOTICE));
+        $notice.append(el('button', 'btn btn-link ea-restart-dismiss', 'Hide').attr({
+            type: 'button', 'data-fid': 'restart-dismiss',
+            'aria-label': 'Hide the restart notice'
+        }).on('click', function () {
+            state.restartNotice = false;
+            render();
+        }));
+        return $notice;
     }
 
     function renderMessages() {
@@ -770,26 +1044,34 @@ require([
         $builtin.append(document.createTextNode(" Show Splunk's built-in apps"));
         $bar.append($builtin);
 
-        var count = size(state.pending);
+        var count = size(state.pending) + size(state.newApps);
+        var staged = stagedText();
         var $actions = el('span', 'ea-actions');
+        if (state.data.can_create_apps) {
+            $actions.append(el('button', 'btn', 'New app...').attr({ type: 'button', 'data-fid': 'new-app' })
+                .prop('disabled', state.busy).on('click', function () {
+                    openPanel({ mode: 'newapp', cloneOf: null, draft: newAppDraft(null) });
+                }));
+        }
         $actions.append(el('button', 'btn', 'Reload').attr({ type: 'button', 'data-fid': 'reload' })
             .prop('disabled', state.busy).on('click', function () {
                 state.message = null;
                 load();
             }));
-        $actions.append(el('button', 'btn ea-discard', count ? 'Discard changes to ' + plural(count, 'object') : 'Discard changes')
+        $actions.append(el('button', 'btn ea-discard', count ? 'Discard changes to ' + staged : 'Discard changes')
             .attr({ type: 'button', 'data-fid': 'discard' })
             .prop('disabled', state.busy || !count).on('click', function () {
                 // Staged work can be large and is not recoverable: ask first.
-                if (!window.confirm('Discard the staged changes to ' + plural(count, 'object') +
-                        '? Nothing has been applied yet.')) {
+                if (!window.confirm('Discard the staged changes to ' + staged + '? Nothing has been applied yet.')) {
                     return;
                 }
                 state.pending = newMap();
-                state.message = { kind: 'info', lines: ['Discarded the staged changes to ' + plural(count, 'object') + '.'] };
+                state.newApps = newMap();
+                syncApps();
+                state.message = { kind: 'info', lines: ['Discarded the staged changes to ' + staged + '.'] };
                 render();
             }));
-        $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply changes to ' + plural(count, 'object') : 'Apply changes')
+        $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply changes to ' + staged : 'Apply changes')
             .attr({ type: 'button', 'data-fid': 'apply' })
             .prop('disabled', state.busy || !count).on('click', apply));
         $bar.append($actions);
@@ -1033,6 +1315,7 @@ require([
     function renderApp(app, objects) {
         var $box = el('section', 'ea-app').attr({ 'data-app': app.name, 'aria-label': 'App ' + app.label });
         if (!app.target) { $box.addClass('ea-app-fixed'); }
+        if (app.pending) { $box.addClass('ea-app-new'); }
         if (!objects.length) { $box.addClass('ea-app-empty'); }
         var $head = el('header', 'ea-app-head');
         var $titleRow = el('div', 'ea-app-title-row');
@@ -1048,12 +1331,28 @@ require([
             }).prop({ checked: picked === real.length, indeterminate: picked > 0 && picked < real.length }));
         }
         $titleRow.append(el('h3', 'ea-app-title', app.label).attr('title', app.label + ' (' + app.name + ')'));
+        if (app.pending) {
+            $titleRow.append(el('button', 'ea-discard-app', '×').prop('disabled', state.busy).attr({
+                type: 'button', 'data-app': app.name, 'data-fid': 'discard-app:' + app.name,
+                'aria-label': 'Discard new app ' + app.label + ' (' + app.name + ')',
+                title: 'Discard this new app and the changes staged into it'
+            }));
+        } else if (app.target && state.data.can_create_apps) {
+            $titleRow.append(el('button', 'btn ea-clone', 'Clone...').prop('disabled', state.busy).attr({
+                type: 'button', 'data-app': app.name, 'data-fid': 'clone:' + app.name,
+                'aria-label': 'Clone app ' + app.label + ' (' + app.name + ')',
+                title: 'Stage a new app holding copies of this app\'s objects'
+            }));
+        }
         $head.append($titleRow);
         var $meta = el('div', 'ea-app-meta');
         $meta.append(el('code', null, app.name));
         var realCount = $.grep(objects, function (item) { return !item.ghostOf; }).length;
         $meta.append(el('span', null, state.filter ?
             plural(realCount, 'match', 'matches') : plural(realCount, 'object')));
+        if (app.pending) {
+            $meta.append(el('span', 'ea-badge ea-badge-changed', app.cloneOf ? 'clone of ' + app.cloneOf : 'new app'));
+        }
         if (app.builtin) { $meta.append(el('span', 'ea-badge', 'built-in')); }
         if (app.disabled) { $meta.append(el('span', 'ea-badge', 'disabled')); }
         if (!app.target) {
@@ -1440,6 +1739,75 @@ require([
         $panel.append($actions);
     }
 
+    // The form for a new app, or a clone (``state.panel.cloneOf``). Typing
+    // updates the reasons and the Stage button in place: re-rendering the
+    // panel on every key would drop the caret.
+    function renderNewAppPanel($panel) {
+        var cloneOf = state.panel.cloneOf;
+        var draft = state.panel.draft;
+        var touched = state.panel.touched = state.panel.touched || newMap();
+        var source = cloneOf ? state.apps[cloneOf] : null;
+        $panel.append(el('h2', 'ea-panel-title', source ? 'Clone ' + source.label : 'New app')
+            .attr({ tabindex: '-1', id: 'ea-panel-title' }));
+        $panel.append(el('p', 'ea-muted', source ?
+            'Stages a new app and a copy of every object in ' + appText(cloneOf) + ' that can be copied. ' +
+                'Nothing is created until you apply. Each copy can be discarded on its own first.' :
+            'Stages a new app from the barebones template. Nothing is created until you apply.'));
+
+        var fields = newMap();
+        var addField = function (field, label, required) {
+            var id = 'ea-newapp-' + field;
+            var $input = el('input').attr({ type: 'text', id: id, 'data-fid': 'newapp-' + field,
+                spellcheck: 'false', autocomplete: 'off', 'aria-describedby': id + '-error' }).val(draft[field]);
+            if (required) { $input.attr('aria-required', 'true'); }
+            var $error = el('div', 'ea-field-error').attr({ id: id + '-error', role: 'alert' });
+            $input.on('input', function () {
+                draft[field] = $input.val();
+                touched[field] = true;
+                update();
+            });
+            fields[field] = { $input: $input, $error: $error };
+            $panel.append(el('div', 'ea-field').append(el('label', null, label).attr('for', id), $input, $error));
+        };
+        addField('name', 'App ID (the directory name, required)', true);
+        addField('label', 'Label (shown in Splunk Web, required)', true);
+        var $visible = el('label', 'ea-check');
+        $visible.append(el('input').attr({ type: 'checkbox', 'data-fid': 'newapp-visible' }).prop('checked', !!draft.visible)
+            .on('change', function () { draft.visible = this.checked; }));
+        $visible.append(document.createTextNode(' Visible in the app list'));
+        $panel.append($visible);
+        addField('description', 'Description', false);
+        addField('author', 'Author', false);
+        addField('version', 'Version', false);
+
+        var $actions = el('div', 'ea-panel-actions');
+        var $stage = el('button', 'btn btn-primary', source ? 'Stage clone' : 'Stage new app')
+            .attr({ type: 'button', 'data-fid': 'newapp-stage' })
+            .on('click', function () {
+                // A refusal (too many staged) sets its own message; either way
+                // the panel closes so the message is in view.
+                if ($.isEmptyObject(newAppProblems(draft))) { stageNewApp(draft, cloneOf); }
+                closePanel();
+            });
+        $actions.append($stage);
+        $actions.append(el('button', 'btn', 'Cancel').attr({ type: 'button', 'data-fid': 'newapp-cancel' })
+            .on('click', closePanel));
+        $panel.append($actions);
+
+        function update() {
+            var problems = newAppProblems(draft);
+            $.each(keys(fields), function (i, field) {
+                // A reason shows once the person has typed in the field, or
+                // always for one that is filled in (a clone starts with values).
+                var show = problems[field] && (touched[field] || $.trim(draft[field]));
+                fields[field].$error.text(show ? problems[field] : '');
+                fields[field].$input.attr('aria-invalid', show ? 'true' : 'false');
+            });
+            $stage.prop('disabled', !$.isEmptyObject(problems));
+        }
+        update();
+    }
+
     function renderPanel() {
         var snap = snapshot();
         buildPanel();
@@ -1454,6 +1822,8 @@ require([
             .on('click', closePanel));
         if (state.panel.mode === 'object') {
             renderObjectPanel($panel, state.byKey[state.panel.key]);
+        } else if (state.panel.mode === 'newapp') {
+            renderNewAppPanel($panel);
         } else {
             renderBulkPanel($panel);
         }
@@ -1512,7 +1882,7 @@ require([
 
     function renderTabs() {
         var $tabs = el('div', 'ea-tabs').attr({ role: 'tablist', 'aria-label': 'App management views' });
-        var pending = size(state.pending);
+        var pending = size(state.pending) + size(state.newApps);
         $.each([['apps', 'Apps'], ['conf', 'Configuration precedence']], function (i, tab) {
             var active = state.tab === tab[0];
             var $tab = el('button', 'ea-tab', tab[1]).attr({
@@ -1763,6 +2133,7 @@ require([
             return;
         }
         $panel.append(renderToolbar());
+        if (state.restartNotice) { $panel.append(renderRestartNotice()); }
         $panel.append(renderMessages());
         $panel.append(renderSelectionBar());
         $panel.append(renderLegend());
@@ -1792,6 +2163,16 @@ require([
     $root.on('click', '.ea-discard-one', function (event) {
         event.stopPropagation();
         discardOne(this.getAttribute('data-key'), this.getAttribute('data-kind'));
+    });
+
+    $root.on('click', '.ea-discard-app', function (event) {
+        event.stopPropagation();
+        discardNewApp(this.getAttribute('data-app'));
+    });
+
+    $root.on('click', '.ea-clone', function () {
+        var name = this.getAttribute('data-app');
+        openPanel({ mode: 'newapp', cloneOf: name, draft: newAppDraft(name) });
     });
 
     $root.on('change', '.ea-select-app', function () {
@@ -1888,7 +2269,7 @@ require([
 
     // Leaving with staged changes silently discards them; let the browser ask.
     $(window).on('beforeunload', function () {
-        if (size(state.pending)) {
+        if (size(state.pending) || size(state.newApps)) {
             return 'There are staged changes that have not been applied.';
         }
         return undefined;

@@ -10,7 +10,8 @@ It has two pages:
   you like, on as many tabs as you like, then save them all at once.
 - **App management** shows every app as a box holding its knowledge objects.
   Drag objects between apps, or select several and move, copy,
-  re-permission or delete them, then apply all the changes at once. A second tab,
+  re-permission or delete them, then apply all the changes at once. Create a
+  new app, or clone one with copies of its objects, in the same way. A second tab,
   **Configuration precedence**, shows like btool which file every setting
   comes from and where apps set the same setting differently. See
   [App management](#app-management) and
@@ -164,8 +165,10 @@ added from the **Types** menu.
 | Tick objects, then **To app...** and **Move** or **Copy** | Stages a move or a copy without dragging. **Move** copies the objects that cannot be moved, as a drop does, and says so. |
 | **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |
 | **Delete** | Stages the ticked objects for deletion. |
+| **New app...**, and **Clone...** in an app's title | Opens a form to stage a new app, or a clone of that app with copies of its objects: see [Creating and cloning apps](#creating-and-cloning-apps). Shown only to accounts that can create apps. |
+| A **new app** or **clone of** box, outlined with dashes | An app that exists only as a staged change. It takes objects like any other app, and its × drops the app and every change staged into it, after asking. |
 | Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings (read-only): see [Settings in the panel](#settings-in-the-panel). |
-| **Apply N changes** | Applies every staged change, after a confirmation that says how many objects are moved, re-permissioned and deleted. |
+| **Apply changes to N objects** | Applies every staged change, after a confirmation that says how many apps are created and how many objects are moved, copied, re-permissioned and deleted. New apps are created first. |
 | The × on a staged-change badge | Drops that one change (a move, a copy, a permission change or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
 | **Discard changes** | Drops every staged change, after asking. |
 
@@ -173,6 +176,54 @@ A staged change is outlined and labelled on the object (`moving from search`,
 `copying to launcher`, `permissions changed`, `will be deleted`). A moved
 object shows in the box it is moving to; a staged copy shows there as a
 dashed `copy from` row, and the original stays where it is.
+
+### Creating and cloning apps
+
+**New app...** opens a form with these fields:
+
+| Field | Rule |
+| --- | --- |
+| App ID | Required. The directory name: letters, digits, `_`, `-` and `.`, starting with a letter, digit or `_`, at most 100 characters. It must not be taken, ignoring case (on Windows and macOS `Search` and `search` are one directory), and `system` is reserved. |
+| Label | Required. 5 to 80 characters, not starting with "Splunk for" (Splunk's own rule for app labels). |
+| Visible | Ticked by default: the app is listed in the app menu. |
+| Description, Author | Optional. The author is pre-filled with your user name. |
+| Version | `1.0.0` unless you change it. |
+
+The app is made from Splunk's `barebones` template; the form offers no other.
+The page checks each field as you type, with the reason beside it, and the
+server checks them again.
+
+**Clone...** in an app's title opens the same form, pre-filled with
+`<id>_copy` (or the next free name), the label `<label> (copy)`, and the
+source's description and author. Staging it adds the new app **and** a
+staged copy of every object in the source that can be copied: private
+objects too, each with its owner, sharing and read and write roles, as for
+[any copy](#copying-objects). It ignores the filters on the page. The message
+after staging lists what was left out, by type: props-based objects, tags,
+lookup table files and navigation menus cannot be copied, so a clone is
+partial, and the new app has the barebones template's own navigation menu.
+Objects that already had a staged move, copy or deletion are not copied, and
+the message says so. Each copy shows as a dashed row in the new app's box and
+can be discarded on its own before **Apply**. A clone of more than 2000
+objects is refused (the limit of one apply).
+
+Nothing is created until **Apply**. The new app's own permissions are
+splunkd's defaults for a new app (everyone may read it; `admin` and `power`
+may write). It needs the `admin_all_objects` or `edit_local_apps` capability;
+without one the buttons are not shown and the endpoint answers 403.
+
+The page never restarts Splunk. On Splunk Enterprise 10.6.1 creating an app,
+and creating objects in it, asked for no restart (observed); splunkd does ask
+for one when an app is deleted. If splunkd does ask after an apply, the page
+shows a notice (hideable) that tells you to restart from **Settings > Server
+controls** when it suits your users. That notice has not been seen in a
+browser, because creating an app does not trigger it on the test instance.
+
+Apps are created before the objects. If an app cannot be created, it stays
+staged with its copies, the changes aimed at it are reported as not
+attempted, and everything else is applied. An app that was created is never
+removed again by the page, even if copying into it partly failed: the failed
+copies stay staged and can be applied again.
 
 ### Settings in the panel
 
@@ -304,9 +355,16 @@ capabilities:
 
 On the App management page, what you can move, re-permission or delete is
 what Splunk lets your account do in **Settings > Knowledge**. Anything it
-refuses is listed with Splunk's reason.
+refuses is listed with Splunk's reason. Creating or cloning an app needs the
+`admin_all_objects` or `edit_local_apps` capability (the two Splunk names when
+it refuses a create); an account with neither gets HTTP 403 and no buttons. The
+page sends only the app's ID, label, visibility, description, author and
+version, with the `barebones` template. It never sends the settings with which
+Splunk installs an app from a file or a URL, and the endpoint refuses a request
+that carries them.
 
-Role edits, and object moves, permission changes and deletions, are logged to
+Role edits, object moves, copies, permission changes and deletions, and app
+creations are logged to
 `$SPLUNK_HOME/var/log/splunk/easyadmin.log`, with the user, the role or
 object, and what was written:
 
@@ -378,6 +436,10 @@ objects can be moved into it), `objects`, `roles`, `users` and `warnings`
 `copyable`, `removable` and `can_change_perms`. With `type`, `ns`, `app` and `name`, it
 returns that one object with its `settings`.
 
+`GET` also returns `can_create_apps` (whether your account holds
+`admin_all_objects` or `edit_local_apps`), and each app has `description`
+and `author`.
+
 `POST` takes one entry per object, addressed where the page saw it:
 
 ```json
@@ -395,6 +457,24 @@ combined with `move_to` or `delete`. `acl` always carries `sharing` and `owner`;
 has one result per object with `status` of `applied` or `error`, its
 `message`, and `moved_to` when it was moved, plus `applied` and `failed`
 counts. At most 2000 objects per request.
+
+To create apps, add an `apps` list (at most 20) beside `changes`; `changes`
+may then be empty:
+
+```json
+{"apps": [{"name": "my_app", "label": "My App", "visible": true,
+           "description": "Optional", "author": "Optional", "version": "1.0.0"}],
+ "changes": [{"type": "macro", "ns": "nobody", "app": "search", "name": "m", "copy_to": "my_app"}]}
+```
+
+Only those six keys are accepted (`version` defaults to `1.0.0`, `visible` to
+`true`); anything else, such as `template` or `filename`, is refused with HTTP
+400, as are an ID or label that breaks the rules above and an ID that exists
+(ignoring case). A caller without the capabilities gets 403. Apps are created
+first. The response gains `apps` (one `name`, `status` and `message` per app,
+counted in `applied` and `failed`) and `restart_required`, read from splunkd
+once everything has run. A change whose `move_to` or `copy_to` names an app that
+was not created is not attempted and is reported as an error.
 
 ## Limitations
 
@@ -417,8 +497,18 @@ counts. At most 2000 objects per request.
   navigation menus cannot be copied.
 - The configuration precedence tab shows Splunk's global order. It does not
   model the per-app order used at search time, or settings in `etc/users`.
-- Creating and cloning apps, and JSON export and import, are not in this
-  version yet.
+- A clone is partial: props-based objects, tags, lookup table files and
+  navigation menus are left out (see
+  [Creating and cloning apps](#creating-and-cloning-apps)). Apps cannot be
+  deleted here: splunkd needs a restart to finish a delete, and this page
+  never restarts Splunk.
+- Creating and cloning apps use Splunk's `apps/local` endpoint. Splunk's REST
+  reference says its application endpoints are not available on Splunk Cloud
+  Platform, where apps are installed through **Manage Apps** or the Admin
+  Config Service, so expect Splunk to refuse there (the page reports its
+  reason for each app). This has not been tried on Cloud, nor on Splunk 9.3;
+  it was observed on Splunk Enterprise 10.6.1 only.
+- JSON export and import are not in this version yet.
 
 ## Compatibility
 

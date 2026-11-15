@@ -838,3 +838,65 @@
 #easyadmin-apps .ea-show-all {
     padding-left: 0;
 }
+
+/* Creating and cloning apps: the pending box, its buttons, the restart notice. */
+#easyadmin-apps .ea-app-title-row .ea-app-title {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+#easyadmin-apps .ea-clone {
+    flex: none;
+    margin-left: auto;
+    padding: 0 8px;
+    min-height: 24px;
+    font-size: 12px;
+}
+
+/* A staged app is outlined like a staged change: same colour, dashed. */
+#easyadmin-apps .ea-app.ea-app-new {
+    border: 2px dashed var(--ea-changed);
+}
+
+#easyadmin-apps .ea-app.ea-app-new .ea-app-head {
+    background: var(--ea-changed-bg);
+}
+
+#easyadmin-apps .ea-discard-app {
+    flex: none;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0 6px;
+    border: none;
+    background: none;
+    color: var(--ea-fg);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#easyadmin-apps .ea-discard-app:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+#easyadmin-apps .ea-discard-app:hover {
+    background: var(--ea-hover);
+}
+
+#easyadmin-apps .ea-field input[aria-invalid="true"] {
+    border-color: var(--ea-danger);
+}
+
+#easyadmin-apps .ea-restart-notice {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#easyadmin-apps .ea-restart-dismiss {
+    flex: none;
+    padding: 0 4px;
+}

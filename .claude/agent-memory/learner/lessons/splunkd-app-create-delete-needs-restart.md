@@ -1,6 +1,6 @@
 ---
-hits: 1
-seen: [2026-11-14]
+hits: 2
+seen: [2026-11-14, 2026-11-15]
 area: splunkd
 level: pattern
 ---
@@ -24,5 +24,11 @@ apps leaves the target in that state on every run.
 **Catch earlier:** playbook `splunkd-knowledge-objects-rest` ("Live tests").
 If this recurs, make it a `write-live-test` rule or a guard check on
 `apps/local` writes.
+
+**Exception (2026-11-15):** easyadmin 1.5.0 builds app creation, so
+`tests/live/easyadmin/test_easyadmin_app_create_live.py` creates ONE throwaway
+app per run and restarts the dev target in teardown only if splunkd asks. It
+is the only module allowed to; each run costs a restart. Any new live test
+that creates apps must reuse that fixture, not add its own.
 
 **Pattern:** `splunkd-knowledge-objects-rest`.
