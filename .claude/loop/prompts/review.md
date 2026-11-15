@@ -11,3 +11,14 @@ Review everything on this branch since `main` (`git diff main...HEAD`).
 
 Findings you deliberately leave go into {{pr_body_file}} under "Open
 findings", each with the reason, so the owner sees them in the PR.
+
+Write the same findings to {{findings_file}} too, so the next groom step adds
+them to ROADMAP.md as proposals. One block per finding:
+
+    ### <app or Tooling>: <short title>
+    Source: security | ux | splunk-reviewer; severity: <severity>
+    Where: <file:line>
+    <what is wrong, evidence observed, the fix you would make, and why it was
+    left (out of scope, needs the owner, predates this change)>
+
+Leave {{findings_file}} absent when you left no findings.

@@ -161,6 +161,52 @@ Notes:
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
 
+### Proposed: A clone's box says "0 objects" while copies are staged into it
+Status: proposed
+
+Left by the UX review on #38 (1.5.0). The box header counts only real
+objects (`easyadmin_apps.js:1378`, `realCount` skips `ghostOf` entries), so
+a staged clone reads "0 objects" with its copies listed underneath. Staged
+copies of types hidden by the Types filter are not listed at all, although
+the Apply confirmation counts them. Fix: count staged copies in the header
+(for example "0 objects, 12 staged") and list or count copies hidden by the
+filter. Also left on #39 as polish: `.ea-setting-label` and `.ea-code` use
+11px and 12px fonts (`easyadmin_apps.css`), below the page's body size.
+
+- [ ] Confirm: should this be done? (Recommended: yes, the count; the review
+  left it only because the wording is a design choice. Proposed wording:
+  "N objects, M staged".)
+
+### Proposed: No cap on the total size of one settings Apply
+Status: proposed
+
+Left by the security review on #39 (1.6.0), low. Each object may carry 200
+settings of up to 64 KB (`easyadmin_apps_core.py:365-367`, checked at
+`:659-687`), and one Apply may hold 2000 changes (`MAX_CHANGES`, `:106`), so
+one request can ask splunkd for gigabytes of writes. Only a caller with
+`admin_all_objects` reaches it, so the harm is self-inflicted load. Fix: a
+total byte cap across the request, refused with a clear message, plus a
+unit test.
+
+- [ ] Confirm: should this be done? (Recommended: yes, small and cheap; the
+  web server's own body limit may already stop it, so probe that first.)
+
+### Proposed: Tests the settings panel still lacks
+Status: proposed
+
+Left on #39 (1.6.0). No UI test covers the hint on masked or too-long
+settings, nor staged settings staying listed under a filter; no live test
+proves Apply refuses a setting called `name` (the reserved keys,
+`easyadmin_apps_core.py:642`, are unit-tested only). Left on #40 (1.6.1):
+the live test that the details panel no longer reads `user-prefs`
+(`tests/live/easyadmin/test_easyadmin_apps_live.py:347-362`) depends on
+`_internal` indexing lag, so it can pass falsely. Fix: the three tests, and
+make the `user-prefs` check wait for a later marker request before
+asserting absence.
+
+- [ ] Confirm: should this be done? (Recommended: yes, tests only, no
+  behaviour change.)
+
 ## fillcontinuous
 
 ### Done
@@ -169,10 +215,22 @@ Notes:
 | --- | --- |
 | 1.1.2 | Real rows keep `_raw` and other `_` fields when a filled row is the first one written: the command registers every output field name with the record writer before yielding. |
 
+### Proposed: `power` can change the command stanzas
+Status: proposed
+
+Left by the security review on #41 (1.1.2), low, predating that change.
+`metadata/default.meta` grants `write : [ admin, sc_admin, power ]` on `[]`
+and `[commands]`, while its own comment says "writable only by admins". A
+`power` user can change or unexport the commands for everyone. Fix: drop
+`power` from both write lists, and check AppInspect stays clean.
+
+- [ ] Confirm: should this be done? (Recommended: yes, admins only, as the
+  file's comment already says.)
+
 ## Tooling
 
 ### Proposed: Audit step can change code that is then pushed unverified
-Status: ready
+Status: interactive
 
 `phase_audit` (`tools/splk/loop.py:500`) commits whatever the audit step
 changed and goes straight to `publish`, with no `splk dev`/`splk test`. The
@@ -190,7 +248,7 @@ code. Not observed: no audit has gone wrong yet.
   needs an interactive session.): Yes.
 
 ### Proposed: Question issues are closed before the groom PR that answers them is merged
-Status: ready
+Status: interactive
 
 `phase_groom` runs the groom step with `main` checked out and calls
 `sync_question_issues` (`tools/splk/loop.py:375-398`) before it creates the
@@ -208,7 +266,7 @@ Found by reading the code, not observed on GitHub.
   session, as above.): Close on merge.
 
 ### Proposed: Console errors without a source in `splk shot`, and the UX audit missing the app's own REST failures
-Status: ready
+Status: interactive
 
 `PageLog._on_console` (`tools/splk/ui.py:150`) keeps only `message.text`, so
 `splk shot easyadmin/app_management` reports six bare "Failed to load
@@ -228,3 +286,18 @@ an audit yet.
 - [x] Confirm: should this be done? (Recommended: the URL in `splk shot` at
   least, since CLAUDE.md relies on it to "look before you claim". Interactive
   session, as above.): Yes.
+
+### Proposed: The UX audit covers only the theme the signed-in user prefers
+Status: proposed
+
+On #38, #39 and #40 the UX audit ran in dark only: `tools/splk/ux.py` asks
+for each theme with `?theme=`, but a page that follows the user's preference
+refuses it, and the audit records the theme Splunk actually drew (`ux.py:8-9`).
+The light theme of easyadmin has gone unaudited for three releases. The
+audit also never opens a panel, so the settings panel added in #39 has no
+audit at all. Fix: switch the test user's theme preference through `sandbox`
+for each pass (restored afterwards), and let an app list panels to open per
+view. Changes `tools/splk/`, so it would be built in an interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes, the theme switch at
+  least; CLAUDE.md's definition of done assumes both themes are audited.)

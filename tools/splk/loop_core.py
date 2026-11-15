@@ -8,12 +8,16 @@ The roadmap (ROADMAP.md) is the loop's work queue. Its format:
     ## <app id>                 one section per app; "## Tooling" for repo work
     ### Done                    table of shipped versions; never an item
     ### 1. Title                an item; the number is optional
-    Status: ready               ready | in-progress | blocked | proposed | done
+    Status: ready               ready | in-progress | blocked | proposed |
+                                interactive | done
     - [ ] question              open: the item cannot start
     - [x] question: answer      answered
 
 An item is actionable only when its status is ready or in-progress AND it has
 no open question, whatever the status line says: the loop never guesses.
+``interactive`` marks agreed work the loop may not do itself (it changes the
+loop, hooks, prompts or settings, which steps are barred from editing): it
+waits for the owner's interactive session instead of being picked and parked.
 """
 
 import datetime
@@ -23,7 +27,7 @@ from splk.logs import get_logger
 
 log = get_logger("loop_core")
 
-STATUSES = ("ready", "in-progress", "blocked", "proposed", "done")
+STATUSES = ("ready", "in-progress", "blocked", "proposed", "interactive", "done")
 
 _APP_HEADING = re.compile(r"^##\s+(?!#)(.+?)\s*$")
 _ITEM_HEADING = re.compile(r"^###\s+(?!#)(.+?)\s*$")
@@ -31,6 +35,9 @@ _STATUS = re.compile(r"^Status:\s*([a-z-]+)\s*$", re.IGNORECASE)
 _OPEN_Q = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+?)\s*$")
 _DONE_Q = re.compile(r"^\s*[-*]\s+\[[xX]\]\s+(.+?)\s*$")
 _NUMBER = re.compile(r"^\d+\.\s*")
+# An indented, non-blank line that is not itself a list entry continues the
+# question above it.
+_CONTINUATION = re.compile(r"^\s+(?![-*]\s)\S")
 
 
 class Item(object):
@@ -95,18 +102,30 @@ def parse_roadmap(text):
 
 def _finish(raw):
     status, open_q, answered = None, [], []
+    # The list the last question went into: groom wraps a question (options,
+    # recommendation) over indented lines, and only reading the first line
+    # sent the owner issues with half a question.
+    last = None
     for line in raw["lines"][1:]:
         match = _STATUS.match(line.strip())
         if match and status is None:
             status = match.group(1).lower()
+            last = None
             continue
         match = _OPEN_Q.match(line)
         if match:
             open_q.append(match.group(1))
+            last = open_q
             continue
         match = _DONE_Q.match(line)
         if match:
             answered.append(match.group(1))
+            last = answered
+            continue
+        if last is not None and _CONTINUATION.match(line):
+            last[-1] += " " + line.strip()
+        else:
+            last = None
     if status not in STATUSES:
         # A missing or misspelt status must not make an item look ready.
         log.warning("Roadmap item %r (line %d) has status %r; treating it as blocked",
@@ -128,6 +147,11 @@ def next_item(items):
 def awaiting_owner(items):
     """Items that cannot start until the owner answers something."""
     return [item for item in items if item.status != "done" and item.open_questions]
+
+
+def awaiting_session(items):
+    """Agreed items only the owner's interactive session can build."""
+    return [item for item in items if item.status == "interactive" and not item.open_questions]
 
 
 def should_audit(items):
@@ -177,6 +201,94 @@ def issue_body(item):
              "Item: %s / %s" % (item.section, item.title), ""]
     lines.extend("- [ ] %s" % q for q in item.open_questions)
     return "\n".join(lines) + "\n"
+
+
+def findings_entry(section, title, pr_url, text):
+    """One PR's left-over review findings, as groom reads them.
+
+    The review step leaves findings for the owner in the PR body; this copy
+    is what puts them in the roadmap, so they are not forgotten once merged.
+    """
+    text = (text or "").strip()
+    if not text:
+        return ""
+    return "## %s / %s (%s)\n\n%s\n" % (section, title, pr_url or "no PR", text)
+
+
+# ------------------------------------------------------------ loop log digest
+
+_STEP_FILE = re.compile(r"^(\d{8}-\d{6})-([a-z_]+)\.json$")
+
+
+def steps_since_last_groom(names):
+    """Step record file names after the newest groom record, oldest first.
+
+    Names sort by their local-time stamp. The groom about to run reviews
+    what happened since the previous one; with no groom yet, everything.
+    """
+    records = sorted(n for n in names if _STEP_FILE.match(n))
+    grooms = [i for i, n in enumerate(records) if _STEP_FILE.match(n).group(2) == "groom"]
+    return records[grooms[-1] + 1:] if grooms else records
+
+
+def loop_digest(records, notifications, limit=60):
+    """Markdown summary of step records and supervisor notifications for groom.
+
+    ``records`` are (file name, parsed record) pairs. Identical stderr is
+    shown once: the same warning on every step would otherwise drown the rest.
+    """
+    if not records and not notifications:
+        return "Nothing happened in the loop since the last groom.\n"
+    lines = ["# Loop activity since the last groom", ""]
+    skipped = max(0, len(records) - limit)
+    if skipped:
+        lines += ["(%d older step records not shown; read them in .agent/loop/steps/.)" % skipped, ""]
+    seen_stderr = set()
+    for name, rec in records[skipped:]:
+        # A corrupt record must not stop every groom from running.
+        rec = rec if isinstance(rec, dict) else {"detail": "step record is not an object"}
+        out = rec.get("output") if isinstance(rec.get("output"), dict) else {}
+        try:
+            cost = float(rec.get("cost_usd") or 0)
+        except (TypeError, ValueError):
+            cost = 0.0
+        lines.append("## %s: %s (%s), %s, exit %s, %ss, $%.2f" % (
+            name, rec.get("step"), rec.get("model"), rec.get("kind"), rec.get("exit"),
+            rec.get("seconds"), cost))
+        if out:
+            lines.append("Status %s: %s" % (out.get("status"), out.get("summary", "")))
+        if rec.get("detail"):
+            lines.append("Detail: %s" % str(rec["detail"])[:500])
+        stderr = str(rec.get("stderr") or "").strip()
+        if stderr:
+            if stderr in seen_stderr:
+                lines.append("Stderr: same as above.")
+            else:
+                seen_stderr.add(stderr)
+                lines.append("Stderr: %s" % stderr[-500:])
+        lines.append("")
+    if notifications:
+        lines += ["## Notifications to the owner", ""] + ["- %s" % n for n in notifications]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def trust_key(path):
+    """The ~/.claude.json project key a headless CLI run looks up for ``path``.
+
+    Observed on Windows (CLI 2.1.325): the working directory with forward
+    slashes and the drive letter's case kept ("d:/GitHub/x" for d:\\GitHub\\x).
+    The key an interactive session writes ("D:\\GitHub\\x") never matches it.
+    """
+    return path.replace("\\", "/")
+
+
+def with_trust(config, key):
+    """Mark ``key`` trusted in a parsed ~/.claude.json. True if it changed."""
+    project = config.setdefault("projects", {}).setdefault(key, {})
+    if project.get("hasTrustDialogAccepted") is True:
+        return False
+    project["hasTrustDialogAccepted"] = True
+    return True
 
 
 # --------------------------------------------------------------- step results
