@@ -282,6 +282,29 @@ def pr_verdict(pr, owner, feedback_since):
     return "waiting"
 
 
+def parse_porcelain_z(output):
+    """Paths from `git status --porcelain -z`, in order.
+
+    Each entry is "XY path" with a two-character status (the first may be a
+    space, so the output must never be stripped). -z gives paths verbatim,
+    without quoting, and a rename or copy is followed by its source path as a
+    separate entry, which is skipped.
+    """
+    entries = output.split("\0")
+    paths, skip = [], False
+    for entry in entries:
+        if skip:
+            skip = False
+            continue
+        if len(entry) < 4:
+            continue
+        status, path = entry[:2], entry[3:]
+        paths.append(path)
+        if "R" in status or "C" in status:
+            skip = True
+    return paths
+
+
 def render_prompt(template, values):
     """Fill {{name}} placeholders; an unknown name is left visible, not blanked."""
     def sub(match):

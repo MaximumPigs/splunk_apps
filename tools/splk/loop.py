@@ -240,8 +240,10 @@ def gh(*args, **kwargs):
 
 def changed_files():
     """Tracked files with changes plus untracked ones, repo-relative."""
-    out = git("status", "--porcelain")
-    return [line[3:].strip().strip('"') for line in out.splitlines() if line.strip()]
+    # Not git(): it strips the output, and the leading space of " M path" is
+    # part of the format (stripping it read ROADMAP.md as OADMAP.md).
+    out = run(["git", "status", "--porcelain", "-z"]).stdout
+    return loop_core.parse_porcelain_z(out)
 
 
 def new_branch(name):

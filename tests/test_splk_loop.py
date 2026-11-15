@@ -5,10 +5,36 @@ loop; what is tested here is every decision it makes from their output.
 """
 
 import os
+import subprocess
 
 import pytest
 
 from splk import loop, loop_core
+
+
+@pytest.mark.parametrize("output,expected", [
+    # The first entry's leading space is part of the format.
+    (" M ROADMAP.md\0", ["ROADMAP.md"]),
+    ("M  a.py\0 M b.py\0?? new dir/c d.md\0", ["a.py", "b.py", "new dir/c d.md"]),
+    ("R  new.md\0old.md\0 M x.py\0", ["new.md", "x.py"]),
+    ("", []),
+])
+def test_parse_porcelain_z(output, expected):
+    assert loop_core.parse_porcelain_z(output) == expected
+
+
+def test_changed_files_on_a_real_repo_reads_the_first_path_whole(tmp_path, monkeypatch):
+    # The groom check once read " M ROADMAP.md" as "OADMAP.md" and stopped the loop.
+    def git(*args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t"] + list(args),
+                       cwd=str(tmp_path), check=True, capture_output=True)
+    git("init", "-q")
+    (tmp_path / "ROADMAP.md").write_text("a\n", encoding="utf-8")
+    git("add", "ROADMAP.md")
+    git("commit", "-q", "-m", "x")
+    (tmp_path / "ROADMAP.md").write_text("b\n", encoding="utf-8")
+    monkeypatch.setattr(loop.paths, "REPO_ROOT", str(tmp_path))
+    assert loop.changed_files() == ["ROADMAP.md"]
 
 ROADMAP = """\
 # Roadmap
