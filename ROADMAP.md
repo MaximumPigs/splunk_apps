@@ -14,6 +14,8 @@ its format is fixed:
 - Open questions are `- [ ] question`; answered ones `- [x] question: answer`.
   An item with an open question never starts, whatever its status says.
   The loop opens a GitHub issue per blocked item; answer there.
+- An item with open questions has a `Context:` paragraph under its status
+  line: a short, plain summary that heads its GitHub issue.
 
 ## easyadmin
 
@@ -59,6 +61,10 @@ are kept here as the record:
 
 ### 2. Export and import an app as JSON
 Status: blocked
+Context: Save a whole app (its knowledge objects and lookups) as a JSON file
+and load it into another Splunk instance, staged as pending changes until
+you press Apply. The open questions decide where an import may land, what
+it may overwrite or delete, and what happens when it is too big for one Apply.
 
 Part of the original request: the whole app as a JSON object that can be
 uploaded or pasted into another instance, without packaging an app.
@@ -130,6 +136,10 @@ and splunkd allows 2 GB, so the app's own 16 MB cap is the limit.
 
 ### Low priority: Deployment apps portal
 Status: blocked
+Context: A page like App management for a deployment server: edit the apps
+it pushes to forwarders, manage server classes, and back up and revert. The
+open questions decide whether it lives in a separate Enterprise-only app,
+how changes reach clients, where backups are kept, and how the work is split.
 
 A portal like App management, for the deployment server's apps.
 
@@ -261,6 +271,10 @@ second `shot` after the name filter, and open it. Tests only.
 
 ### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
 Status: proposed
+Context: One easyadmin test proves the details panel makes no extra request
+by checking Splunk's access log, and it assumes the log becomes searchable in
+order. Doing this would check that assumption with a probe, so the test
+cannot pass by accident. Tests only.
 
 Left by the splunk-reviewer on #58 (tests only), low. `wait_for_marker`
 (`tests/live/easyadmin/easyadmin_live_support.py:99`), used by the check
@@ -467,6 +481,10 @@ would be built in an interactive session.
 
 ### Proposed: A step can end its turn while its own background work still runs
 Status: proposed
+Context: A loop step once reported "failed" while its own review and tests
+were still running, which could have made the loop retry a clean review or
+stop. Doing this adds one line to the step instructions: wait for your own
+work before reporting.
 
 On #58 the review step started the `splunk-reviewer` agent and
 `splk dev easyadmin` in the background, then ended its turn waiting for
@@ -489,6 +507,10 @@ session.
 
 ### Proposed: The review step recorded a security pass without running the security review
 Status: proposed
+Context: On a tests-only PR the loop recorded "security review: pass" without
+running the review, so the record says something that did not happen. The
+question is whether every branch gets the review, or tests-only branches
+skip it and record nothing.
 
 On #58 the review step ran `splk review security easyadmin pass --summary
 "Tests-only branch; no app code, conf or tooling changed. No findings."`
@@ -512,6 +534,9 @@ in an interactive session.
 
 ### Proposed: The review step reads the groom commit as part of the change
 Status: proposed
+Context: Each PR starts with the loop's own roadmap tidy-up commit, and the
+reviewer counted those roadmap edits as a finding in a PR. Doing this tells
+the reviewer to skip that first commit.
 
 Every item branch starts with the supervisor's "Roadmap: groom before
 <item>" commit (`phase_groom`, `tools/splk/loop.py:603`), so

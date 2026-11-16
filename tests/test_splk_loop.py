@@ -172,6 +172,53 @@ def test_wrapped_questions_are_read_whole():
     assert "Recommendation: (b)." in body
 
 
+CONTEXT_ROADMAP = """## easyadmin
+
+### 2. Export and import
+Status: blocked
+Context: Save a whole app as JSON and load it into another Splunk.
+  The questions decide what an import may overwrite.
+
+Part of the original request: the whole app as a JSON object that can be
+uploaded or pasted into another instance. Agreed: an import is staged.
+
+- [ ] Can the target app be new? Options: (a) no; (b) yes. Recommendation: (b).
+
+### 3. No context line
+Status: blocked
+
+First sentence of the item. Second sentence here.
+
+- [ ] Should it?
+"""
+
+
+def test_context_line_is_parsed_and_leads_the_issue_body():
+    # The owner got questions with no context and had to open ROADMAP.md.
+    item = loop_core.parse_roadmap(CONTEXT_ROADMAP)[0]
+    assert item.context == ("Save a whole app as JSON and load it into another Splunk. "
+                            "The questions decide what an import may overwrite.")
+    assert item.open_questions == ["Can the target app be new? Options: (a) no; (b) yes. Recommendation: (b)."]
+    body = loop_core.issue_body(item)
+    assert body.index("Context: Save a whole app") < body.index("- [ ] Can the target app be new?")
+    assert "Part of the original request" not in body  # the summary, not the whole item
+    assert "Full item: ROADMAP.md, line 3." in body
+    body.encode("ascii")
+
+
+def test_without_a_context_line_the_issue_shows_the_first_paragraph():
+    item = loop_core.parse_roadmap(CONTEXT_ROADMAP)[1]
+    assert item.context == ""
+    assert "Context: First sentence of the item. Second sentence here." in loop_core.issue_body(item)
+
+
+def test_first_paragraph_is_cut_at_a_sentence_end():
+    long = "### T\nStatus: blocked\n\n" + "This is one sentence. " * 40 + "\n"
+    item = loop_core.parse_roadmap("## x\n\n" + long)[0]
+    text = loop_core.first_paragraph(item, limit=100)
+    assert len(text) <= 100 and text.endswith("sentence.")
+
+
 def test_findings_entry_names_the_pr_and_skips_empty_text():
     assert loop_core.findings_entry("easyadmin", "Import", "https://x/pull/9", "  \n") == ""
     entry = loop_core.findings_entry("easyadmin", "Import", "https://x/pull/9", "### easyadmin: thing\n")

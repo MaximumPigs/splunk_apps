@@ -20,6 +20,7 @@ best first:
 
     ### Proposed: <short title>
     Status: proposed
+    Context: <two plain sentences for the owner: the problem, and what doing it would change>
 
     <what, where (file:line), why it matters, evidence you observed>
 
