@@ -211,7 +211,7 @@ Notes:
   app): see the open question above.
 
 ### Local knowledge objects should be able to be deleted even when a default one exists under it.
-Status: ready
+Status: in-progress
 
 - Currently, no local knowledge object with a default one under it can be deleted from the app.
 - The option to delete the local one should be available.
