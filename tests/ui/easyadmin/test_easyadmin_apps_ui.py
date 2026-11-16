@@ -29,10 +29,10 @@ def macro(sandbox_client):
     """Create a local macro in search; delete it afterwards from search or launcher."""
     made = []
 
-    def create():
+    def create(definition="index=_internal"):
         name = "easyadmin_ui_%d" % int(time.time() * 1000)
         sandbox_client.request("POST", "/servicesNS/nobody/search/admin/macros",
-                               {"name": name, "definition": "index=_internal"})
+                               {"name": name, "definition": definition})
         made.append(name)
         return name
 

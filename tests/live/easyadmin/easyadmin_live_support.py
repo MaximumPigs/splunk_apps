@@ -9,6 +9,9 @@ import json
 import logging
 import time
 import urllib.parse
+import uuid
+
+from splk.rest import SplunkError
 
 APP = "easyadmin"
 ENDPOINT = "/services/easyadmin/roles"
@@ -91,6 +94,24 @@ def wait_for_audit_line(search, role, timeout=90):
         if rows or time.time() >= deadline:
             return rows
         time.sleep(3)
+
+
+def wait_for_marker(client, search, user, timeout=90):
+    """Send a request nothing else sends, then wait until it is searchable in splunkd_access.
+
+    Why: "no such request in the log" proves nothing while the log is still
+    being indexed. splunkd writes an access line when a request finishes, and
+    splunkd_access.log is indexed in file order (inferred, not observed), so
+    once this later request is searchable, an earlier request by ``user`` would
+    be too. Returns the marker's rows (empty when it never arrived).
+    """
+    marker = "splktest_marker_%d_%s" % (int(time.time() * 1000), uuid.uuid4().hex[:4])
+    try:
+        client.request("GET", "/servicesNS/nobody/search/admin/macros/%s" % marker)
+    except SplunkError as error:
+        # A 404 is what we expect: the macro does not exist; the request is logged all the same.
+        log.debug("marker request %s answered %s", marker, error)
+    return wait_for_access_rows(search, user, "*%s*" % marker, timeout)
 
 
 def wait_for_access_rows(search, user, uri, timeout=90):

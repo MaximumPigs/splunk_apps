@@ -174,6 +174,65 @@ def test_add_a_setting_from_splunkds_list_then_apply_writes_it_locally(open_view
     assert panel.locator(".ea-setting-staged").count() == 0
 
 
+def test_masked_and_shortened_settings_say_to_edit_the_conf_file(open_view, macro, sandbox_client, shot):
+    """A value too long to edit and a masked one get no Edit or Copy, and a hint pointing at the .conf file."""
+    # splunkd shortens a definition past 4096 characters and masks a key it
+    # takes for a secret (both observed on 10.6.1: ``truncated`` and ``secret``).
+    name = macro(definition="index=_internal " + "x" * 4100)
+    sandbox_client.request("POST", "/servicesNS/nobody/search/configs/conf-macros/%s" % q(name),
+                           {"splktest_token": "abc"})
+    page = _open(open_view)
+    panel = _open_panel(page, name)
+
+    long_value = _setting(panel, "definition")
+    assert long_value.locator(".ea-setting-value code").inner_text().endswith("... (shortened)")
+    assert "Too long to edit here: edit it in the .conf file." in long_value.inner_text()
+    assert long_value.locator('button[data-fid="setting-edit:definition"]').count() == 0
+    assert long_value.locator(".ea-copy").count() == 0
+
+    masked = _setting(panel, "splktest_token")
+    assert masked.locator(".ea-setting-value code").inner_text() == "********"
+    assert "Masked value: edit it in the .conf file." in masked.inner_text()
+    assert masked.locator('button[data-fid="setting-edit:splktest_token"]').count() == 0
+    assert masked.locator(".ea-copy").count() == 0
+    shot(page, "app_management_setting_masked")
+
+
+def test_staged_settings_stay_listed_whatever_the_filter_says(open_view, macro):
+    """A filter that matches nothing of a staged setting must not make the stage seem to vanish."""
+    name = macro()
+    page = _open(open_view)
+    panel = _open_panel(page, name)
+    panel.locator('button[data-fid="setting-edit:definition"]').click()
+    panel.locator("#ea-edit-value").fill("index=_audit")
+    panel.locator('button[data-fid="setting-stage:definition"]').click()
+    panel.locator("#ea-add-name").fill("errormsg")
+    panel.locator("#ea-add-value").fill("splktest message")
+    panel.locator('button[data-fid="setting-add-stage"]').click()
+    assert "settings changed (2)" in _object(page, "search", name).inner_text()
+
+    def listed():
+        return [panel.locator(".ea-settings dt").nth(i).locator(".ea-setting-name").inner_text()
+                for i in range(panel.locator(".ea-settings dt").count())]
+
+    # Neither the name nor the value (old or new) contains this text.
+    panel.locator("#ea-setting-filter").fill("splktest_nomatch")
+    assert panel.locator(".ea-setting-count").inner_text() == '2 settings match "splktest_nomatch".'
+    assert sorted(listed()) == ["definition", "errormsg"]
+    assert "staged" in _dt(panel, "definition").inner_text()
+    assert "new, staged" in _dt(panel, "errormsg").inner_text()
+
+    # A filter that matches an inherited setting lists it as well, and keeps both.
+    panel.locator("#ea-setting-filter").fill("disabled")
+    assert _dt(panel, "disabled").locator(".ea-setting-inherited").inner_text() == "inherited"
+    assert {"definition", "errormsg", "disabled"} <= set(listed())
+
+    panel.locator("#ea-setting-filter").fill("")
+    assert sorted(listed()) == ["definition", "errormsg"]
+    assert panel.locator(".ea-setting-inherited").count() == 0
+    assert "settings changed (2)" in _object(page, "search", name).inner_text()
+
+
 def test_an_edit_is_applied_and_shown_as_local(open_view, macro, sandbox_client):
     name = macro()
     page = _open(open_view)

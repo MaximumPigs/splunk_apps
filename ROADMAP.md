@@ -29,6 +29,7 @@ its format is fixed:
 | 1.6.1 | The details panel, settings edits, app creation and the precedence view read only the caller's capabilities from splunkd, not the theme preference as well: one splunkd request fewer per details click. |
 | 1.6.2 | A box counts the copies staged into it ("0 objects, 60 staged") and says how many staged copies, moves and deletions the Types menu or name filter keep out of its list; the settings list, its labels and code use the page's body font size. |
 | 1.6.3 | One Apply is capped at 16 MB of request body: the server refuses a larger one with HTTP 413 before anything is written, and the page refuses, at the click that would take the staged changes over it, and puts the staged state back (the editor, form or panel stays open with what was typed). Splunk Web passed 64 MB bodies in a probe and splunkd allows 2 GB, so the cap is the app's own. |
+| 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -172,22 +173,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Proposed: Tests the settings panel still lacks
-Status: in-progress
-
-Left on #39 (1.6.0). No UI test covers the hint on masked or too-long
-settings, nor staged settings staying listed under a filter; no live test
-proves Apply refuses a setting called `name` (the reserved keys,
-`easyadmin_apps_core.py:642`, are unit-tested only). Left on #40 (1.6.1):
-the live test that the details panel no longer reads `user-prefs`
-(`tests/live/easyadmin/test_easyadmin_apps_live.py:347-362`) depends on
-`_internal` indexing lag, so it can pass falsely. Fix: the three tests, and
-make the `user-prefs` check wait for a later marker request before
-asserting absence.
-
-- [x] Confirm: should this be done? (Recommended: yes, tests only, no
-  behaviour change.): Yes, add the tests.
 
 ### Staged moved knowledge objects should not disappear from their origin app
 Status: ready

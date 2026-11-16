@@ -393,6 +393,14 @@ def test_details_and_precedence_do_not_read_the_theme_preference(splunk, sandbox
     # show current-context for this user and never user-prefs. The model GET
     # does read the theme, so this sandbox user must never call it: the
     # object is found with the admin client.
+    #
+    # An absent line proves nothing while the log is still being indexed (it
+    # lags the request by seconds), so the absence is only checked after a
+    # marker request made afterwards is searchable. splunkd writes an access
+    # line when a request finishes, so any user-prefs call the handler made
+    # finished, and was logged, before the marker was sent; splunkd_access.log
+    # is indexed in file order, so once the marker is searchable an earlier
+    # user-prefs line would be too. (The ordering is inferred, not observed.)
     import easyadmin_live_support as ea
     name = objects.macro()
     obj = find(model(splunk), "macro", name)
@@ -403,6 +411,8 @@ def test_details_and_precedence_do_not_read_the_theme_preference(splunk, sandbox
     assert client.request("GET", "/services/easyadmin/conf")["confs"]
     context = ea.wait_for_access_rows(search, user, "/services/authentication/current-context*")
     assert context, "no current-context request by %s in splunkd_access within 90s" % user
+    marker_rows = ea.wait_for_marker(client, search, user)
+    assert marker_rows, "the marker request never reached splunkd_access in 90s"
     prefs = search('search index=_internal sourcetype=splunkd_access user="%s" uri="/servicesNS/*/user-prefs/*"'
                    ' | table _time uri' % user, earliest="-15m", latest="now")
     assert prefs == [], "the theme preference was read: %s" % prefs
