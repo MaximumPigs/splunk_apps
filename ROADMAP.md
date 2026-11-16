@@ -14,6 +14,8 @@ its format is fixed:
 - Open questions are `- [ ] question`; answered ones `- [x] question: answer`.
   An item with an open question never starts, whatever its status says.
   The loop opens a GitHub issue per blocked item; answer there.
+- An item with open questions has a `Context:` paragraph under its status
+  line: a short, plain summary that heads its GitHub issue.
 
 ## easyadmin
 
@@ -59,6 +61,10 @@ are kept here as the record:
 
 ### 2. Export and import an app as JSON
 Status: blocked
+Context: Save a whole app (its knowledge objects and lookups) as a JSON file
+and load it into another Splunk instance, staged as pending changes until
+you press Apply. The open questions decide where an import may land, what
+it may overwrite or delete, and what happens when it is too big for one Apply.
 
 Part of the original request: the whole app as a JSON object that can be
 uploaded or pasted into another instance, without packaging an app.
@@ -130,6 +136,10 @@ and splunkd allows 2 GB, so the app's own 16 MB cap is the limit.
 
 ### Low priority: Deployment apps portal
 Status: blocked
+Context: A page like App management for a deployment server: edit the apps
+it pushes to forwarders, manage server classes, and back up and revert. The
+open questions decide whether it lives in a separate Enterprise-only app,
+how changes reach clients, where backups are kept, and how the work is split.
 
 A portal like App management, for the deployment server's apps.
 
@@ -261,6 +271,10 @@ second `shot` after the name filter, and open it. Tests only.
 
 ### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
 Status: proposed
+Context: One easyadmin test proves the details panel makes no extra request
+by checking Splunk's access log, and it assumes the log becomes searchable in
+order. Doing this would check that assumption with a probe, so the test
+cannot pass by accident. Tests only.
 
 Left by the splunk-reviewer on #58 (tests only), low. `wait_for_marker`
 (`tests/live/easyadmin/easyadmin_live_support.py:99`), used by the check
@@ -300,8 +314,20 @@ and `[commands]`, while its own comment says "writable only by admins". A
 
 ## Tooling
 
+### Done
+
+| Change | What |
+| --- | --- |
+| Loop | The audit step may only edit ROADMAP.md, as groom may; anything else stops the loop before a commit. |
+| Loop | A question issue is closed only once main no longer asks its questions, so a groom PR closed unmerged leaves the thread open. |
+| Loop | In `await`, a failed `gh pr view` or post-merge `git checkout`/`pull` is retried every 30 s; the loop is stuck only after 20 minutes of failures. |
+| Loop | A fix that changes `apps/` goes through the review step (scoped to the fix's commits) before the push, and every push after a fix notifies "PR #N updated". |
+| Loop prompts | Plan and implement say to see each new test fail on the current code first, and to record it in the PR body. |
+| `splk shot`, UX audit | Console errors carry their source URL; the audit also blocks on errors from the app's own REST endpoints (`/splunkd/__raw/services/<app>/`). |
+| UX audit | Each theme is a pass with the signed-in user's theme preference set through `sandbox` and put back; views list panels and other states to open in `ux.toml`. easyadmin's light theme, details panel and cap refusal are audited for the first time. |
+
 ### Proposed: Audit step can change code that is then pushed unverified
-Status: interactive
+Status: done
 
 `phase_audit` (`tools/splk/loop.py:500`) commits whatever the audit step
 changed and goes straight to `publish`, with no `splk dev`/`splk test`. The
@@ -319,7 +345,7 @@ code. Not observed: no audit has gone wrong yet.
   needs an interactive session.): Yes.
 
 ### Proposed: Question issues are closed before the groom PR that answers them is merged
-Status: interactive
+Status: done
 
 `phase_groom` runs the groom step with `main` checked out and calls
 `sync_question_issues` (`tools/splk/loop.py:375-398`) before it creates the
@@ -337,7 +363,7 @@ Found by reading the code, not observed on GitHub.
   session, as above.): Close on merge.
 
 ### Proposed: Console errors without a source in `splk shot`, and the UX audit missing the app's own REST failures
-Status: interactive
+Status: done
 
 `PageLog._on_console` (`tools/splk/ui.py:150`) keeps only `message.text`, so
 `splk shot easyadmin/app_management` reports six bare "Failed to load
@@ -359,7 +385,7 @@ an audit yet.
   session, as above.): Yes.
 
 ### Proposed: The UX audit covers only the theme the signed-in user prefers
-Status: interactive
+Status: done
 
 On #38, #39 and #40 the UX audit ran in dark only: `tools/splk/ux.py` asks
 for each theme with `?theme=`, but a page that follows the user's preference
@@ -383,7 +409,7 @@ state could include it.
   Yes.
 
 ### Proposed: One failed `git pull` after a merge leaves the loop stuck until resumed
-Status: interactive
+Status: done
 
 On 2026-11-15T19:43:24Z, after #41 merged, the loop notified "Loop stuck in
 await: git pull -q failed: error: cannot lock ref 'refs/remotes/origin/main':
@@ -414,7 +440,7 @@ loop stuck.
   Yes.
 
 ### Proposed: A fix for owner feedback reaches the PR with no security or UX review
-Status: interactive
+Status: done
 
 On #51, the owner asked for staged moves and deletions to be counted too.
 The fix step (`.agent/loop/steps/20261116-085329-fix.json`) changed
@@ -434,7 +460,7 @@ notify "PR #N updated" after the push, with unit tests. Changes
   feedback is often the larger change, as on #51.): Yes.
 
 ### Proposed: The implement step is not told to see a new test fail first
-Status: interactive
+Status: done
 
 On #51 the implement step reported "I edited the JS before running the new
 UI test, so there is no before-failure recorded for it"
@@ -455,6 +481,10 @@ would be built in an interactive session.
 
 ### Proposed: A step can end its turn while its own background work still runs
 Status: proposed
+Context: A loop step once reported "failed" while its own review and tests
+were still running, which could have made the loop retry a clean review or
+stop. Doing this adds one line to the step instructions: wait for your own
+work before reporting.
 
 On #58 the review step started the `splunk-reviewer` agent and
 `splk dev easyadmin` in the background, then ended its turn waiting for
@@ -477,6 +507,10 @@ session.
 
 ### Proposed: The review step recorded a security pass without running the security review
 Status: proposed
+Context: On a tests-only PR the loop recorded "security review: pass" without
+running the review, so the record says something that did not happen. The
+question is whether every branch gets the review, or tests-only branches
+skip it and record nothing.
 
 On #58 the review step ran `splk review security easyadmin pass --summary
 "Tests-only branch; no app code, conf or tooling changed. No findings."`
@@ -500,6 +534,9 @@ in an interactive session.
 
 ### Proposed: The review step reads the groom commit as part of the change
 Status: proposed
+Context: Each PR starts with the loop's own roadmap tidy-up commit, and the
+reviewer counted those roadmap edits as a finding in a PR. Doing this tells
+the reviewer to skip that first commit.
 
 Every item branch starts with the supervisor's "Roadmap: groom before
 <item>" commit (`phase_groom`, `tools/splk/loop.py:603`), so

@@ -495,11 +495,38 @@ def sync_question_issues(state, items, settings):
         write_file(body_path, body)
         url = gh("issue", "create", "--title", title, "--label", QUESTION_LABEL, "--body-file", body_path)
         created.append(url)
-    for title, issue in existing.items():
-        if title not in keep:
-            gh("issue", "close", str(issue["number"]), "--comment",
-               "Answers recorded in ROADMAP.md on branch %s." % git("branch", "--show-current"), check=False)
+    # The roadmap read above is the step's working copy, whose answers sit on
+    # a branch waiting for the owner's merge. An issue is closed only once
+    # main no longer asks its questions, so a groom PR the owner closes
+    # unmerged leaves the thread open; after a merge, the next groom (which
+    # runs straight after it) closes it.
+    stale = [title for title in existing if title not in keep]
+    answered_on_main = set()
+    if stale:
+        on_main = main_roadmap_items()
+        if on_main is not None:
+            still_asking = {loop_core.issue_title(item) for item in loop_core.awaiting_owner(on_main)}
+            answered_on_main = set(stale) - still_asking
+    for title in stale:
+        if title in answered_on_main:
+            gh("issue", "close", str(existing[title]["number"]), "--comment",
+               "Answers recorded in ROADMAP.md on main.", check=False)
+        else:
+            log.info("Keeping issue #%s open until its answers reach main", existing[title]["number"])
     return created
+
+
+def main_roadmap_items():
+    """The roadmap items as committed on local main, or None if it cannot be read.
+
+    phase_groom pulls main before any step, so local main is origin/main.
+    """
+    proc = run(["git", "show", "main:ROADMAP.md"], check=False)
+    if proc.returncode != 0:
+        log.warning("Cannot read ROADMAP.md on main (%s); closing no question issues",
+                    (proc.stderr or "").strip()[:200])
+        return None
+    return loop_core.parse_roadmap(proc.stdout)
 
 
 def collect_answers(state, since=None):
@@ -559,6 +586,17 @@ def stages_apps():
 
 # -------------------------------------------------------------------- phases
 
+def require_roadmap_only(step):
+    """Stop the loop if a roadmap-only step (groom, audit) changed anything else.
+
+    Those steps go straight to a commit with no `splk dev` in between, so any
+    other change would be committed as the owner and pushed unverified.
+    """
+    stray = [f for f in changed_files() if f != "ROADMAP.md" and not f.startswith(".agent/")]
+    if stray:
+        raise LoopError("%s may only edit ROADMAP.md but changed %s" % (step, ", ".join(stray)))
+
+
 def phase_groom(state, settings):
     dirty = [f for f in changed_files() if not f.startswith(".agent/")]
     if dirty:
@@ -582,9 +620,7 @@ def phase_groom(state, settings):
     kind, out = run_step("groom", state, settings)
     if kind != "ok":
         return _step_failed(state, settings, kind, out)
-    stray = [f for f in changed_files() if f != "ROADMAP.md" and not f.startswith(".agent/")]
-    if stray:
-        raise LoopError("Groom may only edit ROADMAP.md but changed %s" % ", ".join(stray))
+    require_roadmap_only("Groom")
     archive_findings()
 
     items = roadmap_items()
@@ -632,6 +668,9 @@ def phase_audit(state, settings):
     kind, out = run_step("audit", state, settings)
     if kind != "ok":
         return _step_failed(state, settings, kind, out)
+    # Nothing verifies an audit's output before it is pushed, so a "fix" it
+    # made to an app would reach a roadmap PR unseen by `splk dev`.
+    require_roadmap_only("Audit")
     commit_all("Roadmap: proposals from a code review")
     sync_question_issues(state, roadmap_items(), settings)
     state["phase"] = "publish"
@@ -681,16 +720,35 @@ def phase_verify(state, settings):
     limit = settings["limits"]["max_attempts"]
     if state["attempt"] >= limit:
         raise LoopError("splk dev still red after %d attempts: %s" % (limit, failure[:300]))
-    # A red verify after a PR fix goes back to fix; otherwise to implement.
-    state["phase"] = "fix" if state.get("after_verify") == "push" else "implement"
+    # A red verify after a PR fix (or its review) goes back to fix; otherwise to implement.
+    # after_verify "push" is how a fix was marked before in_fix existed.
+    state["phase"] = "fix" if state.get("in_fix") or state.get("after_verify") == "push" else "implement"
+
+
+REVIEW_WHOLE_BRANCH = "Review everything on this branch since `main` (`git diff main...HEAD`)."
+REVIEW_AFTER_FIX = (
+    "The PR is already open: this review covers the fix for PR #{pr} only, made after {reason}. "
+    "Review the fix's commits (`git diff {base}..HEAD`) and what they touch; the rest of the branch "
+    "was reviewed before the PR opened. {pr_body} becomes a comment on the PR: write there only "
+    "findings you deliberately leave, under \"Open findings\", and keep anything already in it.")
 
 
 def phase_review(state, settings):
-    kind, out = run_step("review", state, settings)
+    if state.get("in_fix"):
+        scope = REVIEW_AFTER_FIX.format(
+            pr=state.get("pr"), base=state.get("fix_base") or "main",
+            reason="the owner's feedback" if state.get("fix_reason") == "feedback" else "a CI failure",
+            pr_body=paths.display(PR_BODY_FILE))
+    else:
+        scope = REVIEW_WHOLE_BRANCH
+    kind, out = run_step("review", state, settings, extra={"review_scope": scope})
     if kind != "ok":
         return _step_failed(state, settings, kind, out)
     commit_all("Review fixes for %s" % state["item"]["title"])
-    state.update(phase="verify", after_verify="retro")
+    if state.get("in_fix"):
+        state.update(phase="verify", after_verify="push", fix_reviewed=True)
+    else:
+        state.update(phase="verify", after_verify="retro")
 
 
 def phase_retro(state, settings):
@@ -740,14 +798,40 @@ def phase_publish(state, settings):
     notify(state, "PR #%s ready to merge: %s %s" % (number, title, url), settings)
 
 
+def _await_call_failed(state, settings, exc):
+    """A read-only gh or git call in await failed: retry soon, stuck only if it persists.
+
+    Every call this covers is safe to repeat (reading the PR, checking out
+    and fast-forwarding main after a merge), and the usual causes pass on
+    their own: a network outage, or the editor's background fetch moving
+    origin/main while the pull updated it (2026-11-15, 2026-11-16).
+    """
+    limits = settings["limits"]
+    now = time.time()
+    since = state.setdefault("await_failing_since", now)
+    minutes = limits.get("await_retry_minutes", 20)
+    if now - since >= minutes * 60:
+        state.pop("await_failing_since", None)
+        raise LoopError("%s (failing for %d min)" % (exc, minutes))
+    log.warning("Waiting on PR #%s: %s; retrying", state.get("pr"), exc)
+    save_state(state)
+    sleep_unless_paused(limits.get("await_retry_seconds", 30))
+
+
 def phase_await(state, settings):
-    data = json.loads(gh("pr", "view", str(state["pr"]), "--json",
-                         "state,headRefOid,statusCheckRollup,comments,reviews") or "{}")
-    verdict = loop_core.pr_verdict(data, owner_login(state), state.get("feedback_since"))
+    try:
+        data = json.loads(gh("pr", "view", str(state["pr"]), "--json",
+                             "state,headRefOid,statusCheckRollup,comments,reviews") or "{}")
+        verdict = loop_core.pr_verdict(data, owner_login(state), state.get("feedback_since"))
+        if verdict == "merged":
+            # Repeated as a whole on the next call if it fails: the PR still reads merged.
+            git("checkout", "-q", "main")
+            git("pull", "-q", "--ff-only")
+    except LoopError as exc:
+        return _await_call_failed(state, settings, exc)
+    state.pop("await_failing_since", None)
     log.info("PR #%s: %s", state["pr"], verdict)
     if verdict == "merged":
-        git("checkout", "-q", "main")
-        git("pull", "-q", "--ff-only")
         git("branch", "-D", state["item"]["branch"], check=False)
         state.update(phase="groom", item=None, pr=None, pr_url=None, attempt=0, last_failure="")
         return
@@ -777,12 +861,21 @@ def phase_fix(state, settings):
     state["fix_attempts"] = state.get("fix_attempts", 0) + 1
     if state["fix_attempts"] > settings["limits"]["max_fix_attempts"]:
         raise LoopError("PR #%s still needs fixes after %d rounds" % (state["pr"], state["fix_attempts"] - 1))
+    if not state.get("in_fix"):
+        # The commit the round started from, kept across a red verify and a
+        # second fix attempt, so the review sees every change of the round.
+        state.update(in_fix=True, fix_base=git("rev-parse", "HEAD"))
     kind, out = run_step("fix", state, settings, extra={"pr": state.get("pr"),
                                                         "fix_reason": state.get("fix_reason", "")})
     if kind != "ok":
         return _step_failed(state, settings, kind, out)
     commit_all("Address %s on #%s" % ("review" if state.get("fix_reason") == "feedback" else "CI", state["pr"]))
-    state.update(phase="verify", after_verify="push")
+    # CLAUDE.md's definition of done wants a security (and, for pages, UX)
+    # review of every app change; a fix after feedback is often the larger
+    # change (#51), so one that touched an app is reviewed before the push.
+    touched = git("diff", "--name-only", "%s..HEAD" % state["fix_base"]).splitlines()
+    needs_review = loop_core.touches_app_code(touched)
+    state.update(phase="verify", after_verify="review" if needs_review else "push")
 
 
 def phase_push(state, settings):
@@ -793,14 +886,20 @@ def phase_push(state, settings):
     git("push", "-q", "origin", item["branch"])
     reply = read_file(PR_BODY_FILE).strip()
     if reply:
-        # The fix step answers the owner's questions here instead of guessing a change.
+        # The fix step answers the owner's questions here instead of guessing a
+        # change, and a review after the fix lists findings it left.
         path = os.path.join(LOOP_DIR, "pr-comment.md")
         # Posted with the owner's login, so it would read back as owner feedback
         # without the marker owner_feedback skips.
         write_file(path, loop_core.clean_pr_text(reply) + "\n\n" + loop_core.LOOP_MARKER + "\n")
         gh("pr", "comment", str(state["pr"]), "--body-file", path)
         os.remove(PR_BODY_FILE)
-    state["phase"] = "await"
+    hand_over_findings(item, state.get("pr_url") or "#%s" % state["pr"])
+    reason = "your feedback" if state.get("fix_reason") == "feedback" else "a CI failure"
+    reviewed = state.get("fix_reviewed")
+    state.update(phase="await", in_fix=False, fix_base=None, fix_reviewed=False)
+    notify(state, "PR #%s updated after %s%s: %s" % (
+        state["pr"], reason, " (reviewed)" if reviewed else "", state.get("pr_url") or ""), settings)
 
 
 def phase_blocked(state, settings):

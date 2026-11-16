@@ -35,6 +35,7 @@ _STATUS = re.compile(r"^Status:\s*([a-z-]+)\s*$", re.IGNORECASE)
 _OPEN_Q = re.compile(r"^\s*[-*]\s+\[ \]\s+(.+?)\s*$")
 _DONE_Q = re.compile(r"^\s*[-*]\s+\[[xX]\]\s+(.+?)\s*$")
 _NUMBER = re.compile(r"^\d+\.\s*")
+_CONTEXT = re.compile(r"^Context:\s*(.*?)\s*$")
 # An indented, non-blank line that is not itself a list entry continues the
 # question above it.
 _CONTINUATION = re.compile(r"^\s+(?![-*]\s)\S")
@@ -43,8 +44,11 @@ _CONTINUATION = re.compile(r"^\s+(?![-*]\s)\S")
 class Item(object):
     """One roadmap item, as parsed. ``text`` is its whole section, heading included."""
 
-    def __init__(self, section, title, status, open_questions, answered, text, line):
+    def __init__(self, section, title, status, open_questions, answered, text, line, context=""):
         self.section = section
+        # The item's "Context:" paragraph: a short summary for the owner,
+        # shown above the questions in its GitHub issue.
+        self.context = context
         self.title = title
         self.status = status
         self.open_questions = open_questions
@@ -106,7 +110,18 @@ def _finish(raw):
     # recommendation) over indented lines, and only reading the first line
     # sent the owner issues with half a question.
     last = None
+    context, in_context = [], False
     for line in raw["lines"][1:]:
+        if in_context:
+            # The paragraph runs to the next blank line or list entry.
+            if line.strip() and not _OPEN_Q.match(line) and not _DONE_Q.match(line):
+                context.append(line.strip())
+                continue
+            in_context = False
+        match = _CONTEXT.match(line)
+        if match and not context:
+            context, in_context, last = [match.group(1)], True, None
+            continue
         match = _STATUS.match(line.strip())
         if match and status is None:
             status = match.group(1).lower()
@@ -132,7 +147,7 @@ def _finish(raw):
                     raw["title"], raw["line"], status)
         status = "blocked"
     return Item(raw["section"], raw["title"], status, open_q, answered,
-                "\n".join(raw["lines"]).strip() + "\n", raw["line"])
+                "\n".join(raw["lines"]).strip() + "\n", raw["line"], " ".join(c for c in context if c))
 
 
 def next_item(items):
@@ -194,12 +209,47 @@ def clean_pr_text(text):
     return "\n".join(kept).strip()
 
 
+def first_paragraph(item, limit=400):
+    """The item's first paragraph of prose, cut at a sentence end within ``limit``.
+
+    The fallback context for an item groom has not yet given a Context line.
+    """
+    paragraph = []
+    for line in item.text.splitlines()[1:]:
+        text = line.strip()
+        if not text:
+            if paragraph:
+                break
+            continue
+        if _STATUS.match(text) or _CONTEXT.match(text) or text.startswith(("-", "*", "|", "#")):
+            if paragraph:
+                break
+            continue
+        paragraph.append(text)
+    text = " ".join(paragraph)
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(". "), cut.rfind(": "), cut.rfind("; "))
+    return cut[:end + 1] if end > limit // 3 else cut.rsplit(" ", 1)[0] + " ..."
+
+
 def issue_body(item):
-    """ASCII body listing the open questions; answers go in comments."""
+    """ASCII body: a short context, then the open questions; answers go in comments.
+
+    The owner reads these on GitHub, often on a phone, without ROADMAP.md
+    open: the context says what the item is and why the questions matter,
+    so a question can be answered from the issue alone.
+    """
+    context = item.context or first_paragraph(item)
     lines = ["The roadmap loop is waiting on these before it can start this item.",
              "Answer in a comment; the next groom step records the answers in ROADMAP.md.", "",
              "Item: %s / %s" % (item.section, item.title), ""]
+    if context:
+        lines += ["Context: %s" % context, ""]
+    lines += ["Questions:", ""]
     lines.extend("- [ ] %s" % q for q in item.open_questions)
+    lines += ["", "Full item: ROADMAP.md, line %d." % item.line]
     return "\n".join(lines) + "\n"
 
 
@@ -340,6 +390,11 @@ def _parse_ts(value):
 # Appended to every comment the supervisor posts. It posts with the owner's
 # login, so without this its own replies would read back as owner feedback.
 LOOP_MARKER = "<!-- splk-loop -->"
+
+
+def touches_app_code(paths):
+    """True when any repo-relative path is under apps/: such a change needs a review."""
+    return any(p.replace("\\", "/").startswith("apps/") for p in paths)
 
 
 def valid_app(name, known_apps):

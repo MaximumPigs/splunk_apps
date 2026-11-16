@@ -58,6 +58,7 @@ class FakeSplunkd(object):
         }
         self.acls = {"easyadmin": {"sharing": "app", "owner": "nobody",
                                    "perms": {"read": ["admin"], "write": ["admin"]}}}
+        self.prefs = {"admin": {"theme": "dark", "tz": ""}}
         self.calls = []
         self.fail_deletes = set()
 
@@ -76,6 +77,14 @@ class FakeSplunkd(object):
         return _Response(status, body)
 
     def _route(self, method, path, form):
+        if path.startswith("/servicesNS/") and path.endswith("/user-prefs/data/user-prefs/general"):
+            user = path.split("/")[2]
+            if user not in self.prefs:
+                return 404, {"messages": [{"text": "no prefs"}]}
+            if method == "POST":
+                self.prefs[user].update(form)
+                return 200, {}
+            return 200, {"entry": [{"name": "general", "content": dict(self.prefs[user])}]}
         if path == "/services/apps/local":
             return 200, {"entry": [{"name": a, "acl": acl, "content": {}}
                                    for a, acl in self.acls.items()]}
@@ -243,6 +252,19 @@ def test_app_permissions_are_put_back(client, splunkd):
 
 
 # ------------------------------------------------- snapshot, sweep, repair
+
+def test_user_prefs_are_put_back_to_the_first_value_seen(client, splunkd):
+    box = sb.Sandbox(client)
+    box.set_user_prefs("admin", theme="light")
+    assert splunkd.prefs["admin"]["theme"] == "light"
+    box.set_user_prefs("admin", theme="dark")   # a second pass: still restores "dark", the original
+    box.set_user_prefs("admin", tz="UTC")       # a new attribute is recorded on its first change
+    box.cleanup()
+    assert splunkd.prefs["admin"] == {"theme": "dark", "tz": ""}
+    with pytest.raises(ValueError):
+        box.set_user_prefs("nobody_here", theme="dark")
+    assert box.user_prefs == {}
+
 
 def test_snapshot_skips_apps_that_are_not_installed(client):
     state = sb.snapshot(client, apps=("easyadmin", "not_installed"))

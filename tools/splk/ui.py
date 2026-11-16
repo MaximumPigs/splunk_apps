@@ -85,17 +85,19 @@ def web_url(target, path):
     return "%s/%s%s" % (target.web_url, target.web_locale, path)
 
 
-def view_path(app, view=None, theme=None):
+def view_path(app, view=None, theme=None, params=None):
     """Splunk Web path of an app's view; no view means the app's default page.
 
     ``theme`` adds ?theme=light|dark, which is how a Classic dashboard is told
-    its theme (it ignores the user's preference on its own).
+    its theme (it ignores the user's preference on its own). ``params`` (a
+    list of pairs) adds other query parameters, after the theme.
     """
     path = "/app/%s/" % urllib.parse.quote(app, safe="")
     if view:
         path += urllib.parse.quote(view, safe="")
-    if theme:
-        path += "?" + urllib.parse.urlencode({"theme": theme})
+    query = ([("theme", theme)] if theme else []) + list(params or [])
+    if query:
+        path += "?" + urllib.parse.urlencode(query)
     return path
 
 
@@ -140,7 +142,12 @@ class PageLog(object):
     """
 
     def __init__(self):
+        # Text only, as UI tests assert on it; console_entries adds the source.
         self.console_errors = []
+        # {"text", "url"}: a bare "Failed to load resource: ... 404" says
+        # nothing about whose request failed, the URL does (the app's own
+        # files and REST endpoints, or Splunk Web's).
+        self.console_entries = []
         self.page_errors = []
 
     def attach(self, page):
@@ -149,12 +156,16 @@ class PageLog(object):
 
     def _on_console(self, message):
         if message.type == "error":
+            location = message.location or {}
+            url = location.get("url", "") if isinstance(location, dict) else ""
             self.console_errors.append(message.text)
-            log.debug("console error: %s", message.text)
+            self.console_entries.append({"text": message.text, "url": url})
+            log.debug("console error: %s (%s)", message.text, url or "no source")
 
     def clear(self):
         """Forget earlier entries, so the log describes only the page opened next."""
         del self.console_errors[:]
+        del self.console_entries[:]
         del self.page_errors[:]
 
     def _on_page_error(self, error):
@@ -162,7 +173,7 @@ class PageLog(object):
         log.debug("page error: %s", error)
 
     def as_dict(self):
-        return {"console_errors": list(self.console_errors), "page_errors": list(self.page_errors)}
+        return {"console_errors": [dict(e) for e in self.console_entries], "page_errors": list(self.page_errors)}
 
 
 class SplunkWeb(object):
@@ -363,9 +374,9 @@ class SplunkWeb(object):
             page.wait_for_timeout(settle_ms)
         return page
 
-    def open_view(self, page, app, view=None, theme=None, ready_selector=None, settle_ms=0):
+    def open_view(self, page, app, view=None, theme=None, ready_selector=None, settle_ms=0, params=None):
         """Open an app's view (optionally forcing a theme). See open()."""
-        return self.open(page, view_path(app, view, theme), ready_selector, settle_ms)
+        return self.open(page, view_path(app, view, theme, params), ready_selector, settle_ms)
 
     def screenshot(self, page, path, full_page=True):
         """Save a PNG of the page and return its path (the agent can open it to look)."""

@@ -1,6 +1,6 @@
 ## Step: review the branch
 
-Review everything on this branch since `main` (`git diff main...HEAD`).
+{{review_scope}}
 
 1. Run the `splunk-security-review` skill. Fix every finding that should be
    fixed before merging; record the outcome with `splk review security ...`.

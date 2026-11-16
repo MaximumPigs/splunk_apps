@@ -24,7 +24,9 @@ splk shot <app>/<view> --wait-for "<selector>" [--theme dark]
 
 Open the PNG it reports with Read. Write the test from what you saw, not from
 what the code should do. `console_errors` and `page_errors` in the output show
-JavaScript problems the screenshot may not.
+JavaScript problems the screenshot may not; each console error carries the
+`url` it came from, so check whether it is the app's (`/static/app/<app>/`,
+`/splunkd/__raw/services/<app>/`) or Splunk Web's before chasing it.
 
 ## Fixtures (from `tests/ui/conftest.py`)
 
@@ -32,7 +34,7 @@ JavaScript problems the screenshot may not.
 | --- | --- |
 | `open_view(app, view, theme=None, ready=None)` | Open a view in this test's tab and return the Playwright `Page`. Always pass `ready`, a selector the page's JS renders once it is usable: the load event fires long before that. |
 | `shot(page, name)` | Save `build/reports/ui/<app>/<name>.png` and return its path. Take one for every visual claim, then look at it. |
-| `page_log(page)` | `.console_errors` and `.page_errors` (uncaught exceptions) since the page was opened. |
+| `page_log(page)` | `.console_errors` (text), `.console_entries` (`{"text", "url"}`) and `.page_errors` (uncaught exceptions) since the page was opened. |
 | `web` | The signed-in session: `web.url(path)` for Splunk Web URLs, `web.new_page()`, `web.new_user_page(user, password)` (a tab signed in as another user, in its own browser context). |
 | `page` | This test's tab. A failure saves `<test>-FAILED.png` and `<test>-trace.zip`. |
 | `sandbox`, `sandbox_client` | Create and change users, roles and app permissions, undone after the test; an admin REST client to check what a save wrote. |

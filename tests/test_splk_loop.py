@@ -172,6 +172,53 @@ def test_wrapped_questions_are_read_whole():
     assert "Recommendation: (b)." in body
 
 
+CONTEXT_ROADMAP = """## easyadmin
+
+### 2. Export and import
+Status: blocked
+Context: Save a whole app as JSON and load it into another Splunk.
+  The questions decide what an import may overwrite.
+
+Part of the original request: the whole app as a JSON object that can be
+uploaded or pasted into another instance. Agreed: an import is staged.
+
+- [ ] Can the target app be new? Options: (a) no; (b) yes. Recommendation: (b).
+
+### 3. No context line
+Status: blocked
+
+First sentence of the item. Second sentence here.
+
+- [ ] Should it?
+"""
+
+
+def test_context_line_is_parsed_and_leads_the_issue_body():
+    # The owner got questions with no context and had to open ROADMAP.md.
+    item = loop_core.parse_roadmap(CONTEXT_ROADMAP)[0]
+    assert item.context == ("Save a whole app as JSON and load it into another Splunk. "
+                            "The questions decide what an import may overwrite.")
+    assert item.open_questions == ["Can the target app be new? Options: (a) no; (b) yes. Recommendation: (b)."]
+    body = loop_core.issue_body(item)
+    assert body.index("Context: Save a whole app") < body.index("- [ ] Can the target app be new?")
+    assert "Part of the original request" not in body  # the summary, not the whole item
+    assert "Full item: ROADMAP.md, line 3." in body
+    body.encode("ascii")
+
+
+def test_without_a_context_line_the_issue_shows_the_first_paragraph():
+    item = loop_core.parse_roadmap(CONTEXT_ROADMAP)[1]
+    assert item.context == ""
+    assert "Context: First sentence of the item. Second sentence here." in loop_core.issue_body(item)
+
+
+def test_first_paragraph_is_cut_at_a_sentence_end():
+    long = "### T\nStatus: blocked\n\n" + "This is one sentence. " * 40 + "\n"
+    item = loop_core.parse_roadmap("## x\n\n" + long)[0]
+    text = loop_core.first_paragraph(item, limit=100)
+    assert len(text) <= 100 and text.endswith("sentence.")
+
+
 def test_findings_entry_names_the_pr_and_skips_empty_text():
     assert loop_core.findings_entry("easyadmin", "Import", "https://x/pull/9", "  \n") == ""
     entry = loop_core.findings_entry("easyadmin", "Import", "https://x/pull/9", "### easyadmin: thing\n")
@@ -439,6 +486,52 @@ def test_question_issue_body_is_refreshed_when_questions_change(loop_dir, monkey
     assert not [c for c in calls if c[:2] == ("issue", "edit")]
 
 
+def test_question_issue_closes_only_once_main_has_the_answers(loop_dir, monkeypatch):
+    # The groom's answers sit on a branch until the owner merges; closing the
+    # issue then lost the thread when the owner closed that PR instead.
+    asked = loop_core.parse_roadmap(WRAPPED)
+    answered = loop_core.parse_roadmap(WRAPPED.replace("- [ ]", "- [x]"))
+    title = loop_core.issue_title(asked[0])
+    calls = []
+
+    def fake_gh(*args, **kwargs):
+        calls.append(args)
+        if args[:2] == ("issue", "list"):
+            return json.dumps([{"number": 31, "title": title, "url": "https://x/issues/31",
+                                "body": loop_core.issue_body(asked[0])}])
+        return ""
+
+    monkeypatch.setattr(loop, "gh", fake_gh)
+    closes = lambda: [c for c in calls if c[:2] == ("issue", "close")]  # noqa: E731
+
+    monkeypatch.setattr(loop, "main_roadmap_items", lambda: asked)  # not merged yet
+    loop.sync_question_issues({}, answered, {})
+    assert closes() == []
+
+    monkeypatch.setattr(loop, "main_roadmap_items", lambda: None)  # main unreadable: keep it open
+    loop.sync_question_issues({}, answered, {})
+    assert closes() == []
+
+    monkeypatch.setattr(loop, "main_roadmap_items", lambda: answered)  # merged
+    loop.sync_question_issues({}, answered, {})
+    assert [c[2] for c in closes()] == ["31"]
+    assert "on main" in closes()[0][4] and "branch" not in closes()[0][4]
+
+
+def test_main_roadmap_items_reads_the_committed_file_not_the_working_copy(tmp_path, monkeypatch):
+    def git(*args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t"] + list(args),
+                       cwd=str(tmp_path), check=True, capture_output=True)
+    git("init", "-q", "-b", "main")
+    (tmp_path / "ROADMAP.md").write_text(WRAPPED, encoding="utf-8")
+    git("add", "ROADMAP.md")
+    git("commit", "-q", "-m", "x")
+    (tmp_path / "ROADMAP.md").write_text(WRAPPED.replace("- [ ]", "- [x]"), encoding="utf-8")
+    monkeypatch.setattr(loop.paths, "REPO_ROOT", str(tmp_path))
+    items = loop.main_roadmap_items()
+    assert items[0].open_questions  # main still asks
+
+
 def test_interactive_items_are_never_picked_and_are_listed_for_a_session():
     text = ROADMAP.replace("### 2. Export and import\nStatus: ready", "### 2. Export and import\nStatus: interactive")
     parsed = loop_core.parse_roadmap(text)
@@ -534,6 +627,167 @@ def test_write_loop_digest_reads_records_and_notifications_since_the_last_groom(
     text = (loop_dir / "inbox" / "loop-log.md").read_text(encoding="utf-8")
     assert "plan" in text and "planned" in text and "groom (" not in text
     assert "after the groom" in text and "before the groom" not in text
+
+
+@pytest.mark.parametrize("changed,refused", [
+    (["ROADMAP.md", ".agent/loop/steps/x.json"], False),
+    (["ROADMAP.md", "apps/easyadmin/bin/easyadmin_core.py"], True),
+])
+def test_audit_step_may_change_only_the_roadmap(loop_dir, monkeypatch, changed, refused):
+    # The audit's commit goes straight to publish with no `splk dev`, so an
+    # app change it made would be pushed unverified.
+    commits = []
+    monkeypatch.setattr(loop, "run_step", lambda *a, **k: ("ok", {"status": "done", "summary": "x"}))
+    monkeypatch.setattr(loop, "changed_files", lambda: list(changed))
+    monkeypatch.setattr(loop, "commit_all", commits.append)
+    monkeypatch.setattr(loop, "sync_question_issues", lambda *a: [])
+    monkeypatch.setattr(loop, "roadmap_items", lambda: [])
+    state = {"phase": "audit"}
+    if refused:
+        with pytest.raises(loop.LoopError, match="Audit may only edit ROADMAP.md.*easyadmin_core.py"):
+            loop.phase_audit(state, {})
+        assert commits == [] and state["phase"] == "audit"
+    else:
+        loop.phase_audit(state, {})
+        assert commits and state["phase"] == "publish"
+
+
+def _fake_await(monkeypatch, failures, view):
+    """phase_await with gh/git faked: ``failures`` lists commands that fail once each."""
+    slept, calls = [], []
+
+    def fake(kind):
+        def call(*args, **kwargs):
+            calls.append((kind,) + args)
+            if failures and failures[0] == (kind,) + args[:2]:
+                failures.pop(0)
+                raise loop.LoopError("%s %s failed: error connecting to api.github.com" % ((kind,) + args[:1]))
+            return json.dumps(view) if args[:2] == ("pr", "view") else ""
+        return call
+    monkeypatch.setattr(loop, "gh", fake("gh"))
+    monkeypatch.setattr(loop, "git", fake("git"))
+    monkeypatch.setattr(loop, "sleep_unless_paused", slept.append)
+    return slept, calls
+
+
+SETTINGS = {"limits": {"poll_seconds": 300, "await_retry_seconds": 30, "await_retry_minutes": 20}}
+
+
+def test_await_retries_a_failed_pr_read_instead_of_getting_stuck(loop_dir, monkeypatch):
+    slept, _ = _fake_await(monkeypatch, [("gh", "pr", "view")], pr())
+    state = {"phase": "await", "pr": 57, "owner": "owner", "item": {"branch": "b"}}
+    loop.phase_await(state, SETTINGS)
+    assert state["phase"] == "await" and slept == [30] and "await_failing_since" in state
+    loop.phase_await(state, SETTINGS)  # succeeds: back to the normal poll
+    assert slept == [30, 300] and "await_failing_since" not in state
+
+
+def test_await_retries_a_failed_pull_after_a_merge(loop_dir, monkeypatch):
+    # 2026-11-15: "cannot lock ref 'refs/remotes/origin/main'" after #41 merged.
+    slept, calls = _fake_await(monkeypatch, [("git", "pull", "-q")], pr(state="MERGED"))
+    state = {"phase": "await", "pr": 41, "owner": "owner", "item": {"branch": "b"}}
+    loop.phase_await(state, SETTINGS)
+    assert state["phase"] == "await" and slept == [30]
+    loop.phase_await(state, SETTINGS)
+    assert state["phase"] == "groom" and state["pr"] is None
+    assert [c for c in calls if c[:2] == ("git", "pull")] == [("git", "pull", "-q", "--ff-only")] * 2
+
+
+def test_await_gets_stuck_when_calls_keep_failing(loop_dir, monkeypatch):
+    _fake_await(monkeypatch, [("gh", "pr", "view")], pr())
+    state = {"phase": "await", "pr": 57, "owner": "owner", "item": {"branch": "b"},
+             "await_failing_since": loop.time.time() - 21 * 60}
+    with pytest.raises(loop.LoopError, match="failing for 20 min"):
+        loop.phase_await(state, SETTINGS)
+
+
+@pytest.mark.parametrize("paths_,expected", [
+    (["apps/easyadmin/appserver/static/easyadmin_apps.js"], True),
+    (["apps\\easyadmin\\README.md"], True),
+    (["ROADMAP.md", "tests/ui/easyadmin/test_x.py"], False),
+    ([], False),
+])
+def test_touches_app_code(paths_, expected):
+    assert loop_core.touches_app_code(paths_) is expected
+
+
+@pytest.fixture
+def fix_round(loop_dir, monkeypatch, tmp_path):
+    """phase_fix -> verify -> review -> verify -> push with every side effect faked."""
+    events = {"steps": [], "notes": [], "gh": [], "changed": []}
+    monkeypatch.setattr(loop, "PR_BODY_FILE", str(tmp_path / "handoff" / "pr-body.md"))
+    monkeypatch.setattr(loop, "FINDINGS_HANDOFF", str(tmp_path / "handoff" / "findings.md"))
+    monkeypatch.setattr(loop, "FINDINGS_FILE", str(tmp_path / "inbox" / "findings.md"))
+
+    def run_step(name, state, settings, model_key=None, extra=None):
+        events["steps"].append((name, dict(extra or {})))
+        return "ok", {"status": "done", "summary": "x"}
+
+    def git(*args, **kwargs):
+        if args[:1] == ("rev-parse",):
+            return "base123"
+        if args[:1] == ("diff",):
+            return "\n".join(events["changed"])
+        return ""
+
+    monkeypatch.setattr(loop, "run_step", run_step)
+    monkeypatch.setattr(loop, "git", git)
+    monkeypatch.setattr(loop, "gh", lambda *a, **k: events["gh"].append(a) or "")
+    monkeypatch.setattr(loop, "commit_all", lambda message: True)
+    monkeypatch.setattr(loop, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, "[]", ""))
+    monkeypatch.setattr(loop, "notify", lambda state, message, settings: events["notes"].append(message))
+    return events
+
+
+def _drive(state, settings, until="await", limit=10):
+    phases = []
+    while state["phase"] != until and len(phases) < limit:
+        phases.append(state["phase"])
+        loop.PHASES[state["phase"]](state, settings)
+    return phases
+
+
+FIX_SETTINGS = {"limits": {"max_fix_attempts": 3, "max_attempts": 4}}
+
+
+def test_a_fix_that_changes_an_app_is_reviewed_before_the_push(fix_round):
+    # #51: the fix after owner feedback reached the PR with no review and no notification.
+    fix_round["changed"] = ["apps/easyadmin/appserver/static/easyadmin_apps.js"]
+    state = {"phase": "fix", "pr": 51, "pr_url": "https://x/pull/51", "fix_reason": "feedback",
+             "item": {"title": "t", "section": "easyadmin", "app": None, "branch": "b", "kind": "feature"}}
+    assert _drive(state, FIX_SETTINGS) == ["fix", "verify", "review", "verify", "push"]
+    review_scope = dict(fix_round["steps"])["review"]["review_scope"]
+    assert "PR #51" in review_scope and "git diff base123..HEAD" in review_scope
+    assert fix_round["notes"] == ["PR #51 updated after your feedback (reviewed): https://x/pull/51"]
+    assert not state["in_fix"] and not state.get("fix_reviewed")
+
+
+def test_a_fix_outside_apps_is_pushed_without_a_review_but_still_notified(fix_round):
+    fix_round["changed"] = ["tests/ui/easyadmin/test_easyadmin_apps_ui.py"]
+    state = {"phase": "fix", "pr": 58, "pr_url": "https://x/pull/58", "fix_reason": "ci",
+             "item": {"title": "t", "section": "easyadmin", "app": None, "branch": "b", "kind": "feature"}}
+    assert _drive(state, FIX_SETTINGS) == ["fix", "verify", "push"]
+    assert [name for name, _ in fix_round["steps"]] == ["fix"]
+    assert fix_round["notes"] == ["PR #58 updated after a CI failure: https://x/pull/58"]
+
+
+def test_review_before_a_pr_reviews_the_whole_branch(fix_round):
+    state = {"phase": "review", "item": {"title": "t"}}
+    loop.phase_review(state, FIX_SETTINGS)
+    assert dict(fix_round["steps"])["review"]["review_scope"] == loop.REVIEW_WHOLE_BRANCH
+    assert state["after_verify"] == "retro"
+
+
+def test_a_red_verify_after_a_fix_review_goes_back_to_fix(fix_round, monkeypatch):
+    monkeypatch.setattr(loop, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, "[]", "red"))
+    state = {"phase": "verify", "after_verify": "push", "in_fix": True, "item": {"app": None}}
+    loop.phase_verify(state, FIX_SETTINGS)
+    assert state["phase"] == "fix"
+
+
+def test_review_prompt_takes_its_scope_from_the_supervisor():
+    text = loop.read_file(os.path.join(loop.PROMPTS_DIR, "review.md"))
+    assert "{{review_scope}}" in text and "git diff main...HEAD" not in text
 
 
 def test_shipped_settings_and_prompts_are_complete():

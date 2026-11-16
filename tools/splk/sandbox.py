@@ -258,6 +258,27 @@ def write_app_acl(client, app, sharing, owner, read, write):
     client.request("POST", "/services/apps/local/%s/acl" % urllib.parse.quote(app, safe=""), params)
 
 
+def user_prefs_path(user):
+    """A user's own Splunk Web preferences (user-prefs.conf [general], e.g. ``theme``)."""
+    return "/servicesNS/%s/user-prefs/data/user-prefs/general" % urllib.parse.quote(user, safe="")
+
+
+def read_user_prefs(client, user):
+    """The content of a user's [general] preferences, or None when splunkd has none."""
+    try:
+        data = client.request("GET", user_prefs_path(user))
+    except SplunkError as exc:
+        if exc.status == 404:
+            return None
+        raise
+    entries = data.get("entry") or []
+    return entries[0].get("content") or {} if entries else None
+
+
+def write_user_prefs(client, user, attributes):
+    client.request("POST", user_prefs_path(user), attributes)
+
+
 def snapshot(client, apps=()):
     """Capture every user and role, and the permissions of ``apps``.
 
@@ -413,6 +434,8 @@ class Sandbox(object):
         self.originals = {}
         # app -> original eai:acl, for set_app_permissions.
         self.app_acls = {}
+        # user -> {attr: original text}, for set_user_prefs; first record wins.
+        self.user_prefs = {}
 
     # ------------------------------------------------------------ creating
 
@@ -497,6 +520,24 @@ class Sandbox(object):
             write if write is not None else perms.get("write") or [])
         log.info("Changed the permissions of app %s", app)
 
+    def set_user_prefs(self, user, **attributes):
+        """Change a user's Splunk Web preferences (``theme="dark"``); put back at cleanup.
+
+        The UX audit uses this to draw each theme: a page that follows the
+        user's preference refuses a ``?theme=`` that differs from it.
+        """
+        known = self.user_prefs.get(user) or {}
+        missing = [attr for attr in attributes if attr not in known]
+        if missing:
+            current = read_user_prefs(self.client, user)
+            if current is None:
+                raise ValueError("User %r has no user-prefs to change" % user)
+            record = self.user_prefs.setdefault(user, {})
+            for attr in missing:
+                record[attr] = "" if current.get(attr) is None else str(current[attr])
+        write_user_prefs(self.client, user, attributes)
+        log.info("Set %s in the preferences of user %s", ", ".join(sorted(attributes)), user)
+
     # ------------------------------------------------------------- cleanup
 
     def cleanup(self):
@@ -534,7 +575,13 @@ class Sandbox(object):
                 log.info("Restored the permissions of app %s", app)
             except SplunkError as exc:
                 problems.append("restoring the permissions of app %s failed: %s" % (app, exc))
-        self.created, self.originals, self.app_acls = [], {}, {}
+        for user, fields in self.user_prefs.items():
+            try:
+                write_user_prefs(self.client, user, fields)
+                log.info("Restored %s in the preferences of user %s", ", ".join(sorted(fields)), user)
+            except SplunkError as exc:
+                problems.append("restoring the preferences of user %s failed: %s" % (user, exc))
+        self.created, self.originals, self.app_acls, self.user_prefs = [], {}, {}, {}
         if problems:
             raise SandboxError("; ".join(problems))
 

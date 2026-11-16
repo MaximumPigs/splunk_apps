@@ -1,10 +1,9 @@
 # UX audit settings for easyadmin (read by `splk ux easyadmin` and the ux
 # stage of `splk dev easyadmin`). See the splunk-ux skill.
 #
-# role_management follows the signed-in user's theme preference and reloads
-# itself out of the other ?theme=, so one run audits one theme: the report
-# says which was not covered. Switch the preference in Splunk Web and run
-# again to audit the other.
+# Both views follow the signed-in user's theme preference and reload
+# themselves out of the other ?theme=, so the audit sets that preference for
+# each pass and puts it back afterwards.
 
 [views.role_management]
 # The grid exists only once the role model has loaded and rendered.
@@ -18,3 +17,27 @@ settle_ms = 1500
 ready = "#easyadmin-apps .ea-grid"
 scope = "#easyadmin-apps"
 settle_ms = 1500
+
+# The details panel of the first object in the search app (a built-in app,
+# shown once "builtin" is ticked), with its settings list.
+[[views.app_management.states]]
+name = "details"
+click = [
+    '#easyadmin-apps input[data-fid="builtin"]',
+    '#easyadmin-apps .ea-app[data-app="search"] .ea-object-name',
+]
+ready = "#easyadmin-apps .ea-panel .ea-settings"
+
+# The refusal shown when staging would take one Apply over its size cap. The
+# page's test hook lowers the cap so one bulk permission change exceeds it.
+[[views.app_management.states]]
+name = "cap-refusal"
+query = "ea_max_request_bytes=30"
+click = [
+    '#easyadmin-apps input[data-fid="builtin"]',
+    '#easyadmin-apps .ea-app[data-app="search"] .ea-select:not(:disabled)',
+    '#easyadmin-apps button[data-fid="bulk-acl"]',
+    '#easyadmin-apps input[data-fid="bulk-perms"]',
+    '#easyadmin-apps button[data-fid="bulk-stage"]',
+]
+ready = "#easyadmin-apps .ea-panel-refusal"
