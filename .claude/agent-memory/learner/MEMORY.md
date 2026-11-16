@@ -60,4 +60,5 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | hook | [PowerShell corrupted UTF-8](lessons/windows-powershell-encoding.md): never write repo files with PowerShell. |
 | 1 | lesson | [Concurrent splk runs exhaust processes](lessons/splk-concurrent-runs-exhaust-processes.md): 0xC0000142 / Playwright "Connection closed" with no assertion; one splk at a time, re-run once. |
 | 1 | pattern | [Stale transient alert after undo/discard](lessons/ux-transient-state-cleared-on-every-path.md): clear page-state messages on every path that changes what they describe. Playbook `request-size-cap`. |
+| 1 | lesson | [Absence check on an indexed log](lessons/tests-absence-in-indexed-log-needs-marker.md): "no user-prefs row" is vacuous while splunkd_access lags; wait for a marker request first. |
 | 1 | lesson | [ROADMAP.md edits duplicated sections](lessons/process-roadmap-edit-duplicated-sections.md): implement step corrupted it, only review noticed; diff it after editing. |

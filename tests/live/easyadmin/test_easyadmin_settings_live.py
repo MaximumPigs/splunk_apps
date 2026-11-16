@@ -191,6 +191,25 @@ def test_a_secret_name_and_a_dashboard_are_refused_before_splunkd(splunk, made):
     assert caught.value.status == 400 and "cannot be edited" in str(caught.value)
 
 
+def test_a_setting_called_name_or_sharing_is_refused_and_nothing_changes(splunk, made):
+    # Posted to splunkd as a form key, ``name`` would not be a setting and
+    # ``sharing`` would change the object's permissions instead of writing a
+    # key; the endpoint refuses both before splunkd sees them (observed: 400).
+    name = made.macro()
+    obj = find(model(splunk), "macro", name)
+    before = acl_of(splunk, "nobody", HOST_APP, "admin/macros", name)
+    for key in ("name", "sharing"):
+        with pytest.raises(SplunkError) as caught:
+            edit(splunk, obj, [setting(key, "x")])
+        assert caught.value.status == 400, key
+        assert '"%s" is reserved by splunkd' % key in str(caught.value)
+    still = find(model(splunk), "macro", name)
+    assert still is not None
+    now = acl_of(splunk, "nobody", HOST_APP, "admin/macros", name)
+    assert (now["sharing"], now["owner"], now["perms"]) == (before["sharing"], before["owner"], before["perms"])
+    assert [(k, s["value"]) for k, s in own(details_of(splunk, still)).items()] == [("definition", "index=_internal")]
+
+
 def test_a_field_extraction_edits_only_its_own_line(splunk, made):
     stanza = made.unique("sourcetype")
     suffix = made.props("extractions", stanza=stanza, type="EXTRACT", value="(?<splktest_a>\\d+)")

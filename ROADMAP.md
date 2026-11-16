@@ -29,6 +29,7 @@ its format is fixed:
 | 1.6.1 | The details panel, settings edits, app creation and the precedence view read only the caller's capabilities from splunkd, not the theme preference as well: one splunkd request fewer per details click. |
 | 1.6.2 | A box counts the copies staged into it ("0 objects, 60 staged") and says how many staged copies, moves and deletions the Types menu or name filter keep out of its list; the settings list, its labels and code use the page's body font size. |
 | 1.6.3 | One Apply is capped at 16 MB of request body: the server refuses a larger one with HTTP 413 before anything is written, and the page refuses, at the click that would take the staged changes over it, and puts the staged state back (the editor, form or panel stays open with what was typed). Splunk Web passed 64 MB bodies in a probe and splunkd allows 2 GB, so the cap is the app's own. |
+| 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -85,11 +86,21 @@ included. Private user objects are in scope.
   objects only; (b) staged as one "changed" entry for the app, discardable
   like any other. Recommendation: (a), keeping the import to knowledge
   objects; the label and version belong to whoever owns the target app.
+- [ ] Since 1.6.3 one Apply is capped at 16 MB of request body, and an
+  import carries lookup CSV contents, so a large app's import can exceed
+  it. What then? Options: (a) refuse the import when staging it would take
+  the staged changes over the cap, naming the size, so the person discards
+  some objects (for example a large lookup) and imports the rest; (b) Apply
+  sends an import in several requests under the cap, so a failure part-way
+  leaves the target app half imported; (c) a higher cap for imports only.
+  Recommendation: (a), the same refusal at staging that 1.6.3 already
+  shows, and nothing is written half-way.
 
 Probe first: whether a lookup file's contents can be written through REST
 or a search on 9.3 and 10.x without Splunk's upload staging folder (for
-example `outputlookup` run in the target app's namespace), and the largest
-JSON body the page's REST endpoint accepts (upload and paste).
+example `outputlookup` run in the target app's namespace). The body size is
+settled: the 1.6.3 probe saw Splunk Web pass 64 MB bodies to the endpoint
+and splunkd allows 2 GB, so the app's own 16 MB cap is the limit.
 
 ### Low priority: Deployment apps portal
 Status: blocked
@@ -162,22 +173,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Proposed: Tests the settings panel still lacks
-Status: ready
-
-Left on #39 (1.6.0). No UI test covers the hint on masked or too-long
-settings, nor staged settings staying listed under a filter; no live test
-proves Apply refuses a setting called `name` (the reserved keys,
-`easyadmin_apps_core.py:642`, are unit-tested only). Left on #40 (1.6.1):
-the live test that the details panel no longer reads `user-prefs`
-(`tests/live/easyadmin/test_easyadmin_apps_live.py:347-362`) depends on
-`_internal` indexing lag, so it can pass falsely. Fix: the three tests, and
-make the `user-prefs` check wait for a later marker request before
-asserting absence.
-
-- [x] Confirm: should this be done? (Recommended: yes, tests only, no
-  behaviour change.): Yes, add the tests.
 
 ### Staged moved knowledge objects should not disappear from their origin app
 Status: ready
@@ -370,6 +365,12 @@ audit at all. Fix: switch the test user's theme preference through `sandbox`
 for each pass (restored afterwards), and let an app list panels to open per
 view. Changes `tools/splk/`, so it would be built in an interactive session.
 
+Again on #57 (1.6.3): the UX review saw the cap refusal alert
+(`easyadmin_apps.js:2310`) only in source and UI tests, since the audit ran
+in dark only and opens no panel. The page can force the refusal with
+`?ea_max_request_bytes=` (`easyadmin_apps.js:638-642`), so a listed panel
+state could include it.
+
 - [x] Confirm: should this be done? (Recommended: yes, the theme switch at
   least; CLAUDE.md's definition of done assumes both themes are audited.):
   Yes.
@@ -391,6 +392,15 @@ repeat, so a retry a few seconds later would have carried on without the
 owner. Fix: retry the post-merge `git pull` (and other read-only git calls in
 `await`) a few times with a short wait before raising, with a unit test.
 Changes `tools/splk/`, so it would be built in an interactive session.
+
+Again on 2026-11-16T10:15:04Z, waiting on #57: "Loop stuck in await: gh pr
+view failed: error connecting to api.github.com" (loop log since the groom
+of 20261116-092127). The network outage was outside the loop, but
+`phase_await` polls (`loop.py:744`), so one failed `gh pr view` could simply
+be retried at the next poll instead of pausing for the owner. The same
+retry should cover it: a failed read-only `gh` or `git` call in `await` is
+logged and retried, and only repeated failures over some minutes mark the
+loop stuck.
 
 - [x] Confirm: should this be done? (Recommended: yes, a small retry; it
   costs nothing when git succeeds, and a ref race should not need the owner.):
