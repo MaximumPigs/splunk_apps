@@ -371,6 +371,43 @@ Left by the splunk-reviewer on #63 (1.6.4), both low:
   it could be built with "No screenshot shows the hidden by the filters
   note", which edits the same test file.)
 
+### Proposed: An unreadable local file reads as "no local changes"
+Status: proposed
+Context: Since 1.7.0 a locked object that has local changes names the local
+file to edit. If that file cannot be read, or is too large, the object is
+shown as having no local changes, with no note. Doing this logs the skipped
+file clearly, so an admin can see why the note is missing.
+
+Left by the splunk-reviewer on #73 (1.7.0), minor. `mark_local_changes`
+(`apps/easyadmin/bin/easyadmin_apps_core.py:343`) treats a `None` from
+`read_local` as "no local stanzas" (`:365`). `ConfFileReader.read_local`
+(`apps/easyadmin/bin/easyadmin_conf_rest.py:160`) returns `None` for a file
+that exists but cannot be read or is longer than `MAX_FILE_CHARS` (8 M
+characters, `easyadmin_conf_core.py:74`); the size case is logged at warning
+(`easyadmin_conf_rest.py:196`), the unreadable case at a lower level. The
+object then shows the old lock wording, as if it had no local changes. Fix:
+log once at warning in `mark_local_changes` when a file exists but could not
+be read, naming it, or say in the README that such a file is skipped. Rare
+on a real instance.
+
+- [ ] Confirm: should this be done? (Recommended: yes, the log line; one
+  warning per unreadable file, with a unit test.)
+
+### Proposed: Tidy the local-changes live test
+Status: proposed
+Context: A cosmetic clean-up of one easyadmin test file added in 1.7.0. Doing
+this changes no behaviour.
+
+Left by the splunk-reviewer on #73 (1.7.0), minor. In
+`tests/live/easyadmin/test_easyadmin_local_changes_live.py` the
+`objects_macro` fixture (`:75`) is defined after the test that first uses
+it (`:60`), and builds its name with an inline `__import__("time")` (`:76`).
+Fix: `import time` at the top and move the fixture above its first use.
+Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, but only alongside
+  another change to the same file; on its own it is not worth a PR.)
+
 ## fillcontinuous
 
 ### Done
@@ -404,159 +441,6 @@ and `[commands]`, while its own comment says "writable only by admins". A
 | Loop prompts | Plan and implement say to see each new test fail on the current code first, and to record it in the PR body. |
 | `splk shot`, UX audit | Console errors carry their source URL; the audit also blocks on errors from the app's own REST endpoints (`/splunkd/__raw/services/<app>/`). |
 | UX audit | Each theme is a pass with the signed-in user's theme preference set through `sandbox` and put back; views list panels and other states to open in `ux.toml`. easyadmin's light theme, details panel and cap refusal are audited for the first time. |
-
-### Proposed: Audit step can change code that is then pushed unverified
-Status: done
-
-`phase_audit` (`tools/splk/loop.py:500`) commits whatever the audit step
-changed and goes straight to `publish`, with no `splk dev`/`splk test`. The
-audit prompt says "Edit ROADMAP.md only", but unlike `phase_groom`, which
-refuses anything else (`loop.py:459`, "Groom may only edit ROADMAP.md"),
-nothing enforces it. In loop mode, `guard_files` blocks hooks, prompts and
-`tools/splk`, but not `apps/`, so an audit step that "fixed" what it found
-would have its app change committed as the owner and pushed in a roadmap PR
-that no verify stage has seen. Fix: apply the groom check to the audit step
-(only `ROADMAP.md` outside `.agent/`), with a unit test. Found by reading the
-code. Not observed: no audit has gone wrong yet.
-
-- [x] Confirm: should this be done? (Recommended: it is a one-line check like
-  groom's. It changes `tools/splk/`, which loop steps may not edit, so it
-  needs an interactive session.): Yes.
-
-### Proposed: Question issues are closed before the groom PR that answers them is merged
-Status: done
-
-`phase_groom` runs the groom step with `main` checked out and calls
-`sync_question_issues` (`tools/splk/loop.py:375-398`) before it creates the
-`roadmap/groom-*` branch. Any issue whose item no longer has an open question
-is closed at once, with the comment "Answers recorded in ROADMAP.md on branch
-main" (`loop.py:397`, `git branch --show-current` at that moment). The answers
-are not on main; they are on a branch waiting for the owner. If the owner
-closes that PR instead of merging, the issue is already closed, and the next
-groom opens a new issue for the same questions, so the earlier answer thread
-is lost from view. Fix: close the issues after the groom PR merges (in
-`phase_await` on `merged`), or name the real branch and PR in the comment.
-Found by reading the code, not observed on GitHub.
-
-- [x] Confirm: should this be done? (Recommended: close on merge. Interactive
-  session, as above.): Close on merge.
-
-### Proposed: Console errors without a source in `splk shot`, and the UX audit missing the app's own REST failures
-Status: done
-
-`PageLog._on_console` (`tools/splk/ui.py:150`) keeps only `message.text`, so
-`splk shot easyadmin/app_management` reports six bare "Failed to load
-resource: ... 404" lines, with nothing to say whether they are the app's.
-The UX audit does keep the URL, and its report showed all six were Splunk
-Web's own `configs/conf-limits/structured_data_service` (the search app's
-search page shows five of the same). Separately, `own_console_errors`
-(`tools/splk/ux.py:234`) treats an error as the app's only when it points at
-`/static/app/<app>/`. A failing call to the app's own REST endpoint
-(`/splunkd/__raw/services/<app>/...`, say a 500 from the details panel or the
-precedence tab) is not counted, so it would pass the audit. Fix: record the
-URL in `PageLog` and print it in `splk shot`; also match
-`/splunkd/__raw/services/<app>/` in `own_console_errors`, with unit tests.
-The second half is inferred from the code: no app endpoint has failed during
-an audit yet.
-
-- [x] Confirm: should this be done? (Recommended: the URL in `splk shot` at
-  least, since CLAUDE.md relies on it to "look before you claim". Interactive
-  session, as above.): Yes.
-
-### Proposed: The UX audit covers only the theme the signed-in user prefers
-Status: done
-
-On #38, #39 and #40 the UX audit ran in dark only: `tools/splk/ux.py` asks
-for each theme with `?theme=`, but a page that follows the user's preference
-refuses it, and the audit records the theme Splunk actually drew (`ux.py:8-9`).
-The light theme of easyadmin has gone unaudited for three releases (four
-with #51, 1.6.2, where the UX review left the new muted `.ea-hidden-staged`
-note, `easyadmin_apps.css:259`, unseen in light for the same reason). The
-audit also never opens a panel, so the settings panel added in #39 has no
-audit at all. Fix: switch the test user's theme preference through `sandbox`
-for each pass (restored afterwards), and let an app list panels to open per
-view. Changes `tools/splk/`, so it would be built in an interactive session.
-
-Again on #57 (1.6.3): the UX review saw the cap refusal alert
-(`easyadmin_apps.js:2310`) only in source and UI tests, since the audit ran
-in dark only and opens no panel. The page can force the refusal with
-`?ea_max_request_bytes=` (`easyadmin_apps.js:638-642`), so a listed panel
-state could include it.
-
-- [x] Confirm: should this be done? (Recommended: yes, the theme switch at
-  least; CLAUDE.md's definition of done assumes both themes are audited.):
-  Yes.
-
-### Proposed: One failed `git pull` after a merge leaves the loop stuck until resumed
-Status: done
-
-On 2026-11-15T19:43:24Z, after #41 merged, the loop notified "Loop stuck in
-await: git pull -q failed: error: cannot lock ref 'refs/remotes/origin/main':
-is at 593ef36 but expected 809be99" (loop log since the groom of
-20261115-212527). Another git process had moved `origin/main` to #41's merge
-while the pull was updating it (most likely the editor's background fetch;
-inferred, not observed). `phase_await` (`tools/splk/loop.py:749-751`) runs
-`git checkout`/`git pull --ff-only` with `check=True`, `run` turns any
-non-zero exit into a `LoopError` (`loop.py:238-239`), and `run_loop` treats
-every `LoopError` as stuck: it pauses and waits for the owner
-(`loop.py:897-902`). The merge had already happened and the phase is safe to
-repeat, so a retry a few seconds later would have carried on without the
-owner. Fix: retry the post-merge `git pull` (and other read-only git calls in
-`await`) a few times with a short wait before raising, with a unit test.
-Changes `tools/splk/`, so it would be built in an interactive session.
-
-Again on 2026-11-16T10:15:04Z, waiting on #57: "Loop stuck in await: gh pr
-view failed: error connecting to api.github.com" (loop log since the groom
-of 20261116-092127). The network outage was outside the loop, but
-`phase_await` polls (`loop.py:744`), so one failed `gh pr view` could simply
-be retried at the next poll instead of pausing for the owner. The same
-retry should cover it: a failed read-only `gh` or `git` call in `await` is
-logged and retried, and only repeated failures over some minutes mark the
-loop stuck.
-
-- [x] Confirm: should this be done? (Recommended: yes, a small retry; it
-  costs nothing when git succeeds, and a ref race should not need the owner.):
-  Yes.
-
-### Proposed: A fix for owner feedback reaches the PR with no security or UX review
-Status: done
-
-On #51, the owner asked for staged moves and deletions to be counted too.
-The fix step (`.agent/loop/steps/20261116-085329-fix.json`) changed
-`easyadmin_apps.js` and the CSS, `splk dev easyadmin` was green, and the
-branch was pushed; the last security and UX reviews in the run log are from
-08:17 and 08:18, before the fix (`.agent/runs/2026-11-16.jsonl`). After a
-fix, `phase_fix` goes to `verify` with `after_verify="push"`
-(`tools/splk/loop.py:776-786`), and `phase_push` (`:788-804`) pushes without
-a review step and without notifying the owner, so the only notification for
-#51 was "ready to merge" from before the fix. CLAUDE.md's definition of done
-(items 5 and 6) wants a review recorded for every code change. Fix: after a
-fix that changed files under `apps/`, run the review step before `push`, and
-notify "PR #N updated" after the push, with unit tests. Changes
-`tools/splk/`, so it would be built in an interactive session.
-
-- [x] Confirm: should this be done? (Recommended: yes; the fix after owner
-  feedback is often the larger change, as on #51.): Yes.
-
-### Proposed: The implement step is not told to see a new test fail first
-Status: done
-
-On #51 the implement step reported "I edited the JS before running the new
-UI test, so there is no before-failure recorded for it"
-(`.agent/loop/steps/20261116-080830-implement.json`). CLAUDE.md asks to
-"prove a fix closes the original reproduction, before and after", but
-`.claude/loop/prompts/implement.md` lists only the definition of done items
-1 to 4; it says nothing about running the new tests against the old code.
-The plan for #40 asked for "a live test that must fail before the fix and
-pass after it" (`20261115-192038-plan.json`) and that run had the evidence;
-the #51 plan did not, and the step skipped it. Fix: one line in
-`implement.md` (and `plan.md`): write the new unit, live or UI test first
-and record it failing on the current code before changing the app, unless
-the item adds something that did not exist. Changes `.claude/loop/`, so it
-would be built in an interactive session.
-
-- [x] Confirm: should this be done? (Recommended: yes, a prompt line; it
-  costs one extra test run per item.): Yes.
 
 ### Proposed: A step can end its turn while its own background work still runs
 Status: proposed
@@ -677,5 +561,65 @@ newlines in the message with " / " before writing the file (ntfy can keep
 the original), and skip lines without a timestamp when reading, with a unit
 test. Changes `tools/splk/`, so it would be built in an interactive session.
 
+Again in the loop log of the 2026-11-17 groom after #73: the orphan line was
+listed once more, two days after the event.
+
 - [ ] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.)
+
+### Proposed: A unit test fails inside loop steps because of a Windows quirk with empty variables
+Status: proposed
+Context: Inside the unattended loop, one unit test of the loop's own code
+fails on Windows, so steps had to work around it before their app tests
+went green. Doing this makes the test independent of the session's git
+settings, so loop steps stop losing runs to it. Tests only.
+
+Left by the splunk-reviewer on #73, minor, and seen in the loop log since
+the previous groom: the implement and review steps for #73 both had
+`splk dev easyadmin` fail at the unit stage on
+`tests/test_splk_loop.py::test_main_roadmap_items_reads_the_committed_file_not_the_working_copy`
+(run log 07:05, 07:46 and 07:47 on 2026-11-17: `git init` exited 128), and
+went green only after unsetting the session's `GIT_CONFIG_*` variables
+(`.agent/loop/steps/20261117-072958-implement.json`,
+`20261117-080003-review.json`). The retro recorded it as the lesson
+`tests-git-subprocess-inherits-git-config-env`, with no fix.
+
+Observed in this groom (a loop step, so `GIT_CONFIG_COUNT=1`,
+`GIT_CONFIG_KEY_0=credential.helper`, `GIT_CONFIG_VALUE_0=` empty, set by
+`step_environment`, `tools/splk/loop.py:153`): the test passes alone and
+fails when `tests/test_splk_loop.py` runs as a whole. The earlier test
+`test_step_environment_appends_to_existing_git_config_entries` (`:326`)
+monkeypatches `GIT_CONFIG_VALUE_0` to `false`; the undo sets it back to `""`,
+and on Windows assigning an empty string to `os.environ` removes the
+variable from the process environment while `os.environ` still shows `''`.
+A probe reproduced it: after `os.environ[...] = "false"` then `= ""`,
+`subprocess.run(["git", "init"])` exits 128 with "missing config value
+GIT_CONFIG_VALUE_0"; the same call with `env=dict(os.environ)` exits 0. So
+the lesson's stated cause (an empty key) is not what happens here. Fix: the
+test's `git` helper passes an explicit `env` with every `GIT_CONFIG_*`
+removed, and checks the other tests that run `git` in `tests/` for the same
+gap. Tests only; `tests/` is not a path loop steps are barred from.
+
+- [ ] Confirm: should this be done? (Recommended: yes; it is a few lines
+  and it cost two red unit stages on #73.)
+
+### Proposed: A unit test writes a UX audit record into the real run log
+Status: proposed
+Context: The run log is the record of what was built, tested and reviewed,
+and the hooks and the owner rely on it. A unit test adds a fake "UX audit
+passed" entry for fillcontinuous to it on every unit run. Doing this keeps
+test runs out of the real log.
+
+`test_ux_stage_skips_apps_without_views` (`tests/test_splk_ux.py:207`) calls
+`stages.ux_audit("fillcontinuous", ...)`, which records its result
+(`tools/splk/stages.py:184`, "and record the result"). The test does not
+redirect the run log, so every unit stage writes `ux fillcontinuous ux True
+no views in apps/fillcontinuous/default/data/ui/views` into
+`.agent/runs/<date>.jsonl`: 9 times between 06:59 and 08:01 on 2026-11-17,
+each during the unit stage of a `splk test` or `splk dev easyadmin` run,
+while no one audited fillcontinuous. Fix: the test (or a shared fixture in
+`tests/conftest.py`) points the run log at `tmp_path`, with a check that a
+unit run leaves `.agent/runs/` unchanged. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes; the run log should
+  hold only real runs, and the Stop hook reads it.)
