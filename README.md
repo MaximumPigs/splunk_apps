@@ -181,15 +181,22 @@ content against the WCAG 2.2 A and AA rules, and records uncaught exceptions
 and console errors. The stage fails on:
 
 - an uncaught exception, or a console error from the app's own static files
-  (Splunk Web logs errors of its own, which are reported but do not fail it);
+  or REST endpoints (`/splunkd/__raw/services/<app>/`); Splunk Web logs
+  errors of its own, which are reported with their source but do not fail it;
 - a view that never shows its ready selector;
 - an accessibility violation of serious or critical impact that is not waived.
 
 Lesser findings are reported for review. Each app sets, per view, a `ready`
 selector and a `scope` (its root element, so Splunk Web's own header is not
 scanned) in `tests/ui/<app>/ux.toml`, which can also waive a finding with a
-written reason. A page that follows the user's theme preference may refuse the
-other theme; the report then says that theme was not audited.
+written reason. A page that follows the user's theme preference refuses the
+other `?theme=`, so each theme is one pass with the signed-in user's
+preference set to it (through `sandbox`, put back afterwards; an interrupted
+audit is repaired by the next). Without a token the preference is left alone
+and the report says which theme was not audited. A view can also list
+`[[views.<view>.states]]`: panels and other states reached by `click`
+selectors and URL `query` parameters, each screenshotted and scanned like the
+view itself (see `tests/ui/easyadmin/ux.toml`).
 
 The audit catches what a machine can. Layout, wording, loading, empty and
 error states are judged by the `ux-reviewer` agent against the

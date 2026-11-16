@@ -416,6 +416,9 @@ def _open_state(web, page, state, timeout_ms):
             raise ui.UiError("state %s never showed %r" % (state["name"], state["ready"]))
     if state.get("settle_ms", 500):
         page.wait_for_timeout(state.get("settle_ms", 500))
+    # A click scrolls its target into view, and a full-page screenshot then
+    # draws fixed elements (a side panel, Splunk's nav) part-way down the page.
+    page.evaluate("window.scrollTo(0, 0)")
 
 
 def audit_view(web, app, view, theme, settings, out_dir, axe_source, state=None):
