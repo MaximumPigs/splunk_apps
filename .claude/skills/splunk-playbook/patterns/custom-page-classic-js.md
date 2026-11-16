@@ -1,6 +1,6 @@
 ---
-confirmed: 5
-seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-16]
+confirmed: 6
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-16, 2026-11-17]
 apps: [easyadmin]
 ---
 # Custom page: Classic dashboard hosting JavaScript
@@ -45,6 +45,14 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
    - when a status's meaning changes, change its badges, colours and
      strikethrough with the words, and assert `getComputedStyle` in a UI test
      (`lessons/ux-label-meaning-needs-matching-style.md`);
+   - a staged change that takes an object out of a box keeps a row there
+     until Apply, with its own look and its own `data-fid`: a move shows a
+     struck-through "moving to <app>" row with a discard button, not the
+     dashed `ea-ghost` ("not here yet") nor `ea-deleted` ("being deleted"),
+     and cannot be ticked or dragged; hidden-by-filter counts include it
+     (`renderMovingOut`, `objectsByApp`; 1.6.4, three UI tests red on 1.6.3
+     then green). The row was never seen in a UX-review screenshot, so look
+     at it once in a real browser.
    - tabs: `role=tablist/tab/tabpanel` with `aria-controls`, roving tabindex
      and arrow keys; a `#hash` deep link kept with `history.replaceState`;
      explanations in a `<details>` whose open state is kept in page state so

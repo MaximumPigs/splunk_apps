@@ -71,6 +71,18 @@ def _object(page, app, name):
                         % (ROOT, app, name))
 
 
+def _moving_out(page, app, name):
+    """The struck-through row an object keeps in the app a staged move takes it from."""
+    return page.locator('%s .ea-app[data-app="%s"] .ea-moving-out:has(.ea-object-name:text-is("%s"))'
+                        % (ROOT, app, name))
+
+
+def _struck(row):
+    """Whether the row's name is drawn with a line through it (computed style, not the class)."""
+    return "line-through" in row.locator(".ea-object-name").evaluate(
+        "n => getComputedStyle(n).textDecorationLine")
+
+
 def _apply(page):
     """Click Apply, accept the confirmation, wait for the reloaded model. Returns the prompt."""
     seen = {}
@@ -236,6 +248,8 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     assert "moving from search" in moved.inner_text()
     assert "ea-changed" in moved.get_attribute("class")
     assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 object"
+    # Until Apply the object is still listed where it is: struck through.
+    assert _moving_out(page, "search", name).count() == 1
     shot(page, "app_management_staged_move")
     # Nothing is written until Apply.
     assert _acl(sandbox_client, "search", name)["app"] == "search"
@@ -247,6 +261,8 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     assert "Applied changes to 1 object:" in success
     assert 'Moved search macro "%s" to "launcher".' % name in success
     assert "moving from" not in _object(page, "launcher", name).inner_text()
+    # Moved: nothing is left in the old app.
+    assert _object(page, "search", name).count() == 0
 
 
 def test_select_and_bulk_move_with_the_keyboard_controls(open_view, macro, sandbox_client):
@@ -490,6 +506,86 @@ def test_each_staged_change_can_be_discarded_on_its_own(open_view, macro, shot):
     assert page.locator(ROOT + " .ea-apply").is_disabled()
     # That was its last change, so the message does not claim others are kept.
     assert "other staged" not in page.locator(ROOT + " .ea-messages").inner_text()
+
+
+def _stage_move_to_launcher(page, name):
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="move-selected"]').click()
+
+
+def test_a_staged_move_stays_in_its_old_app_struck_through(open_view, macro, shot):
+    """An object with a staged move is still listed in the app it is leaving, struck through
+    and labelled, as a deletion is; the box it is going to shows the real row, not struck."""
+    name = macro()
+    page = _open(open_view)
+    _stage_move_to_launcher(page, name)
+
+    origin = _moving_out(page, "search", name)
+    assert origin.count() == 1
+    assert _object(page, "search", name).count() == 1   # the struck row is the only one there
+    assert "moving to launcher" in origin.inner_text()
+    assert origin.locator(".ea-select").count() == 0
+    assert origin.get_attribute("draggable") is None
+    assert "ea-changed" in origin.get_attribute("class")
+    # The label's meaning is carried by its style too (lesson ux-label-meaning-needs-matching-style).
+    assert _struck(origin)
+
+    real = _object(page, "launcher", name)
+    assert real.count() == 1 and "moving from search" in real.inner_text()
+    assert not _struck(real)
+    assert "ea-moving-out" not in real.get_attribute("class")
+    # Counted once: in the box the object is going to.
+    assert "and 1 object (" in page.locator(ROOT + " .ea-summary").inner_text()
+
+    # The name opens the object's panel, as a staged copy's name does.
+    origin.locator(".ea-object-name").click()
+    page.locator(ROOT + " .ea-panel .ea-settings").wait_for()
+    page.keyboard.press("Escape")
+    shot(page, "app_management_staged_move_origin")
+
+
+def test_the_struck_row_discards_the_move(open_view, macro):
+    """The x on the struck row drops the move only: the object is back in its app, other staged
+    changes are kept, and the keyboard goes to the object's name."""
+    name = macro()
+    page = _open(open_view)
+    _stage_move_to_launcher(page, name)
+    # A second staged change on the same object, to prove it is kept.
+    _object(page, "launcher", name).locator(".ea-object-name").click()
+    page.locator(ROOT + " .ea-panel #ea-sharing").select_option("global")
+    page.keyboard.press("Escape")
+
+    cross = _moving_out(page, "search", name).locator('.ea-discard-one[data-kind="move"]')
+    assert cross.get_attribute("aria-label").startswith("Discard staged change: moving to launcher")
+    cross.click()
+    assert _moving_out(page, "search", name).count() == 0
+    back = _object(page, "search", name)
+    assert back.count() == 1 and _object(page, "launcher", name).count() == 0
+    assert "moving from" not in back.inner_text()
+    assert "permissions changed" in back.inner_text()
+    assert not _struck(back)
+    assert page.evaluate("document.activeElement.getAttribute('data-fid')") == "open:" + \
+        back.get_attribute("data-key")
+    back.locator('.ea-discard-one[data-kind="acl"]').click()
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+
+
+def test_select_all_skips_the_struck_row(open_view, macro):
+    """Ticking an app's select-all does not select an object that is leaving it."""
+    moving, staying = macro(), macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    _object(page, "search", moving).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="move-selected"]').click()
+    page.locator(ROOT + ' button[data-fid="clear-selection"]').click()
+    assert _moving_out(page, "search", moving).count() == 1
+    page.locator(ROOT + ' .ea-app[data-app="search"] .ea-select-app').check()
+    assert _object(page, "search", staying).locator(".ea-select").is_checked()
+    assert "1 object selected" in page.locator(ROOT + " .ea-selection").inner_text()
+    assert _moving_out(page, "search", moving).locator(".ea-select").count() == 0
 
 
 def test_a_staged_copy_can_be_discarded_from_its_dashed_row(open_view, macro):
@@ -868,8 +964,11 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     launcher = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
     search = page.locator(ROOT + ' .ea-app[data-app="search"]')
     assert launcher.locator(".ea-hidden-staged").inner_text() == "1 staged move is hidden by the filters."
-    assert search.locator(".ea-hidden-staged").inner_text() == "1 staged deletion is hidden by the filters."
+    # The move is counted where it goes and where it leaves, as the deletion is where it is.
+    assert search.locator(".ea-hidden-staged").inner_text() == \
+        "1 staged move away and 1 staged deletion are hidden by the filters."
     assert moved not in launcher.inner_text()
+    assert moved not in search.inner_text()
 
     # A copy into the same box is said in the same line.
     page.locator(ROOT + ' button[data-fid="types-button"]').click()
@@ -882,7 +981,8 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     page.keyboard.press("Escape")
     assert launcher.locator(".ea-hidden-staged").inner_text() == \
         "1 staged copy and 1 staged move are hidden by the filters."
-    assert search.locator(".ea-hidden-staged").inner_text() == "1 staged deletion is hidden by the filters."
+    assert search.locator(".ea-hidden-staged").inner_text() == \
+        "1 staged move away and 1 staged deletion are hidden by the filters."
 
     seen = _accept_dialogs(page)
     page.locator(ROOT + ' button[data-fid="discard"]').click()

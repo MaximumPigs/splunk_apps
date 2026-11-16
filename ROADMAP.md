@@ -30,6 +30,32 @@ its format is fixed:
 | 1.6.2 | A box counts the copies staged into it ("0 objects, 60 staged") and says how many staged copies, moves and deletions the Types menu or name filter keep out of its list; the settings list, its labels and code use the page's body font size. |
 | 1.6.3 | One Apply is capped at 16 MB of request body: the server refuses a larger one with HTTP 413 before anything is written, and the page refuses, at the click that would take the staged changes over it, and puts the staged state back (the editor, form or panel stays open with what was typed). Splunk Web passed 64 MB bodies in a probe and splunkd allows 2 GB, so the cap is the app's own. |
 | 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
+| 1.6.4 | A staged move also shows in the app the object is leaving, struck through and labelled "moving to <app>", with its own ×; filters hiding it are counted there as a "staged move away". |
+
+Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
+deleting the whole knowledge object and recreating it without that setting.
+The issues raised, from the code and the README (not observed by a probe),
+are kept here as the record:
+
+- Only objects with no `default` layer could be handled: splunkd refuses to
+  delete one that ships in `default`, so its local settings stay undeletable.
+- Only the types a copy can write: props-based objects, tags, navigation
+  menus and lookup files are excluded for the same reasons as copying.
+- splunkd's GET returns the merged settings (the stanza's own keys plus
+  `[default]` and system defaults). Recreating from them would write every
+  inherited value into `local`; the recreate would have to post only the
+  stanza's own keys, which the page cannot yet tell apart.
+- Between the delete and the create the object does not exist: a scheduled
+  search due in that gap is skipped, and other users get "not found".
+- A recreated saved search may lose scheduler state kept by name (alert
+  throttling, next run time); its permissions and owner would have to be
+  restored as a copy does.
+- If the create failed after the delete, the object would be gone: Apply
+  would have to recreate the cached original and, if that failed too, show
+  the cached settings so the person could restore it by hand.
+- `_audit` would record a delete and a create, not an edit.
+- Security: the caller would need both delete and create rights on the
+  object, with their own session token; no new privilege.
 
 ### 2. Export and import an app as JSON
 Status: blocked
@@ -175,18 +201,25 @@ Notes:
   app): see the open question above.
 
 ### Staged moved knowledge objects should not disappear from their origin app
-Status: ready
+Status: done
 
 - Knowledge Objects staged for move should display in the origin app 
   with a strike-through as though they are being deleted.
 - Today a staged move lists the object only in its destination app
-  (`appOf`, `easyadmin_apps.js:265-268`); it stays listed there as now.
+  (`appOf`, `easyadmin_apps.js:266`); it stays listed there as now.
 
 ### Local knowledge objects should be able to be deleted even when a default one exists under it.
-Status: blocked
+Status: ready
 
 - Currently, no local knowledge object with a default one under it can be deleted from the app.
 - The option to delete the local one should be available.
+- Agreed: if the probe below finds no REST call that removes only the
+  local layer, the delete is not built; instead the lock's tooltip and the
+  README say the object has local changes that only an edit of the `local`
+  file can remove. If a call is found, the delete reverts the object to its
+  default settings and leaves its permissions as they are; how that staged
+  revert shows on the page is then a question for the owner before it is
+  built.
 
 Already observed on 10.6.1 (README, "Why local settings cannot be
 deleted"): `DELETE .../configs/conf-<file>/<stanza>` on an object that ships
@@ -194,7 +227,7 @@ in `default` is refused ("cannot be deleted in config"), and splunkd marks
 such objects `removable` 0, so the typed endpoints refuse it too. No REST
 call seen so far removes only the local layer.
 
-- [ ] If the probe below finds no REST call that removes only the local
+- [x] If the probe below finds no REST call that removes only the local
   layer, what then? Options: (a) drop the item, and say in the lock's
   tooltip and the README that the object has local changes that only an
   edit of the `local` file can remove; (b) a "reset to default" that posts
@@ -204,61 +237,15 @@ call seen so far removes only the local layer.
   Splunk Cloud, fails vetting). Recommendation: (a), since (b) looks like a
   revert but is not one. If a REST call is found, the delete reverts the
   object to its default settings and leaves its permissions as they are.
-  Agree?
+  Agree?: Agreed, (a).
 
 Probe first: `DELETE` on the typed endpoint (for example
 `saved/searches/<name>`) and on `configs/conf-<file>/<stanza>` for an object
 with both a default and a local stanza, on 9.3 and 10.6, reading the
 `local` file back through splunkd afterwards.
 
-### Delete single setting from knowledge object by removing whole knowledge object and recreating.
-Status: blocked
-
-- There is no DELETE operation for stanza settings through the API
-- In place of this, explore the viability of caching the local knowledge object, deleting the whole object
-  then recreating without the deleted setting.
-- Review this for security or functionality implications and raise issues before planning implementation.
-
-Issues raised from the code and the README (to be confirmed by the probes
-below, not yet observed):
-
-- Only objects with no `default` layer can be handled: splunkd refuses to
-  delete one that ships in `default` (see the item above), so its local
-  settings stay undeletable.
-- Only the types a copy can write: props-based objects, tags, navigation
-  menus and lookup files are excluded for the same reasons as copying.
-- splunkd's GET returns the merged settings (the stanza's own keys plus
-  `[default]` and system defaults). Recreating from them would write every
-  inherited value into `local`; the recreate must post only the stanza's own
-  keys, which the page cannot yet tell apart.
-- Between the delete and the create the object does not exist: a scheduled
-  search due in that gap is skipped, and other users get "not found".
-- A recreated saved search may lose scheduler state kept by name (alert
-  throttling, next run time); its permissions and owner must be restored as
-  a copy does.
-- If the create fails after the delete, the object is gone: Apply must
-  recreate the cached original and, if that fails too, show the cached
-  settings so the person can restore it by hand.
-- `_audit` records a delete and a create, not an edit; the app's own log
-  line should name it as one setting removal.
-- Security: the caller needs both delete and create rights on the object,
-  with their own session token, as every other write; no new privilege.
-
-- [ ] Given the issues above, build it? Options: (a) yes, for local-only
-  objects of copyable types, with the staged change and the Apply
-  confirmation saying the object is deleted and recreated (and, for a
-  scheduled search, what is reset); (b) as (a), but refuse scheduled
-  searches and alerts; (c) do not build it, and keep the README's advice to
-  edit the `local` file. Recommendation: (a), once the probes show the
-  recreate writes only the stanza's own keys.
-
-Probe first: whether splunkd can list a stanza's own keys apart from
-inherited ones (the precedence tab's reader, or `configs/conf-<file>` with
-`list_inherited` or similar); what a deleted and recreated scheduled search
-keeps (`next_scheduled_time`, alert suppression); on 9.3 and 10.6.
-
 ### Proposed: No screenshot shows the "hidden by the filters" note
-Status: proposed
+Status: ready
 
 Left by the splunk-reviewer on #51 (1.6.2), low. In
 `test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide`
@@ -268,8 +255,28 @@ is applied, and with the common types every copy is listed, so no image
 shows the `.ea-hidden-staged` note; the test asserts its text only. Fix: a
 second `shot` after the name filter, and open it. Tests only.
 
-- [ ] Confirm: should this be done? (Recommended: yes, one line; it could
-  join "Tests the settings panel still lacks".)
+- [x] Confirm: should this be done? (Recommended: yes, one line; it could
+  join "Tests the settings panel still lacks".): Yes. ("Tests the settings
+  panel still lacks" has since shipped, so this is its own item.)
+
+### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
+Status: proposed
+
+Left by the splunk-reviewer on #58 (tests only), low. `wait_for_marker`
+(`tests/live/easyadmin/easyadmin_live_support.py:99`), used by the check
+that the details panel does not read `user-prefs`
+(`tests/live/easyadmin/test_easyadmin_apps_live.py:391-416`), assumes
+`splunkd_access.log` is indexed in file order, so that once the marker
+request is searchable any earlier `user-prefs` request would be too. Both
+docstrings say the ordering is inferred, not observed. If a marker were
+searchable before an earlier line, the absence assertion could pass
+falsely. Fix: observe the ordering over several runs (a probe sending a
+burst of requests and checking they become searchable in order); if it
+holds, record it as observed in the comments; if not, poll one more cycle
+after the marker before asserting absence. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a probe and at most a
+  one-line change; it closes the last inferred step in that test.)
 
 ## fillcontinuous
 
@@ -407,7 +414,7 @@ loop stuck.
   Yes.
 
 ### Proposed: A fix for owner feedback reaches the PR with no security or UX review
-Status: proposed
+Status: interactive
 
 On #51, the owner asked for staged moves and deletions to be counted too.
 The fix step (`.agent/loop/steps/20261116-085329-fix.json`) changed
@@ -423,11 +430,11 @@ fix that changed files under `apps/`, run the review step before `push`, and
 notify "PR #N updated" after the push, with unit tests. Changes
 `tools/splk/`, so it would be built in an interactive session.
 
-- [ ] Confirm: should this be done? (Recommended: yes; the fix after owner
-  feedback is often the larger change, as on #51.)
+- [x] Confirm: should this be done? (Recommended: yes; the fix after owner
+  feedback is often the larger change, as on #51.): Yes.
 
 ### Proposed: The implement step is not told to see a new test fail first
-Status: proposed
+Status: interactive
 
 On #51 the implement step reported "I edited the JS before running the new
 UI test, so there is no before-failure recorded for it"
@@ -443,5 +450,67 @@ and record it failing on the current code before changing the app, unless
 the item adds something that did not exist. Changes `.claude/loop/`, so it
 would be built in an interactive session.
 
-- [ ] Confirm: should this be done? (Recommended: yes, a prompt line; it
-  costs one extra test run per item.)
+- [x] Confirm: should this be done? (Recommended: yes, a prompt line; it
+  costs one extra test run per item.): Yes.
+
+### Proposed: A step can end its turn while its own background work still runs
+Status: proposed
+
+On #58 the review step started the `splunk-reviewer` agent and
+`splk dev easyadmin` in the background, then ended its turn waiting for
+them; the session forced a structured result at once, and the step
+reported `failed` ("The review step is not finished") at 10:44:01, before
+either had finished. Only because the agent's hand-back re-woke the session
+did it go on and report `done` ten minutes later
+(`.agent/loop/steps/20261116-215352-review.json`, session transcript
+`58f5ee7b`). Had the session stopped at the first result, the supervisor
+would have treated a clean review as a failed step (`_step_failed`) and
+retried or marked the loop stuck. Nothing in `.claude/loop/prompts/_common.md`
+says that a headless step must wait for its own work. Fix: one line in
+`_common.md`: run subagents and long commands (`splk dev`, `splk test`) in
+the foreground, and never give the structured result while one is still
+running. Changes `.claude/loop/`, so it would be built in an interactive
+session.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a prompt line; the
+  cost of a false `failed` is a repeated review or a stuck loop.)
+
+### Proposed: The review step recorded a security pass without running the security review
+Status: proposed
+
+On #58 the review step ran `splk review security easyadmin pass --summary
+"Tests-only branch; no app code, conf or tooling changed. No findings."`
+at 10:43:39, three seconds after starting the `splunk-reviewer` agent, and
+never ran the `splunk-security-review` skill or the `security-reviewer`
+agent (session transcript `58f5ee7b`,
+`.agent/loop/steps/20261116-215352-review.json`). `review.md` step 1 says
+to run the skill, with no exception for a tests-only branch, so the run log
+now holds a security review that did not happen, and the Stop hook and the
+owner read it as one. The branch did add live-test code that signs in and
+sends requests to splunkd. Fix: in `.claude/loop/prompts/review.md`, either
+always run the skill, or allow skipping it only for a branch with no change
+under `apps/`, `tools/`, `scripts/` or `.claude/hooks/`, and then record
+nothing rather than `pass`. Changes `.claude/loop/`, so it would be built
+in an interactive session.
+
+- [ ] Confirm: which? Options: (a) always run the security review;
+  (b) skip it for test-only branches and record no review. Recommendation:
+  (a); test code that talks to splunkd is still code, and the review costs
+  minutes.
+
+### Proposed: The review step reads the groom commit as part of the change
+Status: proposed
+
+Every item branch starts with the supervisor's "Roadmap: groom before
+<item>" commit (`phase_groom`, `tools/splk/loop.py:603`), so
+`git diff main...HEAD`, which `.claude/loop/prompts/review.md` tells the
+step to review, includes that groom's ROADMAP.md edits. On #58 the review
+step listed "`ROADMAP.md` carries groom additions unrelated to this change"
+as an open finding in the PR body
+(`.agent/loop/steps/20261116-215352-review.json`), so the owner was shown
+the loop's own design as a defect. Fix: one line in `review.md`: the
+branch's first commit is the groom and its ROADMAP.md changes are not part
+of the item; review the item's own commits. Changes `.claude/loop/`, so it
+would be built in an interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a prompt line.)

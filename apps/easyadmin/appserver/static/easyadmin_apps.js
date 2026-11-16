@@ -957,7 +957,9 @@ require([
             app.label.toLowerCase().indexOf(needle) !== -1;
     }
 
-    // App name -> objects to show in its box, placed where pending moves put them.
+    // App name -> objects to show in its box, placed where pending moves put them,
+    // and a struck-through row where a move takes them from (it is still there
+    // until Apply, and a deletion keeps its row too).
     function objectsByApp() {
         var map = newMap();
         $.each(state.data.objects, function (i, obj) {
@@ -965,6 +967,9 @@ require([
             var app = appOf(obj);
             (map[app] = map[app] || []).push(obj);
             var pending = state.pending[obj.key];
+            if (pending && pending.moveTo) {
+                (map[obj.app] = map[obj.app] || []).push({ ghostOf: obj, out: true });
+            }
             if (pending && pending.copyTo) {
                 (map[pending.copyTo] = map[pending.copyTo] || []).push({ ghostOf: obj });
             }
@@ -972,34 +977,36 @@ require([
         return map;
     }
 
-    // App name -> {copy, move, del}: the staged changes the filters keep out of
-    // its list. A copy and a move are counted where the object is going, a
-    // deletion where it is. A clone copies every type whatever the Types menu and
-    // name filter show, so the box counts these instead of listing them (a clone
-    // can stage up to 2000, and listing all would make the filter look broken).
+    // App name -> {copy, move, out, del}: the staged changes the filters keep out
+    // of its list. A copy and a move are counted where the object is going, a
+    // move away and a deletion where it is (a move is in both boxes). A clone
+    // copies every type whatever the Types menu and name filter show, so the box
+    // counts these instead of listing them (a clone can stage up to 2000, and
+    // listing all would make the filter look broken).
     function hiddenStagedByApp() {
         var map = newMap();
         function count(app, kind) {
-            var entry = map[app] = map[app] || { copy: 0, move: 0, del: 0 };
+            var entry = map[app] = map[app] || { copy: 0, move: 0, out: 0, del: 0 };
             entry[kind] += 1;
         }
         $.each(state.data.objects, function (i, obj) {
             var pending = state.pending[obj.key];
             if (!pending || matches(obj)) { return; }
             if (pending.copyTo) { count(pending.copyTo, 'copy'); }
-            if (pending.moveTo) { count(pending.moveTo, 'move'); }
+            if (pending.moveTo) { count(pending.moveTo, 'move'); count(obj.app, 'out'); }
             if (pending.del) { count(obj.app, 'del'); }
         });
         return map;
     }
 
-    // "2 staged copies, 1 staged move and 1 staged deletion are hidden by the filters."
+    // "2 staged copies, 1 staged move, 1 staged move away and 1 staged deletion are hidden by the filters."
     function hiddenStagedText(entry) {
         var parts = [];
         if (entry.copy) { parts.push(plural(entry.copy, 'staged copy', 'staged copies')); }
         if (entry.move) { parts.push(plural(entry.move, 'staged move')); }
+        if (entry.out) { parts.push(plural(entry.out, 'staged move away', 'staged moves away')); }
         if (entry.del) { parts.push(plural(entry.del, 'staged deletion')); }
-        var total = entry.copy + entry.move + entry.del;
+        var total = entry.copy + entry.move + entry.out + entry.del;
         var head = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
         return head + (total === 1 ? ' is' : ' are') + ' hidden by the filters.';
     }
@@ -1416,6 +1423,31 @@ require([
         return $li;
     }
 
+    // A staged move, shown in the app the object is leaving, struck through as a
+    // deletion is. Not ``ea-ghost`` (dashed, italic: "not here yet") nor
+    // ``ea-deleted``: the object is still here until Apply, and is not being
+    // deleted. It cannot be ticked or dragged; the real row is in the target app.
+    function renderMovingOut(obj) {
+        var pending = state.pending[obj.key];
+        var typeLabel = state.typeLabels[obj.type] || obj.type;
+        var acl = aclOf(obj);
+        var $li = el('li', 'ea-object ea-changed ea-moving-out').attr('data-key', obj.key);
+        $li.append(el('span', 'ea-select-spacer').attr('aria-hidden', 'true'));
+        $li.append(icon(obj.type, typeLabel));
+        // Its own data-fid: the target row is open:<key> and a copy is ghost:<key>.
+        $li.append(el('button', 'ea-object-name', obj.name).attr({
+            type: 'button', title: 'Staged move of ' + typeLabel.toLowerCase() + ' ' + obj.name + ' to ' + pending.moveTo,
+            'data-fid': 'moving:' + obj.key
+        }));
+        var $tags = el('span', 'ea-tags');
+        $tags.append(el('span', 'ea-badge ea-share ea-share-' + acl.sharing, SHARING_LABELS[acl.sharing] || acl.sharing));
+        var text = 'moving to ' + pending.moveTo;
+        $tags.append(el('span', 'ea-badge ea-badge-changed', text)
+            .append(discardButton(obj, { kind: 'move', text: text })));
+        $li.append($tags);
+        return $li;
+    }
+
     function renderObject(obj) {
         var pending = state.pending[obj.key];
         var acl = aclOf(obj);
@@ -1484,8 +1516,9 @@ require([
         $head.append($titleRow);
         var $meta = el('div', 'ea-app-meta');
         $meta.append(el('code', null, app.name));
-        // Real objects and staged copies are counted apart: a clone's box holds
-        // only copies, and "0 objects" alone reads as an empty box.
+        // Real objects and staged rows (copies coming in, moves going out) are
+        // counted apart: a clone's box holds only copies, and "0 objects" alone
+        // reads as an empty box.
         var staged = objects.length - real.length;
         $meta.append(el('span', null, (state.filter ?
             plural(real.length, 'match', 'matches') : plural(real.length, 'object')) +
@@ -1510,7 +1543,10 @@ require([
                     'No knowledge objects visible to your account.';
             $list.append(el('li', 'ea-empty', empty + (app.target ? ' Drop objects here to move or copy them.' : '')));
         }
-        $.each(objects, function (i, item) { $list.append(item.ghostOf ? renderGhost(item.ghostOf) : renderObject(item)); });
+        $.each(objects, function (i, item) {
+            $list.append(item.ghostOf ? (item.out ? renderMovingOut(item.ghostOf) : renderGhost(item.ghostOf)) :
+                renderObject(item));
+        });
         if (hiddenStaged) {
             $list.append(el('li', 'ea-hidden-staged', hiddenStagedText(hiddenStaged)));
         }
@@ -2673,7 +2709,7 @@ require([
         var objects = objectsByApp()[this.getAttribute('data-app')] || [];
         var on = this.checked;
         $.each(objects, function (i, obj) {
-            if (obj.ghostOf) { return; }   // a staged copy cannot be selected
+            if (obj.ghostOf) { return; }   // a staged copy or a move's old row cannot be selected
             if (on) { state.selected[obj.key] = true; } else { delete state.selected[obj.key]; }
         });
         render();

@@ -180,3 +180,16 @@ def test_setting_text_takes_the_page_font_size(selector):
     for body in bodies:
         sizes = re.findall(r"font-size\s*:\s*([^;]+);", body)
         assert all(size.strip() == "inherit" for size in sizes), (selector, sizes)
+
+
+def test_a_move_strikes_its_old_row_as_a_deletion_does():
+    """The row a staged move leaves in its origin app reads "leaving" by the same strike-through
+    as a deletion; a label alone was flagged before (ux-label-meaning-needs-matching-style)."""
+    struck = []
+    for sel, body in _blocks("easyadmin_apps.css"):
+        if re.search(r"text-decoration\s*:\s*line-through", body):
+            # A rule can carry a leading comment, so read selectors, not the raw text.
+            struck.extend(re.findall(r"#easyadmin-apps[^,]*", sel))
+    names = [s.strip() for s in struck]
+    assert "#easyadmin-apps .ea-object.ea-deleted .ea-object-name" in names
+    assert "#easyadmin-apps .ea-object.ea-moving-out .ea-object-name" in names
