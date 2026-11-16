@@ -42,6 +42,12 @@ out): for tab or hash states, `shot()` inside a UI test that clicks the tab
 or `page.goto(web.url(".../<view>#<hash>"))`
 (`lessons/splk-shot-hash-url.md`).
 
+Click-only states: `tests/ui/easyadmin/ux.toml` states can reach the details
+panel and the cap refusal (bulk-acl, bulk-perms, bulk-stage with
+`?ea_max_request_bytes=30`). Call `scrollTo(0,0)` before a full-page shot: the
+click had scrolled the page and the fixed details panel was drawn mid-page
+(2026-11-17, `tools/splk/ux.py`).
+
 **Verify:** the UI stage of `splk dev <app>` is green, and the screenshot in
 `build/reports/ui/<app>/` shows the feature.
 

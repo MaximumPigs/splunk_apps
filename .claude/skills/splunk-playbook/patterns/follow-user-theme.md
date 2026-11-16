@@ -40,6 +40,13 @@ look at both screenshots. `tests/ui/easyadmin/test_easyadmin_ui.py` has the
 reusable assertions: the page ends in the user's preference, and opening it
 with the other `?theme=` corrects itself once.
 
+**Auditing the other theme:** `splk ux` draws the signed-in user's theme, so
+the light theme went unseen while that user was on dark. Set the user's
+`user-prefs` `theme` over REST (token, `servicesNS/<user>/user-prefs/data/user-prefs/general`);
+it applies on the next page load, with no re-login (observed 2026-11-17 on
+10.6.1, both easyadmin views; light drawn for the first time). Restore it
+afterwards. `tools/splk/ux.py` does this for the audit.
+
 **Reference:** `apps/easyadmin/appserver/static/easyadmin_roles.js`
 (`matchSplunkTheme`, `splunkIsDark`), `apps/easyadmin/bin/easyadmin_rest.py`
 (`_user_theme`), `easyadmin_core.theme_preference`.
