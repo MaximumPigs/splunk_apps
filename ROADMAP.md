@@ -292,6 +292,69 @@ after the marker before asserting absence. Tests only.
 - [ ] Confirm: should this be done? (Recommended: yes, a probe and at most a
   one-line change; it closes the last inferred step in that test.)
 
+### The details panel leaves the page's buttons visible
+Status: ready
+
+- When a knowledge object's details panel is open on App management, the
+  page's buttons (New app, Reload, Discard changes, Apply changes) stay
+  visible and can be pressed without closing the panel.
+- Today the panel is fixed to the full height of the window on the right
+  (`easyadmin_apps.css:411`) and covers them: the UI tests close it to
+  reach Apply (`test_easyadmin_settings_ui.py:168`), and the UX audit's
+  `app_management-details-*.png` shows it.
+- The same holds for the other panels that open there (bulk permissions,
+  new app, clone).
+
+### Export an app as a .spl or .tgz file
+Status: blocked
+Context: Download any app on the instance as one package file, ready to
+install on another Splunk instance, from App management. The open questions
+decide how it relates to the planned JSON export, and what goes into the
+package.
+
+- Exports the whole app to a .tgz or .spl file.
+- [ ] How does this relate to item 2 (export and import an app as JSON)?
+  Options: (a) a separate feature: the package holds the app's files (code,
+  dashboards, conf) for installing as an app, while the JSON moves knowledge
+  objects into an existing app; (b) it replaces the JSON export.
+  Recommendation: (a), since they serve different moves.
+- [ ] What goes into the package? Options: (a) the app as Splunk packages
+  it, with `local` settings merged into `default` and no user-private
+  objects; (b) the app's folder as it is on disk, `local` included; (c) as
+  (a), plus the app's lookup files. Recommendation: (a), the form Splunk
+  itself installs and AppInspect expects.
+- [ ] .spl and .tgz are the same format (a gzipped tar) under two names.
+  Offer one, or let the person choose? Recommendation: one file named
+  `<app>-<version>.spl`.
+
+Probe first: splunkd's `apps/local/<app>/package` endpoint on 9.3 and 10.6
+(what it writes, where, and whether a page can download the result), and
+whether a handler that reads another app's files passes the Splunk Cloud
+AppInspect checks; if neither works on Splunk Cloud, report back to the
+owner before building.
+
+### User management page
+Status: blocked
+Context: A new page with the same intent as Role management, but for users:
+see many users at once and change their settings in bulk, staged and
+applied together. The open questions decide which settings are editable,
+how the page is laid out, and how users from LDAP or SAML are shown.
+
+- Same intent as Role management, but for bulk user configuration.
+- [ ] Which user settings can the page change? Options: roles, default
+  app, time zone, real name and email, unlocking a locked-out account,
+  forcing a password change at next sign-in, creating and deleting users,
+  setting passwords. Recommendation: everything except creating, deleting
+  and passwords in the first version, so no secret is ever typed into the
+  page.
+- [ ] How is it laid out? Options: (a) like Role management, a grid of
+  users against roles with tick boxes, plus a table of the other settings;
+  (b) a list of users with a panel that edits the selected ones together.
+  Recommendation: (a), so both admin pages work the same way.
+- [ ] Users signed in through LDAP or SAML get their roles from group
+  mappings, so their roles cannot be changed here. Options: (a) list them
+  read-only, saying why; (b) leave them out. Recommendation: (a).
+
 ## fillcontinuous
 
 ### Done
