@@ -200,7 +200,7 @@ Notes:
   app): see the open question above.
 
 ### Staged moved knowledge objects should not disappear from their origin app
-Status: ready
+Status: in-progress
 
 - Knowledge Objects staged for move should display in the origin app 
   with a strike-through as though they are being deleted.
