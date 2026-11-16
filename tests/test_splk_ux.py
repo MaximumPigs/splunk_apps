@@ -26,7 +26,7 @@ USER, PASSWORD = "admin", "changeme-dev"
 
 # ------------------------------------------------------------------ helpers
 
-def _make_app(tmp_path, app="demo", views=("good", "bad")):
+def _make_app(tmp_path, app="demo", views=("good", "bad", "follows")):
     """An app directory with the given views; returns apps_dir."""
     view_dir = tmp_path / "apps" / app / "default" / "data" / "ui" / "views"
     view_dir.mkdir(parents=True)
@@ -123,6 +123,22 @@ def test_own_console_errors_are_the_apps_static_files_only():
         "boom", "Failed to load /en-US/static/app/demo/missing.css"]
 
 
+def test_own_console_errors_include_the_apps_rest_endpoints():
+    # A 500 from the app's own handler logs "Failed to load resource" with the
+    # endpoint as its source; Splunk Web's 404s in the app's namespace do not count.
+    failed = "Failed to load resource: the server responded with a status of %d"
+    entries = [
+        {"text": failed % 500, "url": "http://h/en-US/splunkd/__raw/services/demo/apps/details?x=1"},
+        {"text": failed % 404, "url": "http://h/en-US/splunkd/__raw/servicesNS/nobody/demo/configs/"
+                                      "conf-limits/structured_data_service"},
+        {"text": failed % 500, "url": "http://h/en-US/splunkd/__raw/services/demo2/x"},
+    ]
+    own = ux.own_console_errors("demo", entries)
+    assert [e["url"] for e in own] == [entries[0]["url"]]
+    ok, _summary, details = ux.summarise("demo", [_result(console=entries)], [])
+    assert not ok and details[0].endswith("(%s)" % entries[0]["url"])
+
+
 def _result(**overrides):
     result = {"view": "v", "theme": "light", "rendered_theme": "light", "screenshot": "/x.png",
               "page_errors": [], "console": [], "violations": []}
@@ -201,10 +217,14 @@ LOGIN_PAGE = """<html><body><form method="post" action="/en-US/account/login">
 <input name="username"><input name="password" type="password">
 <button type="submit">Sign in</button></form></body></html>"""
 
-# The app's own script: draws the content, honours ?theme=, and on the "bad"
-# view logs an error and throws, the way a broken dashboard script would.
+# The app's own script: draws the content, honours ?theme= (except on the
+# "follows" view, which draws the user's preference whatever the URL says, as
+# easyadmin's pages do), and on the "bad" view logs an error and throws, the
+# way a broken dashboard script would. "More" (or ?panel=open) opens a panel.
 APP_JS = """
-const dark = new URLSearchParams(location.search).get("theme") === "dark";
+const params = new URLSearchParams(location.search);
+const follows = location.pathname.endsWith("/follows");
+const dark = (follows ? window.DEMO_PREF : params.get("theme")) === "dark";
 document.body.style.background = dark ? "rgb(30, 34, 40)" : "rgb(255, 255, 255)";
 document.body.style.color = dark ? "rgb(230, 233, 237)" : "rgb(26, 28, 32)";
 const root = document.getElementById("root");
@@ -213,7 +233,16 @@ if (location.pathname.endsWith("/bad")) {
   console.error("demo script failed");
   setTimeout(() => { throw new Error("demo exploded"); }, 0);
 } else {
-  root.innerHTML = '<label for="f">Filter</label><input id="f"><button>Save</button>';
+  root.innerHTML = '<label for="f">Filter</label><input id="f"><button>Save</button>'
+                 + '<button id="more">More</button>';
+  const openPanel = () => {
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.innerHTML = "<h2>Details</h2><p>Panel text</p>";
+    root.appendChild(panel);
+  };
+  document.getElementById("more").addEventListener("click", openPanel);
+  if (params.get("panel") === "open") { openPanel(); }
 }
 root.classList.add("ready");
 """
@@ -221,11 +250,14 @@ root.classList.add("ready");
 VIEW_PAGE = """<!doctype html><html lang="en"><head><title>Fake view</title></head><body>
 <header><img src="splunk-logo.png"></header>
 <main><div id="root">Loading...</div></main>
+<script src="/en-US/static/app/demo/prefs.js"></script>
 <script src="/en-US/static/app/demo/demo.js"></script></body></html>"""
 
 
 class FakeSplunkWeb(http.server.BaseHTTPRequestHandler):
     """Login form plus app views behind a session cookie, with a strict CSP."""
+
+    preference = "dark"  # the signed-in user's theme preference
 
     def log_message(self, *args):
         log.debug("fake web: " + args[0], *args[1:])
@@ -252,6 +284,10 @@ class FakeSplunkWeb(http.server.BaseHTTPRequestHandler):
                                             urllib.parse.quote(self.path, safe="")})
         if path == "/en-US/static/app/demo/demo.js":
             return self._send(200, APP_JS, content_type="application/javascript")
+        if path == "/en-US/static/app/demo/prefs.js":
+            # Splunk Web knows the signed-in user's preference server-side.
+            return self._send(200, 'window.DEMO_PREF = "%s";' % FakeSplunkWeb.preference,
+                              content_type="application/javascript")
         if path.endswith(".png"):
             return self._send(404, "")
         return self._send(200, VIEW_PAGE)
@@ -337,3 +373,132 @@ def test_audit_reports_splunk_web_not_running_in_one_line(tmp_path):
     assert not ok
     assert "Could not load" in details[0] and "Is Splunk Web running" in details[0]
     assert "\n" not in details[0]
+
+
+# ------------------------------------------------- theme switch and states
+
+class FakeSwitch(object):
+    """Stands in for ThemeSwitch: sets the fake server's preference, then puts it back."""
+
+    def __init__(self, fail=False):
+        self.calls, self.fail, self.original = [], fail, None
+
+    def __enter__(self):
+        self.original = FakeSplunkWeb.preference
+        return self
+
+    def set(self, theme):
+        if self.fail:
+            raise ValueError("user admin has no user-prefs")
+        self.calls.append(theme)
+        FakeSplunkWeb.preference = theme
+
+    def __exit__(self, *exc):
+        FakeSplunkWeb.preference = self.original
+        return False
+
+
+def _drawn(report):
+    data = json.load(open(os.path.join(os.path.dirname(report), "report.json"), encoding="utf-8"))
+    return {(ux.label(r), r["theme"]): r.get("rendered_theme") for r in data["results"]}
+
+
+CLEAN = '[defaults]\nscope = "#root"\nready = "#root.ready"\nsettle_ms = 0\n'
+
+
+def test_audit_sets_the_theme_preference_for_each_pass_and_puts_it_back(fake_web, tmp_path):
+    # A page that follows the user's preference refuses ?theme=, so without
+    # the switch the light theme went unaudited (#38 to #57).
+    FakeSplunkWeb.preference = "dark"
+    switch = FakeSwitch()
+    ok, _summary, details, report = _audit(fake_web, tmp_path, _write_config(tmp_path, "demo", CLEAN),
+                                           views=["follows"], theme_switch=switch)
+    assert ok, details
+    assert switch.calls == ["light", "dark"]
+    assert _drawn(report) == {("follows", "light"): "light", ("follows", "dark"): "dark"}
+    assert FakeSplunkWeb.preference == "dark"
+    assert not [d for d in details if "not audited" in d]
+
+
+def test_audit_says_when_the_preference_could_not_be_switched(fake_web, tmp_path):
+    FakeSplunkWeb.preference = "dark"
+    ok, _summary, details, report = _audit(fake_web, tmp_path, _write_config(tmp_path, "demo", CLEAN),
+                                           views=["follows"], theme_switch=FakeSwitch(fail=True))
+    assert ok  # not a failure of the app, but the reviewer is told
+    assert _drawn(report)[("follows", "light")] == "dark"
+    assert any("follows [light]: page rendered dark, so the light theme was not audited" in d for d in details)
+    assert details[-1].startswith("theme preference not switched (user admin has no user-prefs)")
+
+
+def test_audit_without_a_token_does_not_switch_and_says_so(fake_web, tmp_path):
+    # The fake target has no token, as on a machine without .env.
+    _ok, _summary, details, _report = _audit(fake_web, tmp_path, _write_config(tmp_path, "demo", CLEAN),
+                                             views=["good"], themes=("light",))
+    assert details[-1].startswith("theme preference not switched (no token for target local)")
+
+
+def test_audit_opens_each_listed_state_in_each_theme(fake_web, tmp_path):
+    text = CLEAN + ('[[views.good.states]]\nname = "panel"\nclick = "#more"\nready = "#root .panel"\n'
+                    '[[views.good.states]]\nname = "direct"\nquery = "panel=open"\nready = "#root .panel"\n'
+                    'settle_ms = 0\n')
+    ok, summary, details, report = _audit(fake_web, tmp_path, _write_config(tmp_path, "demo", text),
+                                          views=["good"], theme_switch=FakeSwitch())
+    assert ok, details
+    assert sorted(_drawn(report)) == [("good", "dark"), ("good", "light"), ("good#direct", "dark"),
+                                      ("good#direct", "light"), ("good#panel", "dark"), ("good#panel", "light")]
+    assert "6 screenshot(s)" in summary
+    for theme in ("light", "dark"):
+        assert os.path.getsize(str(tmp_path / "out" / ("good-panel-%s.png" % theme))) > 0
+
+
+def test_a_state_that_cannot_be_reached_blocks_with_its_name(fake_web, tmp_path):
+    text = CLEAN + '[[views.good.states]]\nname = "gone"\nclick = "#nope"\n'
+    ok, _summary, details, _report = _audit(fake_web, tmp_path, _write_config(tmp_path, "demo", text),
+                                            views=["good"], themes=("light",), theme_switch=FakeSwitch())
+    assert not ok and details[0].startswith("good#gone [light]: state gone: could not click '#nope'")
+
+
+@pytest.mark.parametrize("text, message", [
+    ('[[views.good.states]]\nclick = "#x"\n', "needs a unique name"),
+    ('[[views.good.states]]\nname = "Bad Name"\nclick = "#x"\n', "needs a unique name"),
+    ('[[views.good.states]]\nname = "a"\nclick = "#x"\n[[views.good.states]]\nname = "a"\nclick = "#y"\n',
+     "needs a unique name"),
+    ('[[views.good.states]]\nname = "a"\n', "needs click or query"),
+    ('[[views.good.states]]\nname = "a"\nclick = "#x"\nwait = 1\n', "unknown key(s) wait"),
+    ('[defaults]\nstates = [{name = "a", click = "#x"}]\n', "belong to a view"),
+])
+def test_config_rejects_bad_states(tmp_path, text, message):
+    with pytest.raises(ux.UxConfigError) as err:
+        ux.load_config("demo", _write_config(tmp_path, "demo", text))
+    assert message in str(err.value)
+
+
+def test_a_waiver_can_name_one_state():
+    waivers = [{"rule": "color-contrast", "view": "v", "state": "panel", "reason": "r"}]
+    assert ux.waiver_for(_finding(), "v", "light", waivers, state="panel")
+    assert ux.waiver_for(_finding(), "v", "light", waivers) is None
+    assert ux.waiver_for(_finding(), "v", "light", [{"rule": "color-contrast", "reason": "r"}], state="panel")
+
+
+def test_theme_switch_puts_the_preference_back_and_repairs_an_interrupted_audit(tmp_path):
+    from test_splk_sandbox import FakeSplunkd
+    from splk.rest import SplunkClient
+
+    splunkd = FakeSplunkd()
+    client = SplunkClient(config.Target("fake", "splunkd.invalid", token="tok"), opener=splunkd)
+    pending = str(tmp_path / "ux-theme-fake-pending.json")
+
+    with ux.ThemeSwitch(client, "admin", pending) as switch:
+        switch.set("light")
+        assert splunkd.prefs["admin"]["theme"] == "light"
+        assert json.load(open(pending, encoding="utf-8")) == {"user": "admin", "theme": "dark"}
+        switch.set("dark")
+        switch.set("light")
+    assert splunkd.prefs["admin"]["theme"] == "dark" and not os.path.exists(pending)
+
+    # A killed audit never reaches __exit__: the next one puts the theme back first.
+    killed = ux.ThemeSwitch(client, "admin", pending).__enter__()
+    killed.set("light")
+    assert splunkd.prefs["admin"]["theme"] == "light"
+    with ux.ThemeSwitch(client, "admin", pending):
+        assert splunkd.prefs["admin"]["theme"] == "dark" and not os.path.exists(pending)

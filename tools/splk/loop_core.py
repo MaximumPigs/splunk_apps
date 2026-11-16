@@ -342,6 +342,11 @@ def _parse_ts(value):
 LOOP_MARKER = "<!-- splk-loop -->"
 
 
+def touches_app_code(paths):
+    """True when any repo-relative path is under apps/: such a change needs a review."""
+    return any(p.replace("\\", "/").startswith("apps/") for p in paths)
+
+
 def valid_app(name, known_apps):
     """A roadmap section names an app only if it is a plain id of an existing app."""
     return bool(re.match(r"^[a-z0-9_]+$", name or "")) and name in known_apps

@@ -200,6 +200,10 @@ def test_browser_signs_in_caches_session_and_records_errors(fake_web, tmp_path):
         web.open_view(page, "easyadmin", "role_management", ready_selector="#root table.ready")
         assert page.title() == "Fake view"
         assert web.page_log(page).console_errors == ["fake console error"]
+        # `splk shot` prints each error with its source, so a bare "Failed to
+        # load resource" can be told apart from the app's own.
+        entry = web.page_log(page).as_dict()["console_errors"][0]
+        assert entry["text"] == "fake console error" and entry["url"].startswith(fake_web.web_url)
         shot = web.screenshot(page, str(tmp_path / "shots" / "view.png"))
         assert os.path.getsize(shot) > 0
         assert os.path.isfile(splk_ui.state_file(fake_web, str(tmp_path)))

@@ -46,6 +46,11 @@ max_step_errors = 2
 poll_seconds = 300
 # Notify after this many usage-limit retries in a row (~35 min of waiting).
 notify_rate_limit_after = 3
+# While waiting on a PR, a failed `gh` or `git` call (a network blip, another
+# git process holding a ref) is retried this many seconds later, and the loop
+# is marked stuck only once calls have kept failing for await_retry_minutes.
+await_retry_seconds = 30
+await_retry_minutes = 20
 
 [notify]
 # Push notifications through ntfy (https://ntfy.sh, or a self-hosted server).

@@ -12,6 +12,12 @@ done items 1 to 4: unit test for pure logic, live test for real SPL results
 `[launcher]` and `[id]` versions bumped and matching (and `[install] build`
 bumped if `appserver/static` changed), the app README updated.
 
+Write the new unit, live or UI tests first and run them against the current
+code before changing the app: record in {{pr_body_file}} that each failed,
+and how (CLAUDE.md: prove a fix closes the original reproduction, before and
+after). Skip this only for a test of something that did not exist before,
+and say so in the PR body.
+
 Also:
 
 - Move the item to the app's Done table in ROADMAP.md with the new version
