@@ -978,7 +978,7 @@ def test_mark_local_changes_names_the_file_for_a_locked_object_with_a_local_stan
         return "[Shipped]\ndescription = x\n" if conf == "savedsearches" else "[other]\na = b\n"
 
     apps.mark_local_changes(objects, read_local)
-    assert objects[0]["local_file"] == "search/local/savedsearches.conf"
+    assert objects[0]["local_file"] == "etc/apps/search/local/savedsearches.conf"
     assert objects[1]["local_file"] is None
     assert sorted(reads) == [("macros", "search"), ("savedsearches", "search")]
 
@@ -1005,7 +1005,7 @@ def test_mark_local_changes_reads_each_file_once_and_names_the_system_file():
 
     apps.mark_local_changes(objects, read_local)
     assert sorted(reads) == [("macros", "system"), ("savedsearches", "search")]
-    assert [o["local_file"] for o in objects] == ["search/local/savedsearches.conf", None,
+    assert [o["local_file"] for o in objects] == ["etc/apps/search/local/savedsearches.conf", None,
                                                   "etc/system/local/macros.conf"]
 
 
@@ -1025,7 +1025,7 @@ def test_the_model_marks_local_changes_for_admins_without_a_second_context_read(
                            local={("savedsearches", "search"): "[Shipped]\ndisabled = 1\n"})
     model = apps.read_model(gateway)
     by_name = {o["name"]: o for o in model["objects"]}
-    assert by_name["Shipped"]["local_file"] == "search/local/savedsearches.conf"
+    assert by_name["Shipped"]["local_file"] == "etc/apps/search/local/savedsearches.conf"
     assert by_name["mine"]["local_file"] is None
     assert gateway.context_reads == ["current_context"]
 

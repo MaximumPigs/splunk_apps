@@ -384,7 +384,7 @@ lets them be moved and deleted.
 When an object that ships in `default/` also has a stanza in the app's
 `local/` file (a setting changed on top of the shipped one), its lock and its
 disabled **Delete object** button say so: "It has local changes, which only an
-edit of `<app>/local/<conf>.conf` can remove." (`etc/system/local/<conf>.conf`
+edit of `etc/apps/<app>/local/<conf>.conf` can remove." (`etc/system/local/<conf>.conf`
 for the `system` app.) The legend says the same in plain text. No delete is
 offered, because Splunk refuses it and no REST call removes only the local
 layer (see [Why local settings cannot be deleted](#why-local-settings-cannot-be-deleted)).

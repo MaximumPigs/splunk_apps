@@ -1721,6 +1721,9 @@ require([
         if (!obj.movable) {
             $appField.append(el('div', 'ea-muted', 'Ships in this app\'s default folder, so it cannot be moved or ' +
                 'deleted. It can be copied to another app, and its permissions can still be changed.'));
+            if (obj.local_file) {
+                $appField.append(el('div', 'ea-muted', localChangesNote(obj)));
+            }
         }
         $panel.append($appField);
 

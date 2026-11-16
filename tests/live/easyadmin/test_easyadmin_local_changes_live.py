@@ -18,7 +18,7 @@ from splk.rest import SplunkError
 ENDPOINT = "/services/easyadmin/apps"
 APP = "splunk_instrumentation"
 REPORT = "instrumentation.anonymized.eventsByTime"
-LOCAL_FILE = "splunk_instrumentation/local/savedsearches.conf"
+LOCAL_FILE = "etc/apps/splunk_instrumentation/local/savedsearches.conf"
 
 
 def q(name):

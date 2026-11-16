@@ -352,11 +352,11 @@ def test_a_locked_object_with_local_changes_names_the_file_that_holds_them(open_
     row = _object(page, "splunk_instrumentation", name)
     lock = row.locator(".ea-locked")
     assert "It has local changes" in lock.get_attribute("title")
-    assert "splunk_instrumentation/local/savedsearches.conf" in lock.get_attribute("title")
+    assert "etc/apps/splunk_instrumentation/local/savedsearches.conf" in lock.get_attribute("title")
     row.locator(".ea-object-name").click()
     delete = page.locator(ROOT + ' .ea-panel button[data-fid="panel-delete"]')
     assert delete.is_disabled()
-    assert "splunk_instrumentation/local/savedsearches.conf" in delete.get_attribute("title")
+    assert "etc/apps/splunk_instrumentation/local/savedsearches.conf" in delete.get_attribute("title")
     assert "It has local changes" in delete.get_attribute("title")
 
 

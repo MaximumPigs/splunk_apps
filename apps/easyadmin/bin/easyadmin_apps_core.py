@@ -334,10 +334,10 @@ def local_stanzas(text):
 
 
 def local_file_path(conf, app):
-    """The path of the local file as the page shows it, relative to etc/."""
+    """The path of the local file as the page shows it, from the Splunk home folder."""
     if app == SYSTEM_APP:
         return "etc/system/local/%s.conf" % conf
-    return "%s/local/%s.conf" % (app, conf)
+    return "etc/apps/%s/local/%s.conf" % (app, conf)
 
 
 def mark_local_changes(objects, read_local):
