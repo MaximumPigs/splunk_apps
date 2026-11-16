@@ -336,6 +336,35 @@ def test_object_in_default_cannot_be_moved_or_deleted(open_view):
     assert panel.locator("#ea-app").is_disabled()
     assert "cannot be moved or deleted" in panel.inner_text()
     assert panel.locator('button[data-fid="panel-delete"]').is_disabled()
+    # A view is not a conf stanza: it never names a local file.
+    assert "local changes" not in row.locator(".ea-locked").get_attribute("title")
+
+
+def test_a_locked_object_with_local_changes_names_the_file_that_holds_them(open_view, sandbox_client):
+    """No delete is offered (Splunk refuses it and nothing removes only the local layer): the page says what to edit."""
+    name = "instrumentation.anonymized.eventsByTime"
+    obj = next((o for o in sandbox_client.request("GET", "/services/easyadmin/apps")["objects"]
+                if (o["type"], o["app"], o["name"]) == ("savedsearch", "splunk_instrumentation", name)), None)
+    if obj is None or not obj.get("local_file"):
+        pytest.skip("the report is not shipped here, or has no local layer (the live test makes one)")
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    row = _object(page, "splunk_instrumentation", name)
+    lock = row.locator(".ea-locked")
+    assert "It has local changes" in lock.get_attribute("title")
+    assert "splunk_instrumentation/local/savedsearches.conf" in lock.get_attribute("title")
+    row.locator(".ea-object-name").click()
+    delete = page.locator(ROOT + ' .ea-panel button[data-fid="panel-delete"]')
+    assert delete.is_disabled()
+    assert "splunk_instrumentation/local/savedsearches.conf" in delete.get_attribute("title")
+    assert "It has local changes" in delete.get_attribute("title")
+
+
+def test_the_legend_says_how_local_changes_to_a_locked_object_go(open_view):
+    """Visible text, since a badge's title is out of reach of the keyboard."""
+    page = _open(open_view, builtin=False)
+    legend = page.locator(ROOT + " .ea-legend").inner_text()
+    assert "Local changes to such an object can be removed only by editing its app's local file." in legend
 
 
 def test_leaving_with_staged_changes_asks_first(open_view, macro):

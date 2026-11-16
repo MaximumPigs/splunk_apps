@@ -329,6 +329,19 @@ No REST call removes one setting from a file while keeping the default
   posting the default value back keeps the key in local, so neither is a
   delete.
 
+The same holds for the whole local layer of an object that ships in `default`
+(a saved search, observed on 10.6.1; the local file was read back after each
+call and was unchanged every time):
+
+- `DELETE .../saved/searches/<name>` and `DELETE .../configs/conf-savedsearches/<name>`
+  answer HTTP 400 "cannot be deleted";
+- `DELETE .../properties/savedsearches/<name>` answers HTTP 200 "Successfully
+  modified 1 key(s)" and changes nothing;
+- the `-` namespace, the `admin` namespace and the `admin/savedsearch` and
+  `admin/conf-savedsearches` endpoints are refused as well.
+
+So the page does not offer to revert such an object either.
+
 Writing files directly is not possible on Splunk Cloud, so the page has no
 delete for a setting. To remove a local setting, edit the `local` file, or use
 Splunk's own editor where it offers one. The settings added or changed here
@@ -365,6 +378,26 @@ for each object, not from a list kept by this app.
 
 Lookup table files are not split into default and local folders, and Splunk
 lets them be moved and deleted.
+
+#### An object that also has local changes
+
+When an object that ships in `default/` also has a stanza in the app's
+`local/` file (a setting changed on top of the shipped one), its lock and its
+disabled **Delete object** button say so: "It has local changes, which only an
+edit of `<app>/local/<conf>.conf` can remove." (`etc/system/local/<conf>.conf`
+for the `system` app.) The legend says the same in plain text. No delete is
+offered, because Splunk refuses it and no REST call removes only the local
+layer (see [Why local settings cannot be deleted](#why-local-settings-cannot-be-deleted)).
+To go back to the shipped settings, edit that local file.
+
+The file is named only for accounts with `admin_all_objects` (the page reads
+the file to find out, as the settings list does), and only for objects that
+are a stanza of a configuration file: reports, macros, event types, search
+time transforms and lookup definitions, workflow actions, time ranges, data
+models, KV store collections and alert actions. Field extractions, aliases,
+calculated fields, automatic lookups, source type renaming, tags, dashboards,
+navigation and panels are not covered (their details panel shows the `local`
+layer badges).
 
 ### How changes are applied
 
@@ -525,7 +558,9 @@ objects can be moved into it), `objects`, `roles`, `users` and `warnings`
 (object types your account cannot list). Each object has `type`, `name`,
 `app`, `ns` (the namespace it lives in: its owner for a private object,
 `nobody` otherwise), `owner`, `sharing`, `read`, `write`, `movable`,
-`copyable`, `removable` and `can_change_perms`. With `type`, `ns`, `app` and `name`, it
+`copyable`, `removable`, `can_change_perms` and `local_file` (the path of the local file that
+holds a stanza of a locked object, or `null`; only filled in for callers with
+`admin_all_objects`, see [An object that also has local changes](#an-object-that-also-has-local-changes)). With `type`, `ns`, `app` and `name`, it
 returns that one object with its `settings` (all, as splunkd reports them) and,
 for callers with `admin_all_objects`, `explicit`: the settings set in its own
 files, each with `name`, `value`, `layer` (`default`, `local` or `user`),
@@ -606,6 +641,9 @@ was not created is not attempted and is reported as an error.
   [Why local settings cannot be deleted](#why-local-settings-cannot-be-deleted)),
   and dashboards, navigation menus, prebuilt panels and lookup table files
   are not edited setting by setting.
+- That no REST call removes only the local layer of a shipped object was
+  probed on Splunk Enterprise 10.6.1, with a saved search only. It has not
+  been probed on 9.3 or Splunk Cloud Platform, nor for other object types.
 - Editing settings has been tried on Splunk Enterprise 10.6.1 only. It uses
   splunkd's `configs` REST endpoint and never writes files itself, but it has
   not been tried on Splunk Cloud Platform, nor on 9.3.

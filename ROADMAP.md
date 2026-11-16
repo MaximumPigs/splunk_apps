@@ -33,6 +33,7 @@ its format is fixed:
 | 1.6.3 | One Apply is capped at 16 MB of request body: the server refuses a larger one with HTTP 413 before anything is written, and the page refuses, at the click that would take the staged changes over it, and puts the staged state back (the editor, form or panel stays open with what was typed). Splunk Web passed 64 MB bodies in a probe and splunkd allows 2 GB, so the cap is the app's own. |
 | 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
 | 1.6.4 | A staged move also shows in the app the object is leaving, struck through and labelled "moving to <app>", with its own ×; filters hiding it are counted there as a "staged move away". |
+| 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -209,42 +210,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Local knowledge objects should be able to be deleted even when a default one exists under it.
-Status: in-progress
-
-- Currently, no local knowledge object with a default one under it can be deleted from the app.
-- The option to delete the local one should be available.
-- Agreed: if the probe below finds no REST call that removes only the
-  local layer, the delete is not built; instead the lock's tooltip and the
-  README say the object has local changes that only an edit of the `local`
-  file can remove. If a call is found, the delete reverts the object to its
-  default settings and leaves its permissions as they are; how that staged
-  revert shows on the page is then a question for the owner before it is
-  built.
-
-Already observed on 10.6.1 (README, "Why local settings cannot be
-deleted"): `DELETE .../configs/conf-<file>/<stanza>` on an object that ships
-in `default` is refused ("cannot be deleted in config"), and splunkd marks
-such objects `removable` 0, so the typed endpoints refuse it too. No REST
-call seen so far removes only the local layer.
-
-- [x] If the probe below finds no REST call that removes only the local
-  layer, what then? Options: (a) drop the item, and say in the lock's
-  tooltip and the README that the object has local changes that only an
-  edit of the `local` file can remove; (b) a "reset to default" that posts
-  each local setting's default value back (observed: the key stays in
-  `local`, pinned to today's default, so a later app upgrade's new default
-  is hidden); (c) delete the local stanza from the file (not possible on
-  Splunk Cloud, fails vetting). Recommendation: (a), since (b) looks like a
-  revert but is not one. If a REST call is found, the delete reverts the
-  object to its default settings and leaves its permissions as they are.
-  Agree?: Agreed, (a).
-
-Probe first: `DELETE` on the typed endpoint (for example
-`saved/searches/<name>`) and on `configs/conf-<file>/<stanza>` for an object
-with both a default and a local stanza, on 9.3 and 10.6, reading the
-`local` file back through splunkd afterwards.
 
 ### Proposed: No screenshot shows the "hidden by the filters" note
 Status: ready

@@ -94,6 +94,14 @@ class AppsGateway(roles_rest.SplunkdGateway):
         return {"username": username, "theme": self._user_theme(username),
                 "capabilities": core.as_list(content.get("capabilities"))}
 
+    def read_local_conf(self, conf, app):
+        """The text of one app's local <conf>.conf, or None (see ConfFileReader.read_local)."""
+        # One reader per gateway (one per request), so its listing of etc/apps
+        # is shared by every file the model reads.
+        if getattr(self, "_local_reader", None) is None:
+            self._local_reader = conf_rest.ConfFileReader(os.environ["SPLUNK_HOME"])
+        return self._local_reader.read_local(conf, app)
+
     def read_own_conf(self, conf, app, user):
         """The object's own layers of <conf>.conf: app default and local, owner's folder."""
         return conf_rest.ConfFileReader(os.environ["SPLUNK_HOME"]).read_own_layers(conf, app, user)

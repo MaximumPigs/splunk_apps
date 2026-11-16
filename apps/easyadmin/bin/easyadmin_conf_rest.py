@@ -58,6 +58,19 @@ class ConfFileReader(object):
     def __init__(self, splunk_home):
         self._etc = os.path.join(splunk_home, "etc")
         self._etc_real = os.path.realpath(self._etc)
+        self._app_names = None
+
+    def _apps(self):
+        """The directory names in etc/apps, listed once per reader.
+
+        The model asks for one file per (conf, app) pair, a few hundred times.
+        """
+        if self._app_names is None:
+            try:
+                self._app_names = os.listdir(os.path.join(self._etc, "apps"))
+            except OSError:
+                self._app_names = []
+        return self._app_names
 
     def _layers(self):
         """(app, layer, folder) for every folder that can hold .conf files."""
@@ -126,11 +139,7 @@ class ConfFileReader(object):
             system = os.path.join(self._etc, "system")
             folders = [("default", os.path.join(system, "default")), ("local", os.path.join(system, "local"))]
         else:
-            try:
-                apps = os.listdir(os.path.join(self._etc, "apps"))
-            except OSError:
-                apps = []
-            if app not in apps:
+            if app not in self._apps():
                 return {}
             folders = [("default", os.path.join(self._etc, "apps", app, "default")),
                        ("local", os.path.join(self._etc, "apps", app, "local"))]
@@ -147,6 +156,23 @@ class ConfFileReader(object):
             if text is not None:
                 files[layer] = text
         return files
+
+    def read_local(self, conf, app):
+        """The text of <app>/local/<conf>.conf (etc/system/local for "system"), or None.
+
+        The same checks as read_own_layers: the conf name must match the strict
+        pattern, and the app must equal an entry listed in etc/apps (or be
+        "system"), so nothing from the caller reaches a path.
+        """
+        if not conf_core.CONF_NAME_RE.match(conf):
+            return None
+        if app == conf_core.SYSTEM:
+            folder = os.path.join(self._etc, "system", "local")
+        elif app in self._apps():
+            folder = os.path.join(self._etc, "apps", app, "local")
+        else:
+            return None
+        return self._read(os.path.join(folder, conf + ".conf"))
 
     def read_conf(self, conf):
         files = {}

@@ -1317,6 +1317,21 @@ require([
         return $bar;
     }
 
+    // Splunk refuses to delete an object that ships in a default folder, and no
+    // REST call removes only its local layer, so the page says which file to edit.
+    function localChangesNote(obj) {
+        return 'This object ships in the app\'s default folder, so Splunk will not delete it. It has local changes, ' +
+            'which only an edit of ' + obj.local_file + ' can remove.';
+    }
+
+    function lockedTitle(obj) {
+        if (obj.local_file) {
+            return 'Ships in the app\'s default folder: cannot be moved or deleted. It has local changes, ' +
+                'which only an edit of ' + obj.local_file + ' can remove.';
+        }
+        return 'Ships in the app\'s default folder: cannot be moved or deleted.';
+    }
+
     function renderLegend() {
         var $legend = el('div', 'ea-legend');
         var $types = el('ul', 'ea-legend-types').attr('aria-label', 'Object types');
@@ -1335,6 +1350,7 @@ require([
         var $note = el('p', 'ea-muted');
         $note.append(icon('lock'), document.createTextNode(
             ' ships in the app\'s default folder: it can be copied or re-permissioned, not moved or deleted. ' +
+            'Local changes to such an object can be removed only by editing its app\'s local file. ' +
             'Staged changes are outlined and labelled until you apply them.'));
         $legend.append($note);
         return $legend;
@@ -1468,8 +1484,8 @@ require([
         }));
         var $tags = el('span', 'ea-tags');
         if (!obj.movable && !obj.removable) {
-            $tags.append(el('span', 'ea-badge ea-locked').attr('title',
-                'Ships in the app\'s default folder: cannot be moved or deleted.').append(icon('lock'), document.createTextNode(' default')));
+            $tags.append(el('span', 'ea-badge ea-locked').attr('title', lockedTitle(obj))
+                .append(icon('lock'), document.createTextNode(' default')));
         }
         // Colour-coded by sharing, and always labelled, so colour is never the only cue.
         $tags.append(el('span', 'ea-badge ea-share ea-share-' + acl.sharing, SHARING_LABELS[acl.sharing] || acl.sharing));
@@ -1760,7 +1776,8 @@ require([
         } else {
             $actions.append(el('button', 'btn ea-danger', 'Delete object').attr({ type: 'button', 'data-fid': 'panel-delete' })
                 .prop('disabled', !obj.removable)
-                .attr('title', obj.removable ? 'Stage this object for deletion' : 'Objects in the default folder cannot be deleted')
+                .attr('title', obj.removable ? 'Stage this object for deletion' : (obj.local_file ?
+                    localChangesNote(obj) : 'Objects in the default folder cannot be deleted'))
                 .on('click', function () { withinCap(function () { setPending(obj, { del: true }); }); rerender(); }));
         }
         if (pending) {

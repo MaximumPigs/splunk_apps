@@ -83,6 +83,9 @@ class FakeGateway(object):
         self.context_reads.append("caller_capabilities")
         return list(self.capabilities)
 
+    def read_local_conf(self, conf, app):
+        return None   # no local files here; LocalGateway supplies some
+
     def create_app(self, args):
         self.calls.append(("create_app", dict(args)))
         if args["name"] in self.refuse_create:
@@ -937,3 +940,100 @@ def test_the_page_caps_at_the_same_size():
         source = handle.read()
     assert "var MAX_REQUEST_BYTES = 16 * 1024 * 1024;" in source
     assert apps.MAX_REQUEST_BYTES == 16 * 1024 * 1024
+
+
+# ------------------------------------------------- locked objects with local changes
+# Splunk refuses every delete of an object that ships in a default folder, and no
+# REST call removes only its local layer (probed on 10.6.1, see the README), so
+# the page names the local file instead of offering a delete.
+
+def test_local_stanzas_counts_only_stanzas_that_set_a_key():
+    text = "[alpha]\ndescription = x\n\n[alpha_two]\n\n# [ghost]\n[beta]\ndisabled = 1\n"
+    assert apps.local_stanzas(text) == {"alpha", "beta"}
+    assert apps.local_stanzas("") == set()
+
+
+def locked(type_id, name, app="search"):
+    return entry(type_id, name, app, local=False)
+
+
+class LocalGateway(ConfGateway):
+    def __init__(self, objects=(), capabilities=("admin_all_objects",), local=None):
+        ConfGateway.__init__(self, objects, capabilities=capabilities)
+        self.local = local or {}
+        self.local_reads = []
+
+    def read_local_conf(self, conf, app):
+        self.local_reads.append((conf, app))
+        return self.local.get((conf, app))
+
+
+def test_mark_local_changes_names_the_file_for_a_locked_object_with_a_local_stanza():
+    objects = [apps.build_object("savedsearch", locked("savedsearch", "Shipped")),
+               apps.build_object("macro", locked("macro", "plain"))]
+    reads = []
+
+    def read_local(conf, app):
+        reads.append((conf, app))
+        return "[Shipped]\ndescription = x\n" if conf == "savedsearches" else "[other]\na = b\n"
+
+    apps.mark_local_changes(objects, read_local)
+    assert objects[0]["local_file"] == "search/local/savedsearches.conf"
+    assert objects[1]["local_file"] is None
+    assert sorted(reads) == [("macros", "search"), ("savedsearches", "search")]
+
+
+def test_mark_local_changes_skips_what_can_be_removed_and_what_is_not_a_stanza():
+    objects = [apps.build_object("savedsearch", entry("savedsearch", "mine", "search")),
+               apps.build_object("extraction", locked("extraction", "EXTRACT-a")),
+               apps.build_object("view", locked("view", "home"))]
+    reads = []
+    apps.mark_local_changes(objects, lambda conf, app: reads.append((conf, app)))
+    assert reads == []
+    assert [o["local_file"] for o in objects] == [None, None, None]
+
+
+def test_mark_local_changes_reads_each_file_once_and_names_the_system_file():
+    objects = [apps.build_object("savedsearch", locked("savedsearch", "a")),
+               apps.build_object("savedsearch", locked("savedsearch", "b")),
+               apps.build_object("macro", locked("macro", "m", app="system"))]
+    reads = []
+
+    def read_local(conf, app):
+        reads.append((conf, app))
+        return "[a]\nx = 1\n[m]\ny = 2\n"
+
+    apps.mark_local_changes(objects, read_local)
+    assert sorted(reads) == [("macros", "system"), ("savedsearches", "search")]
+    assert [o["local_file"] for o in objects] == ["search/local/savedsearches.conf", None,
+                                                  "etc/system/local/macros.conf"]
+
+
+def test_mark_local_changes_survives_an_unreadable_file():
+    objects = [apps.build_object("savedsearch", locked("savedsearch", "a"))]
+    apps.mark_local_changes(objects, lambda conf, app: None)
+    assert objects[0]["local_file"] is None
+
+
+def test_every_object_has_the_local_file_key():
+    assert apps.build_object("macro", entry("macro", "m", "search"))["local_file"] is None
+
+
+def test_the_model_marks_local_changes_for_admins_without_a_second_context_read():
+    gateway = LocalGateway([("savedsearch", locked("savedsearch", "Shipped")),
+                            ("macro", entry("macro", "mine", "search"))],
+                           local={("savedsearches", "search"): "[Shipped]\ndisabled = 1\n"})
+    model = apps.read_model(gateway)
+    by_name = {o["name"]: o for o in model["objects"]}
+    assert by_name["Shipped"]["local_file"] == "search/local/savedsearches.conf"
+    assert by_name["mine"]["local_file"] is None
+    assert gateway.context_reads == ["current_context"]
+
+
+def test_the_model_reads_no_files_without_admin_all_objects():
+    gateway = LocalGateway([("savedsearch", locked("savedsearch", "Shipped"))],
+                           capabilities=("edit_local_apps",),
+                           local={("savedsearches", "search"): "[Shipped]\ndisabled = 1\n"})
+    model = apps.read_model(gateway)
+    assert gateway.local_reads == []
+    assert [o["local_file"] for o in model["objects"]] == [None]
