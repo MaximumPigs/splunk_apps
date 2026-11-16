@@ -169,20 +169,25 @@ added from the **Types** menu.
 | A **new app** or **clone of** box, outlined with dashes | An app that exists only as a staged change. It takes objects like any other app, and its × drops the app and every change staged into it, after asking. Its header counts the objects it holds and the copies staged into it, for example "0 objects, 60 staged". |
 | Click an object's name | Opens a panel with its app, sharing, owner, read and write roles (all editable), **Copy to app**, and its settings, which can be filtered, copied and edited: see [Settings in the panel](#settings-in-the-panel). |
 | **Apply changes to N objects** | Applies every staged change, after a confirmation that says how many apps are created and how many objects are moved, copied, re-permissioned and deleted. New apps are created first. |
-| The × on a staged-change badge | Drops that one change (a move, a copy, a permission change, edited settings or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too. |
+| The × on a staged-change badge | Drops that one change (a move, a copy, a permission change, edited settings or a deletion) and keeps the object's other staged changes. A staged copy's dashed row in the other app has one too, and so has the struck-through row of a staged move in the app it leaves. |
 | **Discard changes** | Drops every staged change, after asking. |
 
 A staged change is outlined and labelled on the object (`moving from search`,
 `copying to launcher`, `permissions changed`, `will be deleted`). A moved
-object shows in the box it is moving to; a staged copy shows there as a
-dashed `copy from` row, and the original stays where it is.
+object shows in the box it is moving to, labelled `moving from search`, and
+stays in the box it is leaving until **Apply**, struck through like a deletion
+and labelled `moving to launcher`; that row cannot be ticked or dragged, and
+its × drops the move. The object is counted once, in the box it is going to,
+while the box it leaves counts the struck row as "1 staged". A staged copy
+shows in its target as a dashed `copy from` row, and the original stays where
+it is.
 
 The filters narrow what a box lists, but a clone copies every type. Staged
 copies, moves and deletions that the **Types** menu or the name filter keep out
 of a box are counted in a line at its foot ("1 staged copy and 1 staged move
-are hidden by the filters."): a copy or move in the box it is going to, a
-deletion in the box the object is in. A box that has such changes stays on show
-whatever the app filter says.
+are hidden by the filters."): a copy or move in the box it is going to, a move
+away ("1 staged move away") and a deletion in the box the object is in. A box
+that has such changes stays on show whatever the app filter says.
 
 ### Creating and cloning apps
 

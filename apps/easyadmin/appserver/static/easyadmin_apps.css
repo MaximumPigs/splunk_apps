@@ -349,7 +349,9 @@
     background: var(--ea-changed-bg);
 }
 
-#easyadmin-apps .ea-object.ea-deleted .ea-object-name {
+/* A move strikes the row in the app it leaves, as a deletion does. */
+#easyadmin-apps .ea-object.ea-deleted .ea-object-name,
+#easyadmin-apps .ea-object.ea-moving-out .ea-object-name {
     text-decoration: line-through;
 }
 
