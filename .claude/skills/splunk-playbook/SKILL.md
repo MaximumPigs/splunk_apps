@@ -35,6 +35,7 @@ finally worked instead of rediscovering it.
 | [Observe a tool's real behaviour first](patterns/observe-tool-behaviour-first.md) | `splk` code or hooks depend on headless `claude -p` output, a guard's verdict or a git side effect. | 1 (splk) |
 | [Probe a hook from a Python file](patterns/probe-a-hook-with-decide.md) | Changing or reviewing a deny rule in `.claude/hooks/`; testing both the deny corpus and the false positive. | 1 (repo hooks) |
 | [Give an unattended loop its secrets and settings safely](patterns/loop-secrets-across-privilege-drop.md) | A container or supervisor starts `splk loop` steps and must pass credentials or target settings. | 1 (splk loop; unbuilt) |
+| [Cap the size of one POST](patterns/request-size-cap.md) | A page sends one user-sized request (bulk Apply); needs a server 413 backstop and a page-side refusal. | 1 (easyadmin) |
 
 ## Writing a pattern
 

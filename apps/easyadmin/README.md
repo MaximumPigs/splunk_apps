@@ -214,6 +214,12 @@ the message says so. Each copy shows as a dashed row in the new app's box and
 can be discarded on its own before **Apply**. A clone of more than 2000
 objects is refused (the limit of one apply).
 
+The staged changes as a whole are limited too: one Apply can send at most 16 MB.
+A change that would take the staged total over that is not staged, and the
+page says why (the setting editor, the new setting form and the permissions
+and new app panels stay open with what you typed). Apply what is staged
+first, then stage the rest.
+
 Nothing is created until **Apply**. The new app's own permissions are
 splunkd's defaults for a new app (everyone may read it; `admin` and `power`
 may write). It needs the `admin_all_objects` or `edit_local_apps` capability;
@@ -550,7 +556,9 @@ newline and tab refused). Each result also has `settings_applied`. `acl` always 
 `"sharing": "user"`. An empty `write` list leaves no write roles. The response
 has one result per object with `status` of `applied` or `error`, its
 `message`, and `moved_to` when it was moved, plus `applied` and `failed`
-counts. At most 2000 objects per request.
+counts. At most 2000 objects per request, and at most 16 MB of request body
+(measured in bytes, before the change list is read): a larger request is refused
+with HTTP 413 and nothing is written.
 
 To create apps, add an `apps` list (at most 20) beside `changes`; `changes`
 may then be empty:

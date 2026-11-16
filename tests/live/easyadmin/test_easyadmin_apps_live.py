@@ -220,6 +220,50 @@ def test_form_encoded_changes_are_accepted(splunk, objects):
     assert result["applied"] == 1
 
 
+# ------------------------------------------------------- request size cap
+#
+# Splunk Web passed 64 MB bodies to this handler and splunkd allows 2 GB, so
+# the handler caps one request itself: 16 MB of body, refused before the
+# change list is read. Nothing is written, so no objects are needed.
+
+MAX_REQUEST_BYTES = 16 * 1024 * 1024
+
+
+def _padded(total):
+    head, tail = '{"changes": [], "pad": "', '"}'
+    return head + "x" * (total - len(head) - len(tail)) + tail
+
+
+def _post_raw(splunk, body):
+    """POST ``body`` as it is, through the same client path as every other call."""
+    return splunk.request("POST", ENDPOINT, json_body=json.loads(body))
+
+
+def test_a_request_over_16_mb_is_refused_with_413(splunk):
+    with pytest.raises(SplunkError) as caught:
+        _post_raw(splunk, _padded(MAX_REQUEST_BYTES + 1024))
+    assert caught.value.status == 413
+    assert "one Apply can send at most 16 MB" in str(caught.value)
+    assert "smaller batches" in str(caught.value)
+
+
+def test_a_request_just_under_the_cap_reaches_the_change_checks(splunk):
+    with pytest.raises(SplunkError) as caught:
+        _post_raw(splunk, _padded(MAX_REQUEST_BYTES - 1024))
+    assert caught.value.status == 400
+    assert "no changes to apply" in str(caught.value).lower()
+
+
+def test_a_real_change_in_an_over_cap_request_is_not_applied(splunk, objects):
+    name = objects.macro()
+    obj = find(model(splunk), "macro", name)
+    body = {"changes": [ref(obj, delete=True)], "pad": "x" * (MAX_REQUEST_BYTES + 1024)}
+    with pytest.raises(SplunkError) as caught:
+        splunk.request("POST", ENDPOINT, json_body=body)
+    assert caught.value.status == 413
+    assert find(model(splunk), "macro", name) is not None
+
+
 # ------------------------------------------------------------------- copying
 
 def _delete_quietly(splunk, path):

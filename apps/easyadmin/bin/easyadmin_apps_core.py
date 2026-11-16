@@ -104,6 +104,15 @@ SYSTEM_APP = "system"
 # Bounds on one apply request, so a malformed or hostile body cannot make the
 # handler issue an unbounded number of splunkd calls.
 MAX_CHANGES = 2000
+
+# The whole POST body of one Apply, in UTF-8 bytes. The per-value and
+# per-object limits alone allow 200 settings x 64 KB x 2000 objects (the
+# security review on #39), and neither Splunk Web nor splunkd stops that: a
+# probe passed bodies of 64 MB through Splunk Web to this handler, and
+# splunkd's own max_content_length is 2 GB. So the app sets its own cap. The
+# page mirrors it (easyadmin_apps.js) and refuses at staging; this is the
+# backstop. A 2000-object bulk permission change is about 6 MB.
+MAX_REQUEST_BYTES = 16 * 1024 * 1024
 MAX_NAME_LENGTH = 1024
 MAX_ROLES = 500
 
@@ -1138,6 +1147,33 @@ def _restart_required(gateway):
         return False
 
 
+def request_size(body):
+    """The size of a POST body in bytes (UTF-8 for text), 0 for no body."""
+    if body is None:
+        return 0
+    if isinstance(body, bytes):
+        return len(body)
+    return len(body.encode("utf-8", "replace"))
+
+
+def megabytes(count):
+    """A byte count for a message: "16 MB", "17.2 MB"; one decimal unless whole."""
+    value = round(count / (1024.0 * 1024.0), 1)
+    return ("%d MB" % value) if value == int(value) else ("%.1f MB" % value)
+
+
+def check_request_size(body, user="unknown"):
+    """Refuse a body over MAX_REQUEST_BYTES before it is parsed (HTTP 413)."""
+    size = request_size(body)
+    if size > MAX_REQUEST_BYTES:
+        logger.warning("user=%s action=apply refused: request is %d bytes, over the %d byte limit",
+                       user, size, MAX_REQUEST_BYTES)
+        raise EasyAdminError(
+            "This Apply is %s, and one Apply can send at most %s. Apply the changes in smaller batches."
+            % (megabytes(size), megabytes(MAX_REQUEST_BYTES)), status=413)
+    return size
+
+
 def extract_document(body):
     """The JSON document a POST carries (the page sends ``{"changes": [...]}``).
 
@@ -1180,6 +1216,7 @@ def handle_request(method, body, query, gateway, user="unknown"):
                 return 200, add_explicit(build_details(type_id, found), gateway, type_id, ns, app, name, found)
             return 200, read_model(gateway)
         if method == "POST":
+            check_request_size(body, user)
             document = extract_document(body)
             return 200, submit_changes(gateway, document.get("changes"), user=user,
                                        raw_apps=document.get("apps"))
