@@ -484,6 +484,7 @@ class ThemeSwitch(object):
         self.user = user
         self.pending_path = pending_path
         self.box = None
+        self.wrote_pending = False
 
     def __enter__(self):
         from splk import sandbox
@@ -502,6 +503,7 @@ class ThemeSwitch(object):
             os.makedirs(os.path.dirname(self.pending_path), exist_ok=True)
             with open(self.pending_path, "w", encoding="utf-8") as handle:
                 json.dump({"user": self.user, "theme": original}, handle)
+            self.wrote_pending = True
         self.box.set_user_prefs(self.user, theme=theme)
 
     def __exit__(self, *exc_info):
@@ -512,17 +514,27 @@ class ThemeSwitch(object):
             # The pending file stays, so the next audit tries again.
             log.warning("Could not put back the theme preference of %s: %s", self.user, exc)
             return False
-        if os.path.isfile(self.pending_path):
+        # Only this run's record: one _recover could not use stays for a person.
+        if self.wrote_pending and os.path.isfile(self.pending_path):
             os.remove(self.pending_path)
         return False
 
     def _recover(self):
         from splk import sandbox
+        from splk.rest import SplunkError
         if not os.path.isfile(self.pending_path):
             return
-        with open(self.pending_path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        sandbox.write_user_prefs(self.client, data["user"], {"theme": data["theme"]})
+        try:
+            with open(self.pending_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            sandbox.write_user_prefs(self.client, data["user"], {"theme": data["theme"]})
+        except (OSError, ValueError, KeyError, TypeError, SplunkError) as exc:
+            # Never block the audit on it. The file is kept, and set() leaves
+            # an existing file alone, so the original value survives for the
+            # next try; a malformed file needs removing by hand.
+            log.warning("Could not put back the theme preference recorded in %s (%s); if the file is "
+                        "malformed, set the theme in Splunk Web and delete it", paths.display(self.pending_path), exc)
+            return
         log.warning("Put back the theme preference of %s (%r) left changed by an interrupted audit",
                     data["user"], data["theme"])
         os.remove(self.pending_path)

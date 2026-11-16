@@ -502,3 +502,10 @@ def test_theme_switch_puts_the_preference_back_and_repairs_an_interrupted_audit(
     assert splunkd.prefs["admin"]["theme"] == "light"
     with ux.ThemeSwitch(client, "admin", pending):
         assert splunkd.prefs["admin"]["theme"] == "dark" and not os.path.exists(pending)
+
+    # A malformed record does not block the audit, and is kept for a person to look at.
+    with open(pending, "w", encoding="utf-8") as handle:
+        handle.write("{not json")
+    with ux.ThemeSwitch(client, "admin", pending) as switch:
+        switch.set("light")
+    assert os.path.exists(pending) and splunkd.prefs["admin"]["theme"] == "dark"
