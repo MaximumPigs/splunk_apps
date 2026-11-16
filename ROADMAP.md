@@ -85,11 +85,21 @@ included. Private user objects are in scope.
   objects only; (b) staged as one "changed" entry for the app, discardable
   like any other. Recommendation: (a), keeping the import to knowledge
   objects; the label and version belong to whoever owns the target app.
+- [ ] Since 1.6.3 one Apply is capped at 16 MB of request body, and an
+  import carries lookup CSV contents, so a large app's import can exceed
+  it. What then? Options: (a) refuse the import when staging it would take
+  the staged changes over the cap, naming the size, so the person discards
+  some objects (for example a large lookup) and imports the rest; (b) Apply
+  sends an import in several requests under the cap, so a failure part-way
+  leaves the target app half imported; (c) a higher cap for imports only.
+  Recommendation: (a), the same refusal at staging that 1.6.3 already
+  shows, and nothing is written half-way.
 
 Probe first: whether a lookup file's contents can be written through REST
 or a search on 9.3 and 10.x without Splunk's upload staging folder (for
-example `outputlookup` run in the target app's namespace), and the largest
-JSON body the page's REST endpoint accepts (upload and paste).
+example `outputlookup` run in the target app's namespace). The body size is
+settled: the 1.6.3 probe saw Splunk Web pass 64 MB bodies to the endpoint
+and splunkd allows 2 GB, so the app's own 16 MB cap is the limit.
 
 ### Low priority: Deployment apps portal
 Status: blocked
@@ -370,6 +380,12 @@ audit at all. Fix: switch the test user's theme preference through `sandbox`
 for each pass (restored afterwards), and let an app list panels to open per
 view. Changes `tools/splk/`, so it would be built in an interactive session.
 
+Again on #57 (1.6.3): the UX review saw the cap refusal alert
+(`easyadmin_apps.js:2310`) only in source and UI tests, since the audit ran
+in dark only and opens no panel. The page can force the refusal with
+`?ea_max_request_bytes=` (`easyadmin_apps.js:638-642`), so a listed panel
+state could include it.
+
 - [x] Confirm: should this be done? (Recommended: yes, the theme switch at
   least; CLAUDE.md's definition of done assumes both themes are audited.):
   Yes.
@@ -391,6 +407,15 @@ repeat, so a retry a few seconds later would have carried on without the
 owner. Fix: retry the post-merge `git pull` (and other read-only git calls in
 `await`) a few times with a short wait before raising, with a unit test.
 Changes `tools/splk/`, so it would be built in an interactive session.
+
+Again on 2026-11-16T10:15:04Z, waiting on #57: "Loop stuck in await: gh pr
+view failed: error connecting to api.github.com" (loop log since the groom
+of 20261116-092127). The network outage was outside the loop, but
+`phase_await` polls (`loop.py:744`), so one failed `gh pr view` could simply
+be retried at the next poll instead of pausing for the owner. The same
+retry should cover it: a failed read-only `gh` or `git` call in `await` is
+logged and retried, and only repeated failures over some minutes mark the
+loop stuck.
 
 - [x] Confirm: should this be done? (Recommended: yes, a small retry; it
   costs nothing when git succeeds, and a ref race should not need the owner.):
