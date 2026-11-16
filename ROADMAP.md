@@ -174,7 +174,7 @@ Notes:
   app): see the open question above.
 
 ### Proposed: Tests the settings panel still lacks
-Status: ready
+Status: in-progress
 
 Left on #39 (1.6.0). No UI test covers the hint on masked or too-long
 settings, nor staged settings staying listed under a filter; no live test
