@@ -33,6 +33,7 @@ its format is fixed:
 | 1.6.3 | One Apply is capped at 16 MB of request body: the server refuses a larger one with HTTP 413 before anything is written, and the page refuses, at the click that would take the staged changes over it, and puts the staged state back (the editor, form or panel stays open with what was typed). Splunk Web passed 64 MB bodies in a probe and splunkd allows 2 GB, so the cap is the app's own. |
 | 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
 | 1.6.4 | A staged move also shows in the app the object is leaving, struck through and labelled "moving to <app>", with its own ×; filters hiding it are counted there as a "staged move away". |
+| 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -210,50 +211,6 @@ Notes:
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
 
-### Staged moved knowledge objects should not disappear from their origin app
-Status: done
-
-- Knowledge Objects staged for move should display in the origin app 
-  with a strike-through as though they are being deleted.
-- Today a staged move lists the object only in its destination app
-  (`appOf`, `easyadmin_apps.js:266`); it stays listed there as now.
-
-### Local knowledge objects should be able to be deleted even when a default one exists under it.
-Status: ready
-
-- Currently, no local knowledge object with a default one under it can be deleted from the app.
-- The option to delete the local one should be available.
-- Agreed: if the probe below finds no REST call that removes only the
-  local layer, the delete is not built; instead the lock's tooltip and the
-  README say the object has local changes that only an edit of the `local`
-  file can remove. If a call is found, the delete reverts the object to its
-  default settings and leaves its permissions as they are; how that staged
-  revert shows on the page is then a question for the owner before it is
-  built.
-
-Already observed on 10.6.1 (README, "Why local settings cannot be
-deleted"): `DELETE .../configs/conf-<file>/<stanza>` on an object that ships
-in `default` is refused ("cannot be deleted in config"), and splunkd marks
-such objects `removable` 0, so the typed endpoints refuse it too. No REST
-call seen so far removes only the local layer.
-
-- [x] If the probe below finds no REST call that removes only the local
-  layer, what then? Options: (a) drop the item, and say in the lock's
-  tooltip and the README that the object has local changes that only an
-  edit of the `local` file can remove; (b) a "reset to default" that posts
-  each local setting's default value back (observed: the key stays in
-  `local`, pinned to today's default, so a later app upgrade's new default
-  is hidden); (c) delete the local stanza from the file (not possible on
-  Splunk Cloud, fails vetting). Recommendation: (a), since (b) looks like a
-  revert but is not one. If a REST call is found, the delete reverts the
-  object to its default settings and leaves its permissions as they are.
-  Agree?: Agreed, (a).
-
-Probe first: `DELETE` on the typed endpoint (for example
-`saved/searches/<name>`) and on `configs/conf-<file>/<stanza>` for an object
-with both a default and a local stanza, on 9.3 and 10.6, reading the
-`local` file back through splunkd afterwards.
-
 ### Proposed: No screenshot shows the "hidden by the filters" note
 Status: ready
 
@@ -293,7 +250,12 @@ after the marker before asserting absence. Tests only.
   one-line change; it closes the last inferred step in that test.)
 
 ### The details panel leaves the page's buttons visible
-Status: ready
+Status: blocked
+Context: On App management, the side panel that shows an object's details
+(and the bulk permissions, new app and clone panels) covers the page's New
+app, Reload, Discard changes and Apply changes buttons. The open question
+decides what pressing one of those buttons does to a panel that is still
+open, with typing in it not yet staged.
 
 - When a knowledge object's details panel is open on App management, the
   page's buttons (New app, Reload, Discard changes, Apply changes) stay
@@ -304,6 +266,17 @@ Status: ready
   `app_management-details-*.png` shows it.
 - The same holds for the other panels that open there (bulk permissions,
   new app, clone).
+- [ ] On easyadmin's App management page, once the side panel no longer
+  covers the Reload, Discard changes and Apply changes buttons, what happens
+  when one is pressed while the panel is open and holds typing that is not
+  yet staged (a setting being edited, a new app form half filled)? Options:
+  (a) the panel closes and the button acts; if the panel held unstaged
+  typing, the page first asks "discard what you typed and continue?";
+  (b) the panel closes and the typing is lost without asking; (c) the panel
+  stays open and is refreshed after the button acts, keeping the typing.
+  Recommendation: (a): after Apply or Reload the panel may show an object
+  that has moved or gone, so closing it is safest, and the question stops
+  typing being lost by accident.
 
 ### Export an app as a .spl or .tgz file
 Status: blocked
@@ -354,6 +327,49 @@ how the page is laid out, and how users from LDAP or SAML are shown.
 - [ ] Users signed in through LDAP or SAML get their roles from group
   mappings, so their roles cannot be changed here. Options: (a) list them
   read-only, saying why; (b) leave them out. Recommendation: (a).
+
+### Proposed: The UX audit never draws the struck "moving to" row
+Status: proposed
+Context: Since 1.6.4 an object with a staged move stays listed, struck
+through, in the app it is leaving. No audit screenshot has ever shown that
+row, so it has not been checked in the light theme. Doing this adds a staged
+move to the page's UX audit, so both themes are seen on every run.
+
+Left by the UX review on #63 (1.6.4), minor. The `.ea-moving-out` row
+(`apps/easyadmin/appserver/static/easyadmin_apps.css:352`) was seen only in
+dark, in the UI test screenshot `app_management_staged_move_origin.png`; it
+reuses existing colour variables. Since #64 the audit runs both themes, but
+`tests/ui/easyadmin/ux.toml` lists only the `details` and `cap-refusal`
+states, and neither stages a move. Fix: a third state in `ux.toml` that
+stages a move of one object and waits for `.ea-moving-out`. Tests only.
+
+Probe first: whether a `ux.toml` state's `click` list can stage a move
+(how the page picks the destination app), or whether a query hook is needed.
+
+- [ ] Confirm: should this be done? (Recommended: yes; it is the only way the
+  row is seen in light, and every later audit keeps checking it.)
+
+### Proposed: Two UI test gaps for the staged move away row
+Status: proposed
+Context: Two small test gaps left by the 1.6.4 change that keeps a moved
+object listed in the app it leaves. Doing this adds two assertions; the app
+does not change.
+
+Left by the splunk-reviewer on #63 (1.6.4), both low:
+
+- The "hidden by the filters" note's "staged move away" wording is asserted
+  only combined with a deletion
+  (`tests/ui/easyadmin/test_easyadmin_apps_ui.py:969`), and the plural
+  "staged moves away" (`apps/easyadmin/appserver/static/easyadmin_apps.js:1007`)
+  is never asserted. Fix: a case with two hidden moves away.
+- The moving-out row's `data-fid` is `moving:<key>`
+  (`easyadmin_apps.js:1440`); the UI test covers focus after its discard button
+  but not focus restored to the row after another re-render. Fix: one
+  assertion after a re-render (for example toggling a filter).
+
+- [ ] Confirm: should this be done? (Recommended: yes, tests only, small;
+  it could be built with "No screenshot shows the hidden by the filters
+  note", which edits the same test file.)
 
 ## fillcontinuous
 
@@ -614,3 +630,52 @@ of the item; review the item's own commits. Changes `.claude/loop/`, so it
 would be built in an interactive session.
 
 - [ ] Confirm: should this be done? (Recommended: yes, a prompt line.)
+
+### Proposed: The full dev loop runs twice more after a review that changed nothing
+Status: proposed
+Context: Each roadmap item runs the full build-and-test cycle (about ten
+minutes for easyadmin) several times. After a review that changed no file,
+it still ran twice more on identical code. Doing this skips both, saving
+about twenty minutes per item without skipping any check on changed code.
+
+On #63 (easyadmin 1.6.4) `splk dev easyadmin` ran green five times
+(`.agent/runs/2026-11-17.jsonl`): twice inside the implement step, once in
+the supervisor's verify (05:07 to 05:17), once inside the review step (05:20
+to 05:30) and once more in verify after it (05:30 to 05:41). The review step
+fixed nothing (`.agent/loop/steps/20261117-053057-review.json`: no security
+findings, nothing blocking from the splunk-reviewer, the rest left as open
+findings), so the last two ran on the code already verified at 05:17. The
+retro of the same item named these repeated runs. Causes:
+`.claude/loop/prompts/review.md` step 4 is read as "always re-run", and
+`phase_review` (`tools/splk/loop.py:736-751`) always goes to `verify`, even
+when `commit_all` returns False because nothing changed. Fix: `review.md`
+step 4 says to run `splk dev` only after changing a file, since the
+supervisor verifies anyway; `phase_review` goes straight to `retro` (or
+`push` in a fix) when the review committed nothing, with a unit test.
+Changes `tools/splk/` and `.claude/loop/`, so it would be built in an
+interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes; the supervisor's
+  verify still runs after every change, so nothing goes unchecked.)
+
+### Proposed: A two-line notification reappears in every groom's loop log
+Status: proposed
+Context: The loop keeps a log of what it told the owner, and each roadmap
+tidy-up reads the part since the last tidy-up. One old message split over
+two lines, and its second half is shown again every time. Doing this keeps
+each message on one line so old ones drop out.
+
+The "Loop stuck in await: gh pr view failed: error connecting to
+api.github.com" notification of 2026-11-16T10:15:04Z carried gh's second
+line, so `.agent/loop/notifications.log` holds a line "check your internet
+connection or https://githubstatus.com" with no timestamp. The loop log
+filters notifications with `line[:20] > since` (`tools/splk/loop.py:390`);
+"c" sorts after "2", so the orphan line passes every cut-off and was listed
+again in this groom's loop log, a day after the event. `notify`
+(`loop.py:282-288`) writes the message as given. Fix: in `notify`, replace
+newlines in the message with " / " before writing the file (ntfy can keep
+the original), and skip lines without a timestamp when reading, with a unit
+test. Changes `tools/splk/`, so it would be built in an interactive session.
+
+- [ ] Confirm: should this be done? (Recommended: yes, two lines; low
+  value on its own, so it could join the next loop change.)

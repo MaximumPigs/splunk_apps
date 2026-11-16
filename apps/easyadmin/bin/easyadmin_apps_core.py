@@ -218,6 +218,8 @@ def build_object(type_id, entry):
         "can_share_global": _is_true(acl.get("can_share_global", True)),
         "can_share_app": _is_true(acl.get("can_share_app", True)),
         "disabled": _is_true(content.get("disabled", False)),
+        # Set by mark_local_changes for callers who may read the files.
+        "local_file": None,
     }
 
 
@@ -313,8 +315,57 @@ def read_model(gateway):
     except GatewayError as error:
         logger.info("Could not list users for the owner field: %s", error)
         users = []
-    return build_model(gateway.list_apps(), objects_by_type, failures, roles, users,
-                       gateway.current_context())
+    context = gateway.current_context()
+    model = build_model(gateway.list_apps(), objects_by_type, failures, roles, users, context)
+    # Reading the files bypasses splunkd's per-object permissions, so only
+    # callers who may see every object get the name of a local file (the same
+    # gate as the details panel's own settings, see add_explicit).
+    if "admin_all_objects" in (context.get("capabilities") or []):
+        mark_local_changes(model["objects"], gateway.read_local_conf)
+    return model
+
+
+def local_stanzas(text):
+    """The names of the stanzas that set at least one key in this .conf text.
+
+    A header with nothing under it does not count: there is nothing in it to remove.
+    """
+    return {name for name, settings in conf_core.parse_conf(text) if settings}
+
+
+def local_file_path(conf, app):
+    """The path of the local file as the page shows it, from the Splunk home folder."""
+    if app == SYSTEM_APP:
+        return "etc/system/local/%s.conf" % conf
+    return "etc/apps/%s/local/%s.conf" % (app, conf)
+
+
+def mark_local_changes(objects, read_local):
+    """Set ``local_file`` on each shipped object whose stanza is also set in local.
+
+    Splunk refuses to delete an object that ships in a default folder, and no
+    REST call removes only its local layer (probed on 10.6.1 with a saved
+    search: the typed endpoint and ``configs`` answer "cannot be deleted", the
+    ``properties`` stanza DELETE answers success and changes nothing; see the
+    README). So the page offers no delete and names the file whose stanza has
+    to be edited instead. Only objects that are stanzas of a conf file
+    qualify: a props-based object is one line of a shared stanza, and views,
+    navigation, panels and lookup files are not stanzas.
+
+    ``read_local(conf, app)`` returns the text of that app's local file or
+    None; it is called once per file, however many objects the file holds.
+    """
+    wanted = {}
+    for obj in objects:
+        if obj["movable"] or obj["removable"] or obj["type"] not in STANZA_CONFS:
+            continue
+        wanted.setdefault((STANZA_CONFS[obj["type"]], obj["app"]), []).append(obj)
+    for (conf, app), group in wanted.items():
+        text = read_local(conf, app)
+        names = local_stanzas(text) if text else set()
+        for obj in group:
+            if obj["name"] in names:
+                obj["local_file"] = local_file_path(conf, app)
 
 
 # ----------------------------------------------------------------- details
