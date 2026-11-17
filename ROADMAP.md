@@ -558,7 +558,8 @@ test. Changes `tools/splk/`, so it would be built in an interactive session.
 Again in the groom of 2026-11-17 13:16 local: the same orphan line headed
 the loop log's notifications, and `state.json` still holds the two-line
 message as `stuck_reason`. And again in the groom after #80 merged (18:07
-local): the orphan line headed the notifications for the third time.
+local): the orphan line headed the notifications for the third time, and
+for the fourth in the groom after #81 merged (18:15 local).
 
 - [ ] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.)
@@ -615,7 +616,7 @@ The `macro` fixture (`tests/ui/easyadmin/test_easyadmin_apps_ui.py:27-44`)
 deletes the macros it made in its teardown, which does not run when the
 process is killed. On 2026-11-17 a `splk dev easyadmin` stopped mid-UI-stage
 left `easyadmin_ui_1794881048778` in the dev target's `search` app (still
-there at the grooms of 13:16 and 18:07 local, by `splk search`, so any
+there at the grooms of 13:16, 18:07 and 18:15 local, by `splk search`, so any
 easyadmin item the loop builds next will fail the same two UI tests). The tests filter the page with the
 prefix `easyadmin_ui_` (`:191`, `:392`, `:608`, and
 `test_easyadmin_request_cap_ui.py:37`), so the stray macro was listed and
