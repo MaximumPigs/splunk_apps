@@ -64,3 +64,5 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | lesson | [splk live runs fail from a git worktree](lessons/splk-worktree-cannot-run-live.md): env file is main-checkout only and copying is denied; check the branch out in the main checkout. |
 | 1 | lesson | [ROADMAP.md edits duplicated sections](lessons/process-roadmap-edit-duplicated-sections.md): implement step corrupted it, only review noticed; diff it after editing. |
 | 2 | rule | [Test git subprocess inherits GIT_CONFIG_*](lessons/tests-git-subprocess-inherits-git-config-env.md): empty `KEY_n`, or a half-undone monkeypatch on Windows, makes `git init` exit 128; delenv them. Rule `python`. |
+| 1 | lesson | [Loop step exit 0, empty output logs FAIL "ok"](lessons/splk-loop-step-ok-exit-empty-output-logs-fail.md): message falls back to the word "ok"; log the missing status. |
+| 1 | lesson | [CSS asset test pins selector shape](lessons/ux-asset-test-pins-css-shape.md): grouped selector broke unit; match list members, measure layout in a UI test. |
