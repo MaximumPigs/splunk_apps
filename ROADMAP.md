@@ -212,7 +212,7 @@ Notes:
   app): see the open question above.
 
 ### Proposed: No screenshot shows the "hidden by the filters" note
-Status: ready
+Status: in-progress
 
 Left by the splunk-reviewer on #51 (1.6.2), low. In
 `test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide`
