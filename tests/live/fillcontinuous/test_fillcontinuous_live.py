@@ -5,6 +5,8 @@ registered, runs under splunkd's Python, and returns what the README promises.
 Input is synthesised with makeresults, so no index or seed data is needed.
 """
 
+import urllib.parse
+
 import pytest
 
 APP = "fillcontinuous"
@@ -119,3 +121,40 @@ def test_internal_fields_survive_a_multi_chunk_result(search):
     assert rows[0]["count"] == "150002"
     assert rows[0]["with_raw"] == "150000"
     assert rows[0]["with_extra"] == "150000"
+
+
+def _acls(client):
+    """ACL of each command stanza and of the app itself, keyed by a label."""
+    acls = {}
+    for name in ("fillcontinuous", "fillgaps"):
+        path = "/servicesNS/nobody/%s/configs/conf-commands/%s" % (APP, urllib.parse.quote(name, safe=""))
+        acls["commands/" + name] = client.request("GET", path)["entry"][0]["acl"]
+    path = "/services/apps/local/%s" % urllib.parse.quote(APP, safe="")
+    acls["app"] = client.request("GET", path)["entry"][0]["acl"]
+    return acls
+
+
+def test_only_admins_can_write_the_commands(splunk):
+    """The README says only admin and sc_admin can change the command stanzas.
+
+    Everyone can still read them and the command stays exported system-wide.
+    """
+    for label, acl in _acls(splunk).items():
+        assert set(acl["perms"]["write"]) == {"admin", "sc_admin"}, label
+        assert acl["perms"]["read"] == ["*"], label
+        assert acl["sharing"] == "global", label
+
+
+def test_power_user_cannot_write_the_commands(splunk, sandbox):
+    """A power user sees the stanzas as read-only but can still run the command.
+
+    Read-only on purpose: a write that succeeded would create local.meta on
+    the target, which the sandbox guard does not snapshot.
+    """
+    user, password = sandbox.create_user(roles=["power"], label="fillcontinuous_power")
+    as_power = splunk.as_user(user, password)
+    for label, acl in _acls(as_power).items():
+        assert acl["can_write"] is False, (label, acl["can_write"])
+    # The README's example shape: three sparse rows fill to a 2 x 3 grid.
+    rows = as_power.oneshot(SPARSE + " | fillcontinuous span=1h by host")
+    assert len(rows) == 6

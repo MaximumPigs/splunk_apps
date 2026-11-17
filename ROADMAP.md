@@ -387,18 +387,7 @@ Left by the splunk-reviewer on #63 (1.6.4), both low:
 | Version | What |
 | --- | --- |
 | 1.1.2 | Real rows keep `_raw` and other `_` fields when a filled row is the first one written: the command registers every output field name with the record writer before yielding. |
-
-### Proposed: `power` can change the command stanzas
-Status: in-progress
-
-Left by the security review on #41 (1.1.2), low, predating that change.
-`metadata/default.meta` grants `write : [ admin, sc_admin, power ]` on `[]`
-and `[commands]`, while its own comment says "writable only by admins". A
-`power` user can change or unexport the commands for everyone. Fix: drop
-`power` from both write lists, and check AppInspect stays clean.
-
-- [x] Confirm: should this be done? (Recommended: yes, admins only, as the
-  file's comment already says.): Admins only.
+| 1.1.3 | Only `admin` and `sc_admin` can change or unexport the command: `power` no longer has write on the app or its command stanzas. |
 
 ## Tooling
 
