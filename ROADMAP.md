@@ -389,7 +389,7 @@ Left by the splunk-reviewer on #63 (1.6.4), both low:
 | 1.1.2 | Real rows keep `_raw` and other `_` fields when a filled row is the first one written: the command registers every output field name with the record writer before yielding. |
 
 ### Proposed: `power` can change the command stanzas
-Status: ready
+Status: in-progress
 
 Left by the security review on #41 (1.1.2), low, predating that change.
 `metadata/default.meta` grants `write : [ admin, sc_admin, power ]` on `[]`
