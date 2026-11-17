@@ -519,6 +519,13 @@ def test_question_issue_closes_only_once_main_has_the_answers(loop_dir, monkeypa
 
 
 def test_main_roadmap_items_reads_the_committed_file_not_the_working_copy(tmp_path, monkeypatch):
+    # The step environment sets an empty GIT_CONFIG_VALUE_0. On Windows, an
+    # earlier test's monkeypatch undo then deletes that variable from the
+    # process while GIT_CONFIG_COUNT and KEY_0 stay, and every git call fails
+    # with "missing config value GIT_CONFIG_VALUE_0". Start from none.
+    for name in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+        monkeypatch.delenv(name, raising=False)
+
     def git(*args):
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t"] + list(args),
                        cwd=str(tmp_path), check=True, capture_output=True)

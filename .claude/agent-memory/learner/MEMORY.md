@@ -63,4 +63,4 @@ pattern; the lesson stays as the evidence and keeps counting hits.
 | 1 | lesson | [Absence check on an indexed log](lessons/tests-absence-in-indexed-log-needs-marker.md): "no user-prefs row" is vacuous while splunkd_access lags; wait for a marker request first. |
 | 1 | lesson | [splk live runs fail from a git worktree](lessons/splk-worktree-cannot-run-live.md): env file is main-checkout only and copying is denied; check the branch out in the main checkout. |
 | 1 | lesson | [ROADMAP.md edits duplicated sections](lessons/process-roadmap-edit-duplicated-sections.md): implement step corrupted it, only review noticed; diff it after editing. |
-| 1 | lesson | [Test git subprocess inherits loop GIT_CONFIG_*](lessons/tests-git-subprocess-inherits-git-config-env.md): empty `KEY_n` makes `git init` exit 128 in the loop only; scrub env in the test. |
+| 2 | rule | [Test git subprocess inherits GIT_CONFIG_*](lessons/tests-git-subprocess-inherits-git-config-env.md): empty `KEY_n`, or a half-undone monkeypatch on Windows, makes `git init` exit 128; delenv them. Rule `python`. |

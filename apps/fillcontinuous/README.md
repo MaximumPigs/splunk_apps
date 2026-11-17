@@ -214,6 +214,12 @@ Install the `.spl` through **Apps → Manage Apps → Install app from file**, o
 unpack it into `$SPLUNK_HOME/etc/apps/` and restart. The command is exported
 system-wide, so it is usable from any app.
 
+### Permissions
+
+Every role can read the command and run it. Only `admin` and `sc_admin` can
+change, re-permission or unexport it, or create objects in the app: other
+roles, `power` included, see the command stanzas as read-only.
+
 ## Author
 
 [MaximumPigs](https://github.com/maximumpigs)

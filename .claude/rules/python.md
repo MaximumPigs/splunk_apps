@@ -17,6 +17,10 @@ paths:
   without Splunk (`<app>_core.py` pattern).
 - Prefix helper modules with the app id; `bin/` directories share one namespace.
 - No new runtime dependencies inside an app without vendoring them into `lib/`.
+- A test that spawns `git` starts from a clean environment: `monkeypatch.delenv`
+  `GIT_CONFIG_COUNT` and every `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`, and
+  capture stderr so exit 128 explains itself
+  (`agent-memory/learner/lessons/tests-git-subprocess-inherits-git-config-env.md`).
 - Without a 3.9 interpreter, check grammar with
   `ast.parse(source, filename=path, feature_version=(3, 9))`. The edit hook does
   this for app, script, tool and hook code. It cannot catch a stdlib call added
