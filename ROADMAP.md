@@ -34,6 +34,7 @@ its format is fixed:
 | 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
 | 1.6.4 | A staged move also shows in the app the object is leaving, struck through and labelled "moving to <app>", with its own ×; filters hiding it are counted there as a "staged move away". |
 | 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
+| 1.7.0 (tests only) | A second screenshot of the clone box, taken after the name filter (`app_management_clone_hidden_note`), shows the "hidden by the filters" note; the first shot lists every copy, so it never did. No change to the app. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -210,21 +211,6 @@ Notes:
   Server classes have REST endpoints (`deployment/server/serverclasses`).
 - Where groups, backups and history are stored (KV store, or files in the
   app): see the open question above.
-
-### Proposed: No screenshot shows the "hidden by the filters" note
-Status: in-progress
-
-Left by the splunk-reviewer on #51 (1.6.2), low. In
-`test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide`
-(`tests/ui/easyadmin/test_easyadmin_apps_ui.py:793`) the
-`app_management_clone_counts` screenshot is taken before the name filter
-is applied, and with the common types every copy is listed, so no image
-shows the `.ea-hidden-staged` note; the test asserts its text only. Fix: a
-second `shot` after the name filter, and open it. Tests only.
-
-- [x] Confirm: should this be done? (Recommended: yes, one line; it could
-  join "Tests the settings panel still lacks".): Yes. ("Tests the settings
-  panel still lacks" has since shipped, so this is its own item.)
 
 ### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
 Status: proposed

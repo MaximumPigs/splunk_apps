@@ -931,6 +931,8 @@ def test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide(open_vi
     assert "0 matches, 1 staged" in meta.inner_text()
     assert box.locator(".ea-hidden-staged").inner_text() == "%s hidden by the filters." % (
         "1 staged copy is" if total - 1 == 1 else "%d staged copies are" % (total - 1))
+    # The first shot has every copy listed, so only this one shows the note.
+    shot(page, "app_management_clone_hidden_note")
 
     seen = _accept_dialogs(page)
     box.locator(".ea-discard-app").click()

@@ -519,6 +519,12 @@ def test_question_issue_closes_only_once_main_has_the_answers(loop_dir, monkeypa
 
 
 def test_main_roadmap_items_reads_the_committed_file_not_the_working_copy(tmp_path, monkeypatch):
+    # A loop step runs with GIT_CONFIG_COUNT/KEY_0/VALUE_0="" (no stored credentials); on Windows
+    # git rejects the empty value ("missing config value"), so the scratch repo gets a clean
+    # environment (the code under test runs git too) instead of whatever session ran the tests.
+    for key in [k for k in os.environ if k.startswith("GIT_CONFIG_")]:
+        monkeypatch.delenv(key)
+
     def git(*args):
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t"] + list(args),
                        cwd=str(tmp_path), check=True, capture_output=True)
