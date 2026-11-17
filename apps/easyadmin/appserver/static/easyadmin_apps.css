@@ -407,7 +407,7 @@
     border: 1px solid var(--ea-changed);
 }
 
-/* Details panel: slides over the right of the page. */
+/* Details panel: slides over the right of the page; the toolbar keeps clear of it. */
 #easyadmin-apps .ea-panel {
     position: fixed;
     top: 0;
@@ -423,6 +423,14 @@
     color: var(--ea-fg);
     border-left: 1px solid var(--ea-border);
     box-shadow: -4px 0 16px var(--ea-shadow);
+}
+
+/* While a panel is open the toolbar reserves the panel's 440px plus a gap, so
+   New app, Reload, Discard and Apply wrap to the left of it and stay in view.
+   Plain px values: a variable here would be read as a palette colour by the
+   asset tests. Only the toolbar moves; the grid keeps its layout. */
+#easyadmin-apps.ea-panel-open .ea-toolbar {
+    padding-right: 456px;
 }
 
 #easyadmin-apps .ea-panel-close {

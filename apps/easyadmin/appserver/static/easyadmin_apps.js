@@ -162,7 +162,7 @@ require([
         settingFilter: newMap(),    // object key -> text filtering the panel's settings
         showDefault: newMap(),      // object key + NUL + setting -> true to show the value it hides
         capRefusal: null,           // the request-cap refusal, shown in the panel (it covers the message area)
-        settingEdit: null,          // {key, name, value}: the setting being edited in the panel
+        settingEdit: null,          // {key, name, value, original}: the setting being edited in the panel
         settingAdd: newMap(),       // object key -> {name, value}: the "add a setting" draft
         filter: '',            // object name filter
         appFilter: '',         // app name or label filter
@@ -1182,17 +1182,20 @@ require([
         if (state.data.can_create_apps) {
             $actions.append(el('button', 'btn', 'New app...').attr({ type: 'button', 'data-fid': 'new-app' })
                 .prop('disabled', state.busy).on('click', function () {
-                    openPanel({ mode: 'newapp', cloneOf: null, draft: newAppDraft(null) });
+                    if (!leavePanel()) { return; }
+                    openPanel(newAppPanel(null));
                 }));
         }
         $actions.append(el('button', 'btn', 'Reload').attr({ type: 'button', 'data-fid': 'reload' })
             .prop('disabled', state.busy).on('click', function () {
+                if (!leavePanel()) { return; }
                 state.message = null;
                 load();
             }));
         $actions.append(el('button', 'btn ea-discard', count ? 'Discard changes to ' + staged : 'Discard changes')
             .attr({ type: 'button', 'data-fid': 'discard' })
             .prop('disabled', state.busy || !count).on('click', function () {
+                if (!leavePanel()) { return; }
                 // Staged work can be large and is not recoverable: ask first.
                 if (!window.confirm('Discard the staged changes to ' + staged + '? Nothing has been applied yet.')) {
                     return;
@@ -1205,7 +1208,9 @@ require([
             }));
         $actions.append(el('button', 'btn btn-primary ea-apply', count ? 'Apply changes to ' + staged : 'Apply changes')
             .attr({ type: 'button', 'data-fid': 'apply' })
-            .prop('disabled', state.busy || !count).on('click', apply));
+            .prop('disabled', state.busy || !count).on('click', function () {
+                if (leavePanel()) { apply(); }
+            }));
         $bar.append($actions);
         return $bar;
     }
@@ -2022,7 +2027,9 @@ require([
             $dd.append(el('button', 'btn ea-setting-edit', 'Edit').attr({ type: 'button',
                 'data-fid': 'setting-edit:' + setting.name, 'aria-label': 'Edit ' + setting.name })
                 .prop('disabled', state.busy).on('click', function () {
-                    state.settingEdit = { key: obj.key, name: setting.name, value: setting.value };
+                    // original: what the editor started with, so "typed" means a change from it.
+                    state.settingEdit = { key: obj.key, name: setting.name, value: setting.value,
+                        original: setting.value };
                     renderPanel();
                     focusFid('setting-edit-value:' + setting.name);
                 }));
@@ -2361,6 +2368,8 @@ require([
 
     function buildPanel() {
         $root.find('.ea-panel').remove();
+        // The stylesheet reserves room beside the toolbar while a panel is open.
+        $root.toggleClass('ea-panel-open', !!(state.panel && state.data));
         if (!state.panel || !state.data) { return; }
         var $panel = el('aside', 'ea-panel').attr({ role: 'dialog', 'aria-labelledby': 'ea-panel-title' });
         $panel.append(el('button', 'btn btn-link ea-panel-close', 'Close').attr({ type: 'button', 'data-fid': 'panel-close' })
@@ -2376,6 +2385,55 @@ require([
             renderBulkPanel($panel);
         }
         $root.append($panel);
+    }
+
+    // A New app or Clone panel. ``initial`` is the draft it opened with (the
+    // clone's pre-filled values are not typing); it is kept rather than
+    // recomputed later, because freeAppName() changes once apps are staged.
+    function newAppPanel(cloneOf) {
+        return { mode: 'newapp', cloneOf: cloneOf, draft: newAppDraft(cloneOf), initial: newAppDraft(cloneOf) };
+    }
+
+    // Whether the open panel holds input that is not staged yet, which closing
+    // it would lose. The object panel's other controls stage as they change.
+    function panelTyping() {
+        var panel = state.panel;
+        if (!panel) { return false; }
+        if (panel.mode === 'object') {
+            var edit = state.settingEdit;
+            var add = state.settingAdd[panel.key];
+            return !!((edit && edit.key === panel.key && edit.value !== edit.original) ||
+                (add && (add.name || add.value)));
+        }
+        if (panel.mode === 'bulk') {
+            return !!(panel.draft && (panel.draft.sharing || panel.draft.owner || panel.draft.perms));
+        }
+        var changed = false;
+        $.each(['name', 'label', 'visible', 'description', 'author', 'version'], function (i, field) {
+            if (panel.draft && panel.initial && panel.draft[field] !== panel.initial[field]) { changed = true; }
+        });
+        return changed;
+    }
+
+    // Called first by the toolbar's buttons, which the panel no longer covers.
+    // Closes the open panel, asking first when that would lose typing; false
+    // means the person declined and the button must do nothing.
+    function leavePanel() {
+        if (!state.panel) { return true; }
+        if (panelTyping() && !window.confirm('Discard what you typed in the panel and continue? ' +
+            'It is not staged yet.')) {
+            return false;
+        }
+        // The drafts go too, or a reopened panel would still show the editor.
+        if (state.panel.mode === 'object') {
+            if (state.settingEdit && state.settingEdit.key === state.panel.key) { state.settingEdit = null; }
+            delete state.settingAdd[state.panel.key];
+        }
+        state.capRefusal = null;
+        state.panel = null;
+        state.returnFocus = null;
+        render();
+        return true;
     }
 
     function openPanel(panel) {
@@ -2722,7 +2780,7 @@ require([
 
     $root.on('click', '.ea-clone', function () {
         var name = this.getAttribute('data-app');
-        openPanel({ mode: 'newapp', cloneOf: name, draft: newAppDraft(name) });
+        openPanel(newAppPanel(name));
     });
 
     $root.on('change', '.ea-select-app', function () {

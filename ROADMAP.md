@@ -34,6 +34,7 @@ its format is fixed:
 | 1.6.3 (tests only) | Tests for the settings panel: the hint on masked and too-long settings, staged settings staying listed under a filter, Apply refusing a setting called `name` or `sharing`; the check that the details panel does not read `user-prefs` now waits for a later marker request before asserting absence. No change to the app. |
 | 1.6.4 | A staged move also shows in the app the object is leaving, struck through and labelled "moving to <app>", with its own ×; filters hiding it are counted there as a "staged move away". |
 | 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
+| 1.7.1 | While a panel is open (an object's details, Edit permissions, New app or Clone) the toolbar keeps clear of it, so New app, Reload, Discard changes and Apply changes stay in view. Pressing one closes the panel first; if the panel holds typing that is not staged (a setting being edited or added, permission choices, a changed new app or clone form) the page asks "Discard what you typed in the panel and continue?" and does nothing if declined. Close, Escape, Cancel, Clone, another object and the selection bar's buttons are unchanged. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -258,35 +259,6 @@ after the marker before asserting absence. Tests only.
 
 - [ ] Confirm: should this be done? (Recommended: yes, a probe and at most a
   one-line change; it closes the last inferred step in that test.)
-
-### The details panel leaves the page's buttons visible
-Status: in-progress
-
-- When a knowledge object's details panel is open on App management, the
-  page's buttons (New app, Reload, Discard changes, Apply changes) stay
-  visible and can be pressed without closing the panel.
-- Today the panel is fixed to the full height of the window on the right
-  (`easyadmin_apps.css:411`) and covers them: the UI tests close it to
-  reach Apply (`test_easyadmin_settings_ui.py:168`), and the UX audit's
-  `app_management-details-*.png` shows it.
-- The same holds for the other panels that open there (bulk permissions,
-  new app, clone).
-- Pressing one of those buttons while a panel is open closes the panel and
-  then the button acts. If the panel holds typing that is not yet staged (a
-  setting being edited, a new app form half filled), the page first asks
-  "discard what you typed and continue?", and nothing happens if the person
-  declines.
-- [x] On easyadmin's App management page, once the side panel no longer
-  covers the Reload, Discard changes and Apply changes buttons, what happens
-  when one is pressed while the panel is open and holds typing that is not
-  yet staged (a setting being edited, a new app form half filled)? Options:
-  (a) the panel closes and the button acts; if the panel held unstaged
-  typing, the page first asks "discard what you typed and continue?";
-  (b) the panel closes and the typing is lost without asking; (c) the panel
-  stays open and is refreshed after the button acts, keeping the typing.
-  Recommendation: (a): after Apply or Reload the panel may show an object
-  that has moved or gone, so closing it is safest, and the question stops
-  typing being lost by accident.: (a).
 
 ### Export an app as a .spl or .tgz file
 Status: blocked
