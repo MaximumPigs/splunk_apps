@@ -241,7 +241,7 @@ rows), so the branch's tests should pass once the item is resumed.
   panel still lacks" has since shipped, so this is its own item.)
 
 ### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
-Status: ready
+Status: in-progress
 
 Left by the splunk-reviewer on #58 (tests only), low. `wait_for_marker`
 (`tests/live/easyadmin/easyadmin_live_support.py:99`), used by the check
