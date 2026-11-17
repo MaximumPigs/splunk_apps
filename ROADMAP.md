@@ -35,6 +35,7 @@ its format is fixed:
 | 1.6.4 | A staged move also shows in the app the object is leaving, struck through and labelled "moving to <app>", with its own ×; filters hiding it are counted there as a "staged move away". |
 | 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
 | 1.7.1 | While a panel is open (an object's details, Edit permissions, New app or Clone) the toolbar keeps clear of it, so New app, Reload, Discard changes and Apply changes stay in view. Pressing one closes the panel first; if the panel holds typing that is not staged (a setting being edited or added, permission choices, a changed new app or clone form) the page asks "Discard what you typed in the panel and continue?" and does nothing if declined. Close, Escape, Cancel, Clone, another object and the selection bar's buttons are unchanged. |
+| 1.7.1 (tests only) | The live check that the details panel does not read `user-prefs` relies on `splunkd_access` lines becoming searchable in the order they were written. That is now observed (four probe runs, 220 snapshots, never a later request searchable before an earlier one; Splunk 10.6.1, one ingestion pipeline) and a live test checks it on every run. No change to the app. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -239,25 +240,6 @@ rows), so the branch's tests should pass once the item is resumed.
 - [x] Confirm: should this be done? (Recommended: yes, one line; it could
   join "Tests the settings panel still lacks".): Yes. ("Tests the settings
   panel still lacks" has since shipped, so this is its own item.)
-
-### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
-Status: in-progress
-
-Left by the splunk-reviewer on #58 (tests only), low. `wait_for_marker`
-(`tests/live/easyadmin/easyadmin_live_support.py:99`), used by the check
-that the details panel does not read `user-prefs`
-(`tests/live/easyadmin/test_easyadmin_apps_live.py:391-416`), assumes
-`splunkd_access.log` is indexed in file order, so that once the marker
-request is searchable any earlier `user-prefs` request would be too. Both
-docstrings say the ordering is inferred, not observed. If a marker were
-searchable before an earlier line, the absence assertion could pass
-falsely. Fix: observe the ordering over several runs (a probe sending a
-burst of requests and checking they become searchable in order); if it
-holds, record it as observed in the comments; if not, poll one more cycle
-after the marker before asserting absence. Tests only.
-
-- [x] Confirm: should this be done? (Recommended: yes, a probe and at most a
-  one-line change; it closes the last inferred step in that test.): Yes.
 
 ### Export an app as a .spl or .tgz file
 Status: ready

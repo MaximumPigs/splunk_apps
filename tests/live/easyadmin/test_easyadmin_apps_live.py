@@ -400,7 +400,8 @@ def test_details_and_precedence_do_not_read_the_theme_preference(splunk, sandbox
     # line when a request finishes, so any user-prefs call the handler made
     # finished, and was logged, before the marker was sent; splunkd_access.log
     # is indexed in file order, so once the marker is searchable an earlier
-    # user-prefs line would be too. (The ordering is inferred, not observed.)
+    # user-prefs line would be too. (That ordering is observed, and checked
+    # below by test_access_log_becomes_searchable_in_request_order.)
     import easyadmin_live_support as ea
     name = objects.macro()
     obj = find(model(splunk), "macro", name)
@@ -416,3 +417,42 @@ def test_details_and_precedence_do_not_read_the_theme_preference(splunk, sandbox
     prefs = search('search index=_internal sourcetype=splunkd_access user="%s" uri="/servicesNS/*/user-prefs/*"'
                    ' | table _time uri' % user, earliest="-15m", latest="now")
     assert prefs == [], "the theme preference was read: %s" % prefs
+
+
+def _order_violations(snapshots):
+    """Snapshots where the searchable markers are not 1..seen (a later one before an earlier one)."""
+    return [s for s in snapshots if s[1] > 0 and not (s[2] == 1 and s[3] == s[1])]
+
+
+def test_access_log_becomes_searchable_in_request_order(splunk):
+    # wait_for_marker relies on splunkd_access lines becoming searchable in the
+    # order they were written. Send numbered requests one after another and,
+    # after each, list which are searchable: the set must always be 1..k. A
+    # gap (a later marker searchable while an earlier one is not) would let the
+    # absence check above pass falsely. Observed on 10.6.1, one ingestion pipeline.
+    import easyadmin_live_support as ea
+    prefix, snapshots = ea.access_log_order_snapshots(splunk, count=40)
+    assert snapshots, "the probe returned no snapshots; cannot check the ordering"
+    assert _order_violations(snapshots) == [], \
+        "markers became searchable out of order (sent, seen, low, top): %s" % _order_violations(snapshots)
+    if not any(s[1] > 0 for s in snapshots):
+        # Indexing lagged the whole probe: wait for the markers, then check once.
+        deadline = time.time() + 90
+        while True:
+            rows = splunk.oneshot(
+                'search index=_internal sourcetype=splunkd_access uri="*%s_*" | rex field=uri "%s_(?<m>\d+)"'
+                ' | stats dc(m) as seen min(m) as low max(m) as top' % (prefix, prefix),
+                earliest="-15m", latest="now")
+            seen = int(rows[0].get("seen") or 0) if rows else 0
+            if seen or time.time() >= deadline:
+                break
+            time.sleep(3)
+        assert seen, "no marker became searchable within the probe; cannot check the ordering"
+        later = [(40, seen, int(rows[0]["low"]), int(rows[0]["top"]))]
+        assert _order_violations(later) == [], "markers searchable with a gap: %s" % later
+
+
+def test_order_check_flags_a_gap():
+    # Shows the ordering check can fail: markers 2..3 searchable without 1.
+    assert _order_violations([(5, 2, 2, 3)]) == [(5, 2, 2, 3)]
+    assert _order_violations([(5, 3, 1, 3), (6, 0, 0, 0)]) == []
