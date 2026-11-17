@@ -24,9 +24,39 @@ def q(name):
     return urllib.parse.quote(name, safe="")
 
 
+_STARTED_MS = int(time.time() * 1000)
+_swept = []
+
+
+def _sweep_orphans(client):
+    """Delete ``easyadmin_ui_<ms>`` macros left by an interrupted earlier run, once per process.
+
+    The select-all tests count what the name filter shows, so one orphan makes
+    them fail ("3 objects selected", expected 2). Only names stamped before this
+    process started are removed, so a macro made by a running test is safe.
+    """
+    if _swept:
+        return
+    _swept.append(True)
+    for app in ("search", "launcher"):
+        try:
+            entries = client.request("GET", "/servicesNS/nobody/%s/admin/macros" % app,
+                                     {"count": 0, "search": "name=easyadmin_ui_*"})["entry"]
+        except SplunkError:
+            continue
+        for entry in entries:
+            found = re.fullmatch(r"easyadmin_ui_(\d{13})", entry["name"])
+            if found and int(found.group(1)) < _STARTED_MS and entry["acl"]["app"] == app:
+                try:
+                    client.request("DELETE", "/servicesNS/nobody/%s/admin/macros/%s" % (app, q(entry["name"])))
+                except SplunkError:
+                    pass
+
+
 @pytest.fixture
 def macro(sandbox_client):
     """Create a local macro in search; delete it afterwards from search or launcher."""
+    _sweep_orphans(sandbox_client)
     made = []
 
     def create(definition="index=_internal"):
@@ -1018,3 +1048,178 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     assert len(seen) == 1
     assert page.locator(ROOT + " .ea-apply").is_disabled()
     assert page.locator(ROOT + " .ea-hidden-staged").count() == 0
+
+
+# ------------------------------------------- the panel and the page buttons
+
+TOOLBAR_BUTTONS = ("new-app", "reload", "discard", "apply")
+PANEL = ROOT + " .ea-panel"
+
+
+def _uncovered(page, fid):
+    """'ok' when the toolbar button is inside the window and a click at its centre would hit it."""
+    return page.evaluate("""([root, fid]) => {
+        const b = document.querySelector(root + ' button[data-fid="' + fid + '"]');
+        if (!b) { return 'missing'; }
+        // Opening an object scrolls the page to its row; what matters is whether
+        // the panel covers the button, not where the page happens to be scrolled.
+        b.scrollIntoView({ block: 'nearest' });
+        const r = b.getBoundingClientRect();
+        if (r.left < 0 || r.top < 0 || r.right > window.innerWidth || r.bottom > window.innerHeight) {
+            return 'outside the window';
+        }
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return hit && (hit === b || b.contains(hit)) ? 'ok' : 'covered by ' + (hit ? hit.className : 'nothing');
+    }""", [ROOT, fid])
+
+
+def _open_object_panel(page, name):
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-object-name").click()
+    page.locator(PANEL + " .ea-settings").first.wait_for()
+    return page.locator(PANEL)
+
+
+def _idle(page):
+    page.locator(ROOT + " .ea-busy").wait_for(state="detached")
+    page.wait_for_selector(READY)
+
+
+class _Dialogs:
+    """Records every dialog and answers it with ``accept`` (change it between clicks)."""
+
+    def __init__(self, page, accept=True):
+        self.accept = accept
+        self.seen = []
+        page.on("dialog", self._answer)
+
+    def _answer(self, dialog):
+        self.seen.append(dialog.message)
+        if self.accept:
+            dialog.accept()
+        else:
+            dialog.dismiss()
+
+
+def test_toolbar_buttons_stay_uncovered_while_a_panel_is_open(open_view, macro, shot):
+    """Object details, Edit permissions, New app and Clone leave New app, Reload, Discard and Apply in view."""
+    name = macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + ' button[data-fid="delete-selected"]').click()   # a staged change enables Discard and Apply
+    assert page.locator(ROOT + " .ea-apply").is_enabled()
+    opened = {
+        "details": lambda: _object(page, "search", name).locator(".ea-object-name").click(),
+        "permissions": lambda: page.locator(ROOT + ' button[data-fid="bulk-acl"]').click(),
+        "new app": lambda: page.locator(ROOT + ' button[data-fid="new-app"]').click(),
+        "clone": lambda: page.locator(ROOT + ' button[data-fid="clone:search"]').click(),
+    }
+    for label, open_it in opened.items():
+        open_it()
+        page.locator(PANEL).wait_for()
+        for fid in TOOLBAR_BUTTONS:
+            assert _uncovered(page, fid) == "ok", (label, fid, _uncovered(page, fid))
+        if label == "details":
+            shot(page, "app_management_panel_toolbar")
+        page.locator(PANEL + ' button[data-fid="panel-close"]').click()
+        assert page.locator(PANEL).count() == 0
+
+
+def test_reload_with_an_untouched_panel_closes_it_without_asking(open_view, macro):
+    name = macro()
+    page = _open(open_view)
+    _open_object_panel(page, name)
+    dialogs = _Dialogs(page)
+    page.locator(ROOT + ' button[data-fid="reload"]').click(timeout=5000)
+    assert page.locator(PANEL).count() == 0
+    _idle(page)
+    assert dialogs.seen == []
+
+
+def test_apply_with_a_panel_open_applies_and_closes_it(open_view, macro, sandbox_client):
+    name = macro()
+    page = _open(open_view)
+    panel = _open_object_panel(page, name)
+    panel.locator('button[data-fid="setting-edit:definition"]').click()
+    panel.locator("#ea-edit-value").fill("index=_audit | head 1")
+    panel.locator('button[data-fid="setting-stage:definition"]').click()
+    assert page.locator(PANEL).count() == 1   # still open: nobody closed it
+    dialogs = _Dialogs(page)
+    page.locator(ROOT + " .ea-apply").click(timeout=5000)
+    page.wait_for_selector(ROOT + " .ea-message.ea-success, " + ROOT + " .ea-message.ea-error")
+    _idle(page)
+    assert len(dialogs.seen) == 1 and "Apply changes to" in dialogs.seen[0], dialogs.seen
+    assert page.locator(PANEL).count() == 0
+    content = sandbox_client.request("GET", "/servicesNS/nobody/search/admin/macros/%s" % q(name))["entry"][0]["content"]
+    assert content["definition"] == "index=_audit | head 1"
+
+
+def test_an_unstaged_setting_edit_is_asked_about_and_kept_if_declined(open_view, macro):
+    name = macro()
+    page = _open(open_view)
+    panel = _open_object_panel(page, name)
+    panel.locator('button[data-fid="setting-edit:definition"]').click()
+    panel.locator("#ea-edit-value").fill("index=_audit")
+    dialogs = _Dialogs(page, accept=False)
+    page.locator(ROOT + ' button[data-fid="reload"]').click(timeout=5000)
+    assert len(dialogs.seen) == 1 and "Discard what you typed" in dialogs.seen[0]
+    assert page.locator(PANEL).count() == 1
+    assert page.locator("#ea-edit-value").input_value() == "index=_audit"
+    assert page.locator(ROOT + " .ea-busy").count() == 0
+    dialogs.accept = True
+    page.locator(ROOT + ' button[data-fid="reload"]').click(timeout=5000)
+    assert page.locator(PANEL).count() == 0
+    _idle(page)
+    panel = _open_object_panel(page, name)
+    assert panel.locator("#ea-edit-value").count() == 0   # the editor did not come back
+
+
+def test_a_half_typed_new_setting_counts_as_typing(open_view, macro):
+    name = macro()
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + ' button[data-fid="delete-selected"]').click()   # one change staged elsewhere
+    panel = _open_object_panel(page, name)
+    panel.locator("#ea-add-name").fill("errormsg")
+    dialogs = _Dialogs(page)
+    page.locator(ROOT + ' button[data-fid="discard"]').click(timeout=5000)
+    assert len(dialogs.seen) == 2, dialogs.seen
+    assert "Discard what you typed" in dialogs.seen[0] and "Discard the staged changes" in dialogs.seen[1]
+    assert page.locator(PANEL).count() == 0
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+    panel = _open_object_panel(page, name)
+    assert panel.locator("#ea-add-name").input_value() == ""
+
+
+def test_new_app_with_a_half_filled_form_asks_then_opens_a_fresh_form(open_view):
+    page = _open(open_view)
+    page.locator(ROOT + ' button[data-fid="new-app"]').click()
+    _fill(page, "name", NEW_APP)
+    dialogs = _Dialogs(page, accept=False)
+    page.locator(ROOT + ' button[data-fid="new-app"]').click(timeout=5000)
+    assert len(dialogs.seen) == 1 and "Discard what you typed" in dialogs.seen[0]
+    assert page.locator(PANEL + ' input[data-fid="newapp-name"]').input_value() == NEW_APP
+    dialogs.accept = True
+    page.locator(ROOT + ' button[data-fid="new-app"]').click(timeout=5000)
+    assert page.locator(PANEL + ' input[data-fid="newapp-name"]').input_value() == ""
+    assert page.locator(PANEL + " #ea-panel-title").inner_text() == "New app"
+
+
+def test_untouched_clone_form_and_bulk_choices(open_view, macro):
+    name = macro()
+    page = _open(open_view)
+    dialogs = _Dialogs(page)
+    page.locator(ROOT + ' button[data-fid="clone:search"]').click()
+    assert page.locator(PANEL + ' input[data-fid="newapp-name"]').input_value() == "search_copy"
+    page.locator(ROOT + ' button[data-fid="reload"]').click(timeout=5000)   # pre-filled values are not typing
+    assert dialogs.seen == [] and page.locator(PANEL).count() == 0
+    _idle(page)
+    page.locator(ROOT + " .ea-filter").fill(name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + ' button[data-fid="bulk-acl"]').click()
+    page.locator(PANEL + " #ea-sharing").select_option("global")
+    page.locator(ROOT + ' button[data-fid="reload"]').click(timeout=5000)
+    assert len(dialogs.seen) == 1 and "Discard what you typed" in dialogs.seen[0]
+    assert page.locator(PANEL).count() == 0

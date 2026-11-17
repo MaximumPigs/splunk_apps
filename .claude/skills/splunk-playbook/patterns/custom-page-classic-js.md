@@ -1,6 +1,6 @@
 ---
-confirmed: 6
-seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-16, 2026-11-17]
+confirmed: 7
+seen: [2026-11-12, 2026-11-14, 2026-11-14, 2026-11-14, 2026-11-16, 2026-11-17, 2026-11-18]
 apps: [easyadmin]
 ---
 # Custom page: Classic dashboard hosting JavaScript
@@ -62,6 +62,16 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
      failed `'12px' == '14px'` because the page's root class
      (`.ea-settings`) fixed 12px, so changing only the child rules did
      nothing. Check the whole ancestor chain, and assert `getComputedStyle`.
+   - a fixed side panel must not cover the page's own buttons: toggle an
+     `ea-panel-open` class on the page root in `buildPanel()` and let the
+     stylesheet pad the toolbar (and selection bar) by panel width plus a gap,
+     plain px not a variable (asset tests read `--ea-*` as palette colours;
+     `test_an_open_panel_keeps_the_toolbar_clear`). Toolbar buttons then call
+     `leavePanel()` first: it closes the panel, confirming only when
+     `panelTyping()` (input not yet staged, compared with the draft the panel
+     opened with) would be lost, and clears the panel's drafts (easyadmin 1.7.1;
+     87 UI tests green). Open the screenshot: the selection-bar clearance was
+     fixed after review without being looked at.
 9. Bulk or destructive edits: stage, then one Apply that reports a result per
    object; keep failed items staged for retry, and re-key staged edits for an
    object whose location changed in a partial apply.

@@ -165,7 +165,6 @@ def test_add_a_setting_from_splunkds_list_then_apply_writes_it_locally(open_view
     assert _setting(panel, "errormsg").locator(".ea-setting-new code").inner_text() == "splktest message"
     shot(page, "app_management_setting_added")
 
-    page.locator(PANEL + ' button[data-fid="panel-close"]').click()   # the panel covers Apply
     prompt = _apply(page)
     assert "change settings of 1 object" in prompt
     assert _macro_content(sandbox_client, name)["errormsg"] == "splktest message"
@@ -240,7 +239,6 @@ def test_an_edit_is_applied_and_shown_as_local(open_view, macro, sandbox_client)
     panel.locator('button[data-fid="setting-edit:definition"]').click()
     panel.locator("#ea-edit-value").fill("index=_audit | head 1")
     panel.locator('button[data-fid="setting-stage:definition"]').click()
-    page.locator(PANEL + ' button[data-fid="panel-close"]').click()
     _apply(page)
     assert _macro_content(sandbox_client, name)["definition"] == "index=_audit | head 1"
     panel = _open_panel(page, name)
