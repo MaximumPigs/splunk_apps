@@ -429,7 +429,8 @@
    New app, Reload, Discard and Apply wrap to the left of it and stay in view.
    Plain px values: a variable here would be read as a palette colour by the
    asset tests. Only the toolbar moves; the grid keeps its layout. */
-#easyadmin-apps.ea-panel-open .ea-toolbar {
+#easyadmin-apps.ea-panel-open .ea-toolbar,
+#easyadmin-apps.ea-panel-open .ea-selection {
     padding-right: 456px;
 }
 

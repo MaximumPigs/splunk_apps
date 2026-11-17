@@ -201,7 +201,10 @@ def test_an_open_panel_keeps_the_toolbar_clear():
     Plain px values, not a variable: every --ea-* name in the page block is a palette colour."""
     blocks = _blocks("easyadmin_apps.css")
     panel = [body for sel, body in blocks if sel == "#easyadmin-apps .ea-panel"]
-    reserve = [body for sel, body in blocks if sel == "#easyadmin-apps.ea-panel-open .ea-toolbar"]
+    # The selection bar reserves the same space, so a selector list is split on commas.
+    reserve = [body for sel, body in blocks
+               if "#easyadmin-apps.ea-panel-open .ea-toolbar" in [s.strip() for s in sel.split(",")]
+               and "#easyadmin-apps.ea-panel-open .ea-selection" in [s.strip() for s in sel.split(",")]]
     assert panel and reserve, "no rule keeps the toolbar clear of an open panel"
     width = float(re.search(r"(?<![-\w])width\s*:\s*([\d.]+)px", panel[0]).group(1))
     padding = float(re.search(r"padding-right\s*:\s*([\d.]+)px", reserve[0]).group(1))
