@@ -260,7 +260,7 @@ after the marker before asserting absence. Tests only.
   one-line change; it closes the last inferred step in that test.)
 
 ### The details panel leaves the page's buttons visible
-Status: ready
+Status: in-progress
 
 - When a knowledge object's details panel is open on App management, the
   page's buttons (New app, Reload, Discard changes, Apply changes) stay
