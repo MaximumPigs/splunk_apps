@@ -232,17 +232,16 @@ skips the item while it is parked and has no way to resume it: see the
 Tooling proposals "A step that reports blocked without an owner question
 parks its item for good" and "A killed UI test run leaves its macros behind".
 The stray macro was still there at the groom of 2026-11-18 (`splk search`).
+Since 1.7.1 the UI tests delete such leftover macros before they start, and
+the macro was gone at the second groom of 2026-11-18 (`splk search`: 0
+rows), so the branch's tests should pass once the item is resumed.
 
 - [x] Confirm: should this be done? (Recommended: yes, one line; it could
   join "Tests the settings panel still lacks".): Yes. ("Tests the settings
   panel still lacks" has since shipped, so this is its own item.)
 
 ### Proposed: The marker wait in the `user-prefs` check rests on an unobserved ordering
-Status: proposed
-Context: One easyadmin test proves the details panel makes no extra request
-by checking Splunk's access log, and it assumes the log becomes searchable in
-order. Doing this would check that assumption with a probe, so the test
-cannot pass by accident. Tests only.
+Status: ready
 
 Left by the splunk-reviewer on #58 (tests only), low. `wait_for_marker`
 (`tests/live/easyadmin/easyadmin_live_support.py:99`), used by the check
@@ -257,36 +256,43 @@ burst of requests and checking they become searchable in order); if it
 holds, record it as observed in the comments; if not, poll one more cycle
 after the marker before asserting absence. Tests only.
 
-- [ ] Confirm: should this be done? (Recommended: yes, a probe and at most a
-  one-line change; it closes the last inferred step in that test.)
+- [x] Confirm: should this be done? (Recommended: yes, a probe and at most a
+  one-line change; it closes the last inferred step in that test.): Yes.
 
 ### Export an app as a .spl or .tgz file
-Status: blocked
-Context: Download any app on the instance as one package file, ready to
-install on another Splunk instance, from App management. The open questions
-decide how it relates to the planned JSON export, and what goes into the
-package.
+Status: ready
 
-- Exports the whole app to a .tgz or .spl file.
-- [ ] How does this relate to item 2 (export and import an app as JSON)?
+- Exports the whole app to one file named `<app>-<version>.spl` (no .tgz
+  choice).
+- A separate feature from item 2 (export and import as JSON): the package
+  holds the app's files for installing as an app; the JSON moves knowledge
+  objects into an existing app.
+- The person chooses at export whether the app's `local` settings are
+  merged into `default` (the form Splunk itself packages and installs, no
+  user-private objects) or not (the app's folder as it is on disk, `local`
+  kept as its own folder).
+- [x] How does this relate to item 2 (export and import an app as JSON)?
   Options: (a) a separate feature: the package holds the app's files (code,
   dashboards, conf) for installing as an app, while the JSON moves knowledge
   objects into an existing app; (b) it replaces the JSON export.
-  Recommendation: (a), since they serve different moves.
-- [ ] What goes into the package? Options: (a) the app as Splunk packages
+  Recommendation: (a), since they serve different moves.: (a).
+- [x] What goes into the package? Options: (a) the app as Splunk packages
   it, with `local` settings merged into `default` and no user-private
   objects; (b) the app's folder as it is on disk, `local` included; (c) as
   (a), plus the app's lookup files. Recommendation: (a), the form Splunk
-  itself installs and AppInspect expects.
-- [ ] .spl and .tgz are the same format (a gzipped tar) under two names.
+  itself installs and AppInspect expects.: Give the person the option to
+  merge or not.
+- [x] .spl and .tgz are the same format (a gzipped tar) under two names.
   Offer one, or let the person choose? Recommendation: one file named
-  `<app>-<version>.spl`.
+  `<app>-<version>.spl`.: Just use .spl.
 
 Probe first: splunkd's `apps/local/<app>/package` endpoint on 9.3 and 10.6
 (what it writes, where, and whether a page can download the result), and
 whether a handler that reads another app's files passes the Splunk Cloud
 AppInspect checks; if neither works on Splunk Cloud, report back to the
-owner before building.
+owner before building. Also whether the endpoint can leave `local`
+unmerged; if not, the unmerged choice means the handler packs the app's
+folder itself, under the same AppInspect check.
 
 ### User management page
 Status: blocked
@@ -332,11 +338,7 @@ user (the `type` field), and whether Splunk Cloud lists system users that an
 `sc_admin` cannot edit.
 
 ### Proposed: The UX audit never draws the struck "moving to" row
-Status: proposed
-Context: Since 1.6.4 an object with a staged move stays listed, struck
-through, in the app it is leaving. No audit screenshot has ever shown that
-row, so it has not been checked in the light theme. Doing this adds a staged
-move to the page's UX audit, so both themes are seen on every run.
+Status: ready
 
 Left by the UX review on #63 (1.6.4), minor. The `.ea-moving-out` row
 (`apps/easyadmin/appserver/static/easyadmin_apps.css:352`) was seen only in
@@ -349,14 +351,11 @@ stages a move of one object and waits for `.ea-moving-out`. Tests only.
 Probe first: whether a `ux.toml` state's `click` list can stage a move
 (how the page picks the destination app), or whether a query hook is needed.
 
-- [ ] Confirm: should this be done? (Recommended: yes; it is the only way the
-  row is seen in light, and every later audit keeps checking it.)
+- [x] Confirm: should this be done? (Recommended: yes; it is the only way the
+  row is seen in light, and every later audit keeps checking it.): Yes.
 
 ### Proposed: Two UI test gaps for the staged move away row
-Status: proposed
-Context: Two small test gaps left by the 1.6.4 change that keeps a moved
-object listed in the app it leaves. Doing this adds two assertions; the app
-does not change.
+Status: ready
 
 Left by the splunk-reviewer on #63 (1.6.4), both low:
 
@@ -370,9 +369,75 @@ Left by the splunk-reviewer on #63 (1.6.4), both low:
   but not focus restored to the row after another re-render. Fix: one
   assertion after a re-render (for example toggling a filter).
 
-- [ ] Confirm: should this be done? (Recommended: yes, tests only, small;
+- [x] Confirm: should this be done? (Recommended: yes, tests only, small;
   it could be built with "No screenshot shows the hidden by the filters
-  note", which edits the same test file.)
+  note", which edits the same test file.): Yes.
+
+### Proposed: The toolbar's room for an open panel is fixed at 456px
+Status: proposed
+Context: Since 1.7.1 the App management toolbar leaves room for an open side
+panel so its buttons stay in view. The room is a fixed width, so in a narrow
+window (under about 700px) the buttons are squeezed and stack. The question
+is whether to change that for narrow windows.
+
+Left by the splunk-reviewer on #84 (1.7.1), low. While a panel is open the
+toolbar and selection bar reserve `padding-right: 456px`
+(`apps/easyadmin/appserver/static/easyadmin_apps.css:432-435`), with no
+`@media` rule anywhere in the file. In a window under about 700px wide the
+toolbar is squeezed and its buttons stack. Fix: a `max-width` media query
+that drops the padding, so in a narrow window the panel covers the toolbar
+again as before 1.7.1, with a UI test at a narrow viewport (the UI tests
+run only at the default size today). Left because it needs a design choice.
+
+- [ ] Confirm: on easyadmin's App management page, in a browser window too
+  narrow for both the toolbar and the side panel (under about 700px),
+  should the panel cover the toolbar again (as before 1.7.1, so the panel
+  must be closed to reach Apply), or keep today's squeezed, stacked
+  buttons? (Recommended: cover the toolbar below that width; a narrow
+  Splunk Web window is rare for an admin page, and stacked buttons beside a
+  panel are hard to use.)
+
+### Proposed: The prompt on leaving a panel does not say what is lost
+Status: proposed
+Context: Since 1.7.1, pressing a toolbar button while the side panel holds
+unsaved typing asks "Discard what you typed in the panel and continue?".
+It does not say what the typing was, and Discard changes can then ask a
+second question. The question is whether to reword and combine these
+prompts.
+
+Left by the UX review on #84 (1.7.1), minor. `leavePanel`
+(`apps/easyadmin/appserver/static/easyadmin_apps.js:2421`) asks "Discard
+what you typed in the panel and continue? It is not staged yet." without
+naming the draft (a setting being edited, a new app form, permission
+choices). Discard changes (`:1195-1201`) then asks "Discard the staged
+changes to ...?", so one click can show two prompts in a row. Fix: name the
+draft in the prompt, and ask once for Discard changes, naming both the
+typing and the staged changes. UI tests change with the wording.
+
+- [ ] Confirm: on easyadmin's App management page, should the prompt shown
+  when a toolbar button would lose typing in the side panel name what is
+  lost (for example "Discard the setting you are editing and continue?"),
+  and should Discard changes ask once for both the typing and the staged
+  changes instead of two prompts in a row? (Recommended: yes to both; a
+  person can then tell what they are throwing away from one prompt.)
+
+### Proposed: No test that an untouched permissions panel closes silently
+Status: proposed
+Context: Since 1.7.1, pressing a toolbar button while a side panel is open
+closes the panel, asking first only if it holds unsaved typing. The tests
+cover the bulk Edit permissions panel only when something was changed in it.
+Doing this adds the untouched case. Tests only.
+
+Left by the splunk-reviewer on #84 (1.7.1), low.
+`test_untouched_clone_form_and_bulk_choices`
+(`tests/ui/easyadmin/test_easyadmin_apps_ui.py:1210`) checks an untouched
+Clone form and a changed bulk Edit permissions panel; no test opens the
+bulk panel, changes nothing and presses Reload, which should close it with
+no prompt. Fix: that case, asserting no dialog and no panel. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a few lines; it
+  could be built with "Two UI test gaps for the staged move away row",
+  which edits the same test file.)
 
 ## fillcontinuous
 
@@ -396,14 +461,10 @@ Left by the splunk-reviewer on #63 (1.6.4), both low:
 | Loop prompts | Plan and implement say to see each new test fail on the current code first, and to record it in the PR body. |
 | `splk shot`, UX audit | Console errors carry their source URL; the audit also blocks on errors from the app's own REST endpoints (`/splunkd/__raw/services/<app>/`). |
 | UX audit | Each theme is a pass with the signed-in user's theme preference set through `sandbox` and put back; views list panels and other states to open in `ux.toml`. easyadmin's light theme, details panel and cap refusal are audited for the first time. |
+| easyadmin UI tests | Before the first test, macros named `easyadmin_ui_<ms>` and stamped before the run started are deleted from `search` and `launcher`, so a killed run cannot fail the next one (built with easyadmin 1.7.1, #84; the stray macro of 2026-11-17 is gone). Leftover `easyadmin_ui_newapp` and `easyadmin_ui_clone` test apps are not swept. |
 
 ### Proposed: A step can end its turn while its own background work still runs
-Status: proposed
-Context: Loop steps run long test commands in the background. One step
-reported "failed" while its tests were still running; another had its test
-run stopped at a 10-minute limit, which left a test object behind and failed
-the next run. Doing this adds step instructions on how long to let such
-commands run and to wait for them.
+Status: interactive
 
 On #58 the review step started the `splunk-reviewer` agent and
 `splk dev easyadmin` in the background, then ended its turn waiting for
@@ -439,19 +500,20 @@ cannot hold `splk dev easyadmin`. Revised fix: `_common.md` says to run
 an hour, to wait for the completion notice before reading the output, and
 never to give the structured result while one is still running.
 
-- [ ] Confirm: should the step instructions say to run `splk dev` and
+Again on #84 (easyadmin 1.7.1): the implement step's first attempts at its
+result said `failed`, because "the last full run was still going (only the
+build stage had logged) when I had to stop" (session transcript
+`4757c819`, `.agent/loop/steps/20261118-052720-implement.json`).
+
+- [x] Confirm: should the step instructions say to run `splk dev` and
   `splk test --ui` in the background with at least an hour's limit, and to
   wait for them before reporting? (Recommended: yes, a prompt line; a
   10-minute limit cuts easyadmin's run of 11 minutes or more mid-test and
   leaves test objects on the dev target, and a false `failed` repeats a
-  step or stops the loop.)
+  step or stops the loop.): Yes.
 
 ### Proposed: The review step recorded a security pass without running the security review
-Status: proposed
-Context: On a tests-only PR the loop recorded "security review: pass" without
-running the review, so the record says something that did not happen. The
-question is whether every branch gets the review, or tests-only branches
-skip it and record nothing.
+Status: interactive
 
 On #58 the review step ran `splk review security easyadmin pass --summary
 "Tests-only branch; no app code, conf or tooling changed. No findings."`
@@ -468,16 +530,13 @@ under `apps/`, `tools/`, `scripts/` or `.claude/hooks/`, and then record
 nothing rather than `pass`. Changes `.claude/loop/`, so it would be built
 in an interactive session.
 
-- [ ] Confirm: which? Options: (a) always run the security review;
+- [x] Confirm: which? Options: (a) always run the security review;
   (b) skip it for test-only branches and record no review. Recommendation:
   (a); test code that talks to splunkd is still code, and the review costs
-  minutes.
+  minutes.: Yes, taken as the recommendation: (a), always run it.
 
 ### Proposed: The review step reads the groom commit as part of the change
-Status: proposed
-Context: Each PR starts with the loop's own roadmap tidy-up commit, and the
-reviewer counted those roadmap edits as a finding in a PR. Doing this tells
-the reviewer to skip that first commit.
+Status: interactive
 
 Every item branch starts with the supervisor's "Roadmap: groom before
 <item>" commit (`phase_groom`, `tools/splk/loop.py:603`), so
@@ -493,14 +552,10 @@ branch's first commit is the groom and its ROADMAP.md changes are not part
 of the item; review the item's own commits. Changes `.claude/loop/`, so it
 would be built in an interactive session.
 
-- [ ] Confirm: should this be done? (Recommended: yes, a prompt line.)
+- [x] Confirm: should this be done? (Recommended: yes, a prompt line.): Yes.
 
 ### Proposed: The full dev loop runs twice more after a review that changed nothing
-Status: proposed
-Context: Each roadmap item runs the full build-and-test cycle (about ten
-minutes for easyadmin) several times. After a review that changed no file,
-it still ran twice more on identical code. Doing this skips both, saving
-about twenty minutes per item without skipping any check on changed code.
+Status: interactive
 
 On #63 (easyadmin 1.6.4) `splk dev easyadmin` ran green five times
 (`.agent/runs/2026-11-17.jsonl`): twice inside the implement step, once in
@@ -527,15 +582,11 @@ after it (13:34 to 13:35), on the code verified at 13:32
 (`.agent/runs/2026-11-17.jsonl`). Cheap for an app with no views, but the
 same two runs cost about twenty minutes on easyadmin.
 
-- [ ] Confirm: should this be done? (Recommended: yes; the supervisor's
-  verify still runs after every change, so nothing goes unchecked.)
+- [x] Confirm: should this be done? (Recommended: yes; the supervisor's
+  verify still runs after every change, so nothing goes unchecked.): Yes.
 
 ### Proposed: A two-line notification reappears in every groom's loop log
-Status: proposed
-Context: The loop keeps a log of what it told the owner, and each roadmap
-tidy-up reads the part since the last tidy-up. One old message split over
-two lines, and its second half is shown again every time. Doing this keeps
-each message on one line so old ones drop out.
+Status: interactive
 
 The "Loop stuck in await: gh pr view failed: error connecting to
 api.github.com" notification of 2026-11-16T10:15:04Z carried gh's second
@@ -562,17 +613,13 @@ end at "(non-fast-", so the notification cut off the cause ("the tip of
 your current branch is behind its remote counterpart"), and `state.json`
 holds the full git output as `stuck_reason`. Their continuation lines start
 with a space, which sorts before "2", so only the gh line keeps returning.
+And for the sixth time in the groom after #84 merged (2026-11-18).
 
-- [ ] Confirm: should this be done? (Recommended: yes, two lines; low
-  value on its own, so it could join the next loop change.)
+- [x] Confirm: should this be done? (Recommended: yes, two lines; low
+  value on its own, so it could join the next loop change.): Yes.
 
 ### Proposed: A step that reports blocked without an owner question parks its item for good
-Status: proposed
-Context: When a loop step reports "blocked", the loop sets the item aside
-until the owner answers its question. A step used "blocked" for a test
-failure with no question, so there is nothing to answer and the item never
-resumes. Doing this sends such a result back for another attempt instead,
-and shows the step's full reason.
+Status: interactive
 
 On 2026-11-17 the implement step for "No screenshot shows the hidden by the
 filters note" reported `blocked` because two UI tests failed on a stray
@@ -600,52 +647,14 @@ the full summary notified), with unit tests. Changes `tools/splk/`, so it
 would be built in an interactive session, which can also resume this
 item's branch.
 
-- [ ] Confirm: should a loop step's "blocked" result with no open question on
+- [x] Confirm: should a loop step's "blocked" result with no open question on
   the item count as a failed attempt (retried, then the loop stops and
   notifies the full reason) instead of parking the item? (Recommended: yes;
   today such an item is set aside with no issue to answer and never comes
-  back.)
-
-### Proposed: A killed UI test run leaves its macros behind
-Status: proposed
-Context: easyadmin's browser tests create test macros and delete them when
-each test ends. A test run stopped part-way left one behind, and the next
-run failed two tests that count every test macro on the page. Doing this
-makes the tests clear out leftovers from earlier runs, so one stopped run
-cannot fail the next. Tests only.
-
-The `macro` fixture (`tests/ui/easyadmin/test_easyadmin_apps_ui.py:27-44`)
-deletes the macros it made in its teardown, which does not run when the
-process is killed. On 2026-11-17 a `splk dev easyadmin` stopped mid-UI-stage
-left `easyadmin_ui_1794881048778` in the dev target's `search` app (still
-there at the grooms of 13:16, 18:07 and 18:15 local, and of 2026-11-18, by `splk search`, so any
-easyadmin item the loop builds next will fail the same two UI tests). The tests filter the page with the
-prefix `easyadmin_ui_` (`:191`, `:392`, `:608`, and
-`test_easyadmin_request_cap_ui.py:37`), so the stray macro was listed and
-selected too: `test_select_all_in_an_app_selects_what_it_shows` and
-`test_select_all_skips_the_struck_row` saw one object more than they made
-(`.agent/runs/2026-11-17.jsonl`, 13:15:13 local). The implement step could
-not delete it: a direct REST call is outside `splk` and was refused, and
-the sandbox guard snapshots users, roles and app permissions, not macros.
-Fix: a session-scoped fixture in `tests/ui/easyadmin/` that deletes, through
-`sandbox_client`, any `easyadmin_ui_*` macro (and the `easyadmin_ui_newapp`
-and `easyadmin_ui_clone` apps) older than the session before the tests run,
-with a log line naming each; or filter each test by its own macro names
-rather than the shared prefix. Tests only, so the loop can build it. Found
-from the loop log of 2026-11-17 (implement step record above).
-
-- [ ] Confirm: should easyadmin's UI tests delete leftover `easyadmin_ui_*`
-  test macros from earlier runs before they start? (Recommended: yes, a
-  sweep at session start; filtering by exact names would also work but
-  touches every test and still leaves strays on the dev target.)
+  back.): Yes.
 
 ### Proposed: A second roadmap PR on the same day cannot be pushed
-Status: proposed
-Context: When the loop has only roadmap edits to publish, it names the branch
-after the date. A second such PR on the same day reused the first one's
-branch name, git refused the push, and the loop stood still for ten hours
-until the branch was replaced by hand. Doing this gives each roadmap branch
-a unique name.
+Status: interactive
 
 `phase_groom` names a roadmap-only branch `roadmap/groom-<YYYYMMDD>`
 (`tools/splk/loop.py:651`), and an audit `roadmap/audit-<YYYYMMDD>`
@@ -666,8 +675,73 @@ with a unit test; optionally also turn on GitHub's "Automatically delete
 head branches" repository setting, which removes merged branches.
 Changes `tools/splk/`, so it would be built in an interactive session.
 
-- [ ] Confirm: should the loop's roadmap-only and audit branches get a
+- [x] Confirm: should the loop's roadmap-only and audit branches get a
   unique name each time (date and time), so a second roadmap PR on the same
   day can be pushed? (Recommended: yes, a one-line change; GitHub's
   "Automatically delete head branches" setting would also prevent it, but
-  the loop should not depend on a repository setting.)
+  the loop should not depend on a repository setting.): Yes.
+
+### Proposed: A step whose result is rejected leaves no trace of why
+Status: proposed
+Context: Each loop step ends by handing the loop a short result (done,
+blocked or failed, and a summary). On one PR every attempt to hand it over
+was rejected, so the loop logged a failure that just reads "ok", with no
+reason anywhere. Doing this records the step's last words and logs a clear
+"no result" instead.
+
+On #84 (easyadmin 1.7.1) the implement step tried its structured result 11
+times and each was rejected by the schema check: the `status` value carried
+the rest of the call's markup ("failed</parameter> <parameter
+name="summary">..."), so `status` was not an allowed value and `summary`
+was missing (session transcript `4757c819`). The session ended with no
+structured output: the step record has `kind: ok`, `detail: ""` and
+`output: {}` (`.agent/loop/steps/20261118-052720-implement.json`, 1530 s,
+$0.97). `run_step` (`tools/splk/loop.py:450-452`) then logs
+`output.get("summary") or detail or kind`, so the run log says "FAIL
+easyadmin loop-implement ok" and the session-start notice lists "Unresolved
+stage failures: easyadmin loop-implement: ok". The step's final text, which
+said the change was done and `splk dev` green, is only in the transcript,
+because the record keeps neither the result's `subtype` nor its `result`
+text. No harm this time: `phase_implement` (`:689-699`) went on to the
+supervisor's verify, which decides. Lesson
+`splk-loop-step-ok-exit-empty-output-logs-fail` records the log wording
+(cause unknown when it was written; the transcript now shows it). Fix: in
+`run_step`, when there is no structured output, keep the result's `subtype`
+and the last 500 characters of its `result` text in the record's `detail`,
+and log "no structured result: <detail>", with a unit test. Changes
+`tools/splk/`, so it would be built in an interactive session.
+
+- [ ] Confirm: when a loop step ends without a usable result, should the
+  loop record the step's last message and log "no structured result" with
+  it, instead of a failure that reads "ok"? (Recommended: yes, a few lines;
+  today the only way to learn what happened is to dig through the session
+  transcript.)
+
+### Proposed: The review step records a UX pass before fixing a UX finding
+Status: proposed
+Context: Before a PR opens, the loop reviews how the page looks and fixes
+what it finds. On one PR it fixed a layout problem after recording the UX
+review as passed, and never looked at the page again. Doing this makes the
+step look at the fixed page, and record the review, only after its fixes.
+
+On #84 (easyadmin 1.7.1) the review step recorded the UX review, then fixed
+one of its findings (the selection bar running under the open panel) by
+changing the stylesheet, and said: "I didn't re-run the UX or security
+reviews after the fix, and I didn't open the new screenshots to confirm the
+selection bar now clears the panel"
+(`.agent/loop/steps/20261118-060040-review.json`; in
+`.agent/runs/2026-11-18.jsonl` the `ux-review` row comes before the
+rebuild). So the shipped CSS change was never seen, against the repo's
+rule to open the screenshots before saying a page looks right. Cause:
+`.claude/loop/prompts/review.md` step 2 says "Fix findings; record with
+`splk review ux ...`" and step 4 only re-runs `splk dev`, which checks the
+UX audit's automatic checks, not the look. Fix: step 2 says that after
+fixing a UX finding the step re-runs `splk ux <app>`, opens the screenshots
+that show the fix in both themes, and only then records the outcome.
+Changes `.claude/loop/`, so it would be built in an interactive session.
+
+- [ ] Confirm: should the loop's review step, after fixing something the UX
+  review found, look at fresh screenshots of the fix in both themes before
+  recording the UX review? (Recommended: yes, a prompt line and a few
+  minutes per fix; otherwise a visible change can ship that nobody looked
+  at.)
