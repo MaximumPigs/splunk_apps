@@ -230,6 +230,7 @@ the dev target's `search` app (seen by `splk search` at the groom). The loop
 skips the item while it is parked and has no way to resume it: see the
 Tooling proposals "A step that reports blocked without an owner question
 parks its item for good" and "A killed UI test run leaves its macros behind".
+The stray macro was still there at the groom of 2026-11-18 (`splk search`).
 
 - [x] Confirm: should this be done? (Recommended: yes, one line; it could
   join "Tests the settings panel still lacks".): Yes. ("Tests the settings
@@ -259,12 +260,7 @@ after the marker before asserting absence. Tests only.
   one-line change; it closes the last inferred step in that test.)
 
 ### The details panel leaves the page's buttons visible
-Status: blocked
-Context: On App management, the side panel that shows an object's details
-(and the bulk permissions, new app and clone panels) covers the page's New
-app, Reload, Discard changes and Apply changes buttons. The open question
-decides what pressing one of those buttons does to a panel that is still
-open, with typing in it not yet staged.
+Status: ready
 
 - When a knowledge object's details panel is open on App management, the
   page's buttons (New app, Reload, Discard changes, Apply changes) stay
@@ -275,7 +271,12 @@ open, with typing in it not yet staged.
   `app_management-details-*.png` shows it.
 - The same holds for the other panels that open there (bulk permissions,
   new app, clone).
-- [ ] On easyadmin's App management page, once the side panel no longer
+- Pressing one of those buttons while a panel is open closes the panel and
+  then the button acts. If the panel holds typing that is not yet staged (a
+  setting being edited, a new app form half filled), the page first asks
+  "discard what you typed and continue?", and nothing happens if the person
+  declines.
+- [x] On easyadmin's App management page, once the side panel no longer
   covers the Reload, Discard changes and Apply changes buttons, what happens
   when one is pressed while the panel is open and holds typing that is not
   yet staged (a setting being edited, a new app form half filled)? Options:
@@ -285,7 +286,7 @@ open, with typing in it not yet staged.
   stays open and is refreshed after the button acts, keeping the typing.
   Recommendation: (a): after Apply or Reload the panel may show an object
   that has moved or gone, so closing it is safest, and the question stops
-  typing being lost by accident.
+  typing being lost by accident.: (a).
 
 ### Export an app as a .spl or .tgz file
 Status: blocked
@@ -317,25 +318,46 @@ owner before building.
 
 ### User management page
 Status: blocked
-Context: A new page with the same intent as Role management, but for users:
-see many users at once and change their settings in bulk, staged and
-applied together. The open questions decide which settings are editable,
-how the page is laid out, and how users from LDAP or SAML are shown.
+Context: A new easyadmin page like Role management, but for users: a grid of
+users against roles plus a table of their other settings, changed in bulk
+and saved together. The open question decides what the page does when an
+admin changes the roles of their own account.
 
 - Same intent as Role management, but for bulk user configuration.
-- [ ] Which user settings can the page change? Options: roles, default
+- Editable in the first version: roles, default app, time zone, real name
+  and email, unlocking a locked-out account, and forcing a password change
+  at next sign-in. Not in the first version: creating and deleting users,
+  and setting passwords, so no secret is ever typed into the page.
+- Laid out like Role management: a grid of users against roles with tick
+  boxes, plus a table of the other settings.
+- Users signed in through LDAP or SAML (roles from group mappings) are
+  listed read-only, saying why.
+- [x] Which user settings can the page change? Options: roles, default
   app, time zone, real name and email, unlocking a locked-out account,
   forcing a password change at next sign-in, creating and deleting users,
   setting passwords. Recommendation: everything except creating, deleting
   and passwords in the first version, so no secret is ever typed into the
-  page.
-- [ ] How is it laid out? Options: (a) like Role management, a grid of
+  page.: As recommended.
+- [x] How is it laid out? Options: (a) like Role management, a grid of
   users against roles with tick boxes, plus a table of the other settings;
   (b) a list of users with a panel that edits the selected ones together.
-  Recommendation: (a), so both admin pages work the same way.
-- [ ] Users signed in through LDAP or SAML get their roles from group
+  Recommendation: (a), so both admin pages work the same way.: (a).
+- [x] Users signed in through LDAP or SAML get their roles from group
   mappings, so their roles cannot be changed here. Options: (a) list them
-  read-only, saying why; (b) leave them out. Recommendation: (a).
+  read-only, saying why; (b) leave them out. Recommendation: (a).: (a).
+- [ ] On easyadmin's planned User management page, what happens when an
+  admin stages a change to their own account's roles (for example removing
+  their own admin role, which can lock them out of the page and of Splunk
+  administration)? Options: (a) allowed, with a warning in the save
+  confirmation naming their own account, as Role management already warns
+  when a save changes a role you hold; (b) refused at staging, so the page
+  never changes the signed-in user's own roles; (c) allowed without a
+  warning. Recommendation: (a), the same behaviour as Role management.
+
+Probe first: the `authentication/users` fields for unlocking an account and
+forcing a password change on 9.3 and 10.x, how splunkd marks an LDAP or SAML
+user (the `type` field), and whether Splunk Cloud lists system users that an
+`sc_admin` cannot edit.
 
 ### Proposed: The UX audit never draws the struck "moving to" row
 Status: proposed
@@ -561,6 +583,14 @@ message as `stuck_reason`. And again in the groom after #80 merged (18:07
 local): the orphan line headed the notifications for the third time, and
 for the fourth in the groom after #81 merged (18:15 local).
 
+Again in the groom of 2026-11-18, for the fifth time. The two "Loop stuck in
+publish" notifications of 2026-11-17 (07:15:54Z and 17:19:40Z) were
+multi-line too: `notifications.log` holds only their first two lines, which
+end at "(non-fast-", so the notification cut off the cause ("the tip of
+your current branch is behind its remote counterpart"), and `state.json`
+holds the full git output as `stuck_reason`. Their continuation lines start
+with a space, which sorts before "2", so only the gh line keeps returning.
+
 - [ ] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.)
 
@@ -616,7 +646,7 @@ The `macro` fixture (`tests/ui/easyadmin/test_easyadmin_apps_ui.py:27-44`)
 deletes the macros it made in its teardown, which does not run when the
 process is killed. On 2026-11-17 a `splk dev easyadmin` stopped mid-UI-stage
 left `easyadmin_ui_1794881048778` in the dev target's `search` app (still
-there at the grooms of 13:16, 18:07 and 18:15 local, by `splk search`, so any
+there at the grooms of 13:16, 18:07 and 18:15 local, and of 2026-11-18, by `splk search`, so any
 easyadmin item the loop builds next will fail the same two UI tests). The tests filter the page with the
 prefix `easyadmin_ui_` (`:191`, `:392`, `:608`, and
 `test_easyadmin_request_cap_ui.py:37`), so the stray macro was listed and
@@ -636,3 +666,36 @@ from the loop log of 2026-11-17 (implement step record above).
   test macros from earlier runs before they start? (Recommended: yes, a
   sweep at session start; filtering by exact names would also work but
   touches every test and still leaves strays on the dev target.)
+
+### Proposed: A second roadmap PR on the same day cannot be pushed
+Status: proposed
+Context: When the loop has only roadmap edits to publish, it names the branch
+after the date. A second such PR on the same day reused the first one's
+branch name, git refused the push, and the loop stood still for ten hours
+until the branch was replaced by hand. Doing this gives each roadmap branch
+a unique name.
+
+`phase_groom` names a roadmap-only branch `roadmap/groom-<YYYYMMDD>`
+(`tools/splk/loop.py:651`), and an audit `roadmap/audit-<YYYYMMDD>`
+(`:645`). `new_branch` (`:259-266`) recreates the branch locally from main,
+but the merged PR's branch is never deleted on GitHub (`origin/roadmap/
+groom-20261116`, `groom-20261117` and `audit-20261115` all still exist), so
+`phase_publish` (`:780`) pushes a branch that does not descend from the
+remote one. On 2026-11-17 #81 merged from `roadmap/groom-20261117`; the next
+groom (`.agent/loop/steps/20261117-181550-groom.json`) committed to the
+same name and the push was rejected as non-fast-forward: "Loop stuck in
+publish" at 07:15:54Z, and again at 17:19:40Z after a resume. The remote
+branch was then replaced from this clone at 17:27Z (the remote-tracking
+reflog shows `db70cd6` to `321c2a0`, which does not descend from it, so a
+plain push could not have done it), and #82 opened at 17:28Z. The owner's
+answers on #66 and #68 (10:45Z) waited until the groom of 2026-11-18. Fix:
+add the time to the stamp (`%Y%m%d-%H%M%S`) for groom and audit branches,
+with a unit test; optionally also turn on GitHub's "Automatically delete
+head branches" repository setting, which removes merged branches.
+Changes `tools/splk/`, so it would be built in an interactive session.
+
+- [ ] Confirm: should the loop's roadmap-only and audit branches get a
+  unique name each time (date and time), so a second roadmap PR on the same
+  day can be pushed? (Recommended: yes, a one-line change; GitHub's
+  "Automatically delete head branches" setting would also prevent it, but
+  the loop should not depend on a repository setting.)
