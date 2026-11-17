@@ -431,16 +431,19 @@ def test_access_log_becomes_searchable_in_request_order(splunk):
     # gap (a later marker searchable while an earlier one is not) would let the
     # absence check above pass falsely. Observed on 10.6.1, one ingestion pipeline.
     import easyadmin_live_support as ea
-    prefix, snapshots = ea.access_log_order_snapshots(splunk, count=40)
+    count = 40
+    prefix, snapshots = ea.access_log_order_snapshots(splunk, count=count)
     assert snapshots, "the probe returned no snapshots; cannot check the ordering"
     assert _order_violations(snapshots) == [], \
         "markers became searchable out of order (sent, seen, low, top): %s" % _order_violations(snapshots)
     if not any(s[1] > 0 for s in snapshots):
         # Indexing lagged the whole probe: wait for the markers, then check once.
+        # Weaker than the per-request check (final set only, no transient gap)
+        # and not yet seen to run: every probe so far saw markers.
         deadline = time.time() + 90
         while True:
             rows = splunk.oneshot(
-                'search index=_internal sourcetype=splunkd_access uri="*%s_*" | rex field=uri "%s_(?<m>\d+)"'
+                'search index=_internal sourcetype=splunkd_access uri="*%s_*" | rex field=uri "%s_(?<m>\\d+)"'
                 ' | stats dc(m) as seen min(m) as low max(m) as top' % (prefix, prefix),
                 earliest="-15m", latest="now")
             seen = int(rows[0].get("seen") or 0) if rows else 0
@@ -448,7 +451,7 @@ def test_access_log_becomes_searchable_in_request_order(splunk):
                 break
             time.sleep(3)
         assert seen, "no marker became searchable within the probe; cannot check the ordering"
-        later = [(40, seen, int(rows[0]["low"]), int(rows[0]["top"]))]
+        later = [(count, seen, int(rows[0]["low"]), int(rows[0]["top"]))]
         assert _order_violations(later) == [], "markers searchable with a gap: %s" % later
 
 
