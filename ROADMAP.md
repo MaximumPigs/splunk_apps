@@ -222,6 +222,15 @@ is applied, and with the common types every copy is listed, so no image
 shows the `.ea-hidden-staged` note; the test asserts its text only. Fix: a
 second `shot` after the name filter, and open it. Tests only.
 
+Parked by the loop on 2026-11-17: the change is built on branch
+`feature/easyadmin-proposed-no-screenshot-shows-the-hidden` (the new
+screenshot was opened and shows the note), but its last `splk dev easyadmin`
+failed two UI tests on a stray macro, `easyadmin_ui_1794881048778`, still in
+the dev target's `search` app (seen by `splk search` at the groom). The loop
+skips the item while it is parked and has no way to resume it: see the
+Tooling proposals "A step that reports blocked without an owner question
+parks its item for good" and "A killed UI test run leaves its macros behind".
+
 - [x] Confirm: should this be done? (Recommended: yes, one line; it could
   join "Tests the settings panel still lacks".): Yes. ("Tests the settings
   panel still lacks" has since shipped, so this is its own item.)
@@ -560,10 +569,11 @@ would be built in an interactive session.
 
 ### Proposed: A step can end its turn while its own background work still runs
 Status: proposed
-Context: A loop step once reported "failed" while its own review and tests
-were still running, which could have made the loop retry a clean review or
-stop. Doing this adds one line to the step instructions: wait for your own
-work before reporting.
+Context: Loop steps run long test commands in the background. One step
+reported "failed" while its tests were still running; another had its test
+run stopped at a 10-minute limit, which left a test object behind and failed
+the next run. Doing this adds step instructions on how long to let such
+commands run and to wait for them.
 
 On #58 the review step started the `splunk-reviewer` agent and
 `splk dev easyadmin` in the background, then ended its turn waiting for
@@ -581,8 +591,30 @@ the foreground, and never give the structured result while one is still
 running. Changes `.claude/loop/`, so it would be built in an interactive
 session.
 
-- [ ] Confirm: should this be done? (Recommended: yes, a prompt line; the
-  cost of a false `failed` is a repeated review or a stuck loop.)
+Again on 2026-11-17, with a different outcome: the implement step for "No
+screenshot shows the hidden by the filters note" started `splk dev easyadmin
+--restart` as a background command with a 600000 ms (10-minute) limit at
+12:54:12 local (session transcript `d87cfce4`). `splk dev easyadmin` takes
+about 11 minutes to the end of its UI stage (13:04:15 to 13:15:13 for the
+step's second run), and the UX audit follows when that is green, so the
+command was stopped at 13:04:12, inside the UI stage: no `ui`
+row reached `.agent/runs/2026-11-17.jsonl` for that run, and the macro
+`easyadmin_ui_1794881048778` (created 13:04:08, by its millisecond name) was
+never deleted by the fixture's teardown. The step's second run, with a
+longer limit, then failed two UI tests on that macro, and the step reported
+`blocked` (`.agent/loop/steps/20261117-131623-implement.json`). A foreground
+command is capped at 10 minutes too, so "run it in the foreground" alone
+cannot hold `splk dev easyadmin`. Revised fix: `_common.md` says to run
+`splk dev` and `splk test --ui` in the background with a limit of at least
+an hour, to wait for the completion notice before reading the output, and
+never to give the structured result while one is still running.
+
+- [ ] Confirm: should the step instructions say to run `splk dev` and
+  `splk test --ui` in the background with at least an hour's limit, and to
+  wait for them before reporting? (Recommended: yes, a prompt line; a
+  10-minute limit cuts easyadmin's run of 11 minutes or more mid-test and
+  leaves test objects on the dev target, and a false `failed` repeats a
+  step or stops the loop.)
 
 ### Proposed: The review step recorded a security pass without running the security review
 Status: proposed
@@ -677,5 +709,79 @@ newlines in the message with " / " before writing the file (ntfy can keep
 the original), and skip lines without a timestamp when reading, with a unit
 test. Changes `tools/splk/`, so it would be built in an interactive session.
 
+Again in the groom of 2026-11-17 13:16 local: the same orphan line headed
+the loop log's notifications, and `state.json` still holds the two-line
+message as `stuck_reason`.
+
 - [ ] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.)
+
+### Proposed: A step that reports blocked without an owner question parks its item for good
+Status: proposed
+Context: When a loop step reports "blocked", the loop sets the item aside
+until the owner answers its question. A step used "blocked" for a test
+failure with no question, so there is nothing to answer and the item never
+resumes. Doing this sends such a result back for another attempt instead,
+and shows the step's full reason.
+
+On 2026-11-17 the implement step for "No screenshot shows the hidden by the
+filters note" reported `blocked` because two UI tests failed on a stray
+macro, not because of an owner decision
+(`.agent/loop/steps/20261117-131623-implement.json`). `phase_implement`
+(`tools/splk/loop.py:689-697`) parks on any `blocked`; `_park` (`:928-939`)
+records the issue title, but `sync_question_issues` (`:468-516`) creates
+issues only for items with open questions (`loop_core.awaiting_owner`), and
+the item has none, so no issue was created (the "Parked" notification
+listed no URL). `phase_groom` (`:608-617`) resumes a parked item only when
+an answer arrives on that issue, so the item stays parked for good, and
+`next_item` skips it. The notification also cut the summary at 120
+characters (`:937`), before the step's "To unblock: delete that macro". The
+parked branch holds the finished change and a fix for the unit test that
+fails inside every loop step (lesson
+`tests-git-subprocess-inherits-git-config-env`; red at 12:44 and 12:53 local
+in `.agent/runs/2026-11-17.jsonl`), so main still lacks that fix.
+`_common.md` defines `blocked` as "the owner must answer first", and the step
+used it anyway. Fix: `_park` only when the item on the branch has an open
+question; otherwise treat `blocked` as a failed attempt (back to `implement`
+with the summary as `last_failure`, within `max_attempts`, then stuck with
+the full summary notified), with unit tests. Changes `tools/splk/`, so it
+would be built in an interactive session, which can also resume this
+item's branch.
+
+- [ ] Confirm: should a loop step's "blocked" result with no open question on
+  the item count as a failed attempt (retried, then the loop stops and
+  notifies the full reason) instead of parking the item? (Recommended: yes;
+  today such an item is set aside with no issue to answer and never comes
+  back.)
+
+### Proposed: A killed UI test run leaves its macros behind
+Status: proposed
+Context: easyadmin's browser tests create test macros and delete them when
+each test ends. A test run stopped part-way left one behind, and the next
+run failed two tests that count every test macro on the page. Doing this
+makes the tests clear out leftovers from earlier runs, so one stopped run
+cannot fail the next. Tests only.
+
+The `macro` fixture (`tests/ui/easyadmin/test_easyadmin_apps_ui.py:27-44`)
+deletes the macros it made in its teardown, which does not run when the
+process is killed. On 2026-11-17 a `splk dev easyadmin` stopped mid-UI-stage
+left `easyadmin_ui_1794881048778` in the dev target's `search` app (still
+there at this groom, by `splk search`). The tests filter the page with the
+prefix `easyadmin_ui_` (`:191`, `:392`, `:608`, and
+`test_easyadmin_request_cap_ui.py:37`), so the stray macro was listed and
+selected too: `test_select_all_in_an_app_selects_what_it_shows` and
+`test_select_all_skips_the_struck_row` saw one object more than they made
+(`.agent/runs/2026-11-17.jsonl`, 13:15:13 local). The implement step could
+not delete it: a direct REST call is outside `splk` and was refused, and
+the sandbox guard snapshots users, roles and app permissions, not macros.
+Fix: a session-scoped fixture in `tests/ui/easyadmin/` that deletes, through
+`sandbox_client`, any `easyadmin_ui_*` macro (and the `easyadmin_ui_newapp`
+and `easyadmin_ui_clone` apps) older than the session before the tests run,
+with a log line naming each; or filter each test by its own macro names
+rather than the shared prefix. Tests only, so the loop can build it. Found
+from the loop log of 2026-11-17 (implement step record above).
+
+- [ ] Confirm: should easyadmin's UI tests delete leftover `easyadmin_ui_*`
+  test macros from earlier runs before they start? (Recommended: yes, a
+  sweep at session start; filtering by exact names would also work but
+  touches every test and still leaves strays on the dev target.)
