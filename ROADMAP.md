@@ -61,6 +61,57 @@ are kept here as the record:
 - Security: the caller would need both delete and create rights on the
   object, with their own session token; no new privilege.
 
+### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
+Status: blocked
+When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
+
+### App Management - filtering is slow when there are lots of apps.
+Status: blocked
+When in app management and there are lots of apps and knowledge objects - the filter is very slow to react to input. It may be trying to filter with every new character input. Find a way to make it faster, perhaps a short wait for more input before triggering filter.
+
+### User management page
+Status: blocked
+Context: A new easyadmin page like Role management, but for users: a grid of
+users against roles plus a table of their other settings, changed in bulk
+and saved together. The open question decides what the page does when an
+admin changes the roles of their own account.
+
+- Same intent as Role management, but for bulk user configuration.
+- Editable in the first version: roles, default app, time zone, real name
+  and email, unlocking a locked-out account, and forcing a password change
+  at next sign-in. Not in the first version: creating and deleting users,
+  and setting passwords, so no secret is ever typed into the page.
+- Laid out like Role management: a grid of users against roles with tick
+  boxes, plus a table of the other settings.
+- Users signed in through LDAP or SAML (roles from group mappings) are
+  listed read-only, saying why.
+- [x] Which user settings can the page change? Options: roles, default
+  app, time zone, real name and email, unlocking a locked-out account,
+  forcing a password change at next sign-in, creating and deleting users,
+  setting passwords. Recommendation: everything except creating, deleting
+  and passwords in the first version, so no secret is ever typed into the
+  page.: As recommended.
+- [x] How is it laid out? Options: (a) like Role management, a grid of
+  users against roles with tick boxes, plus a table of the other settings;
+  (b) a list of users with a panel that edits the selected ones together.
+  Recommendation: (a), so both admin pages work the same way.: (a).
+- [x] Users signed in through LDAP or SAML get their roles from group
+  mappings, so their roles cannot be changed here. Options: (a) list them
+  read-only, saying why; (b) leave them out. Recommendation: (a).: (a).
+- [ ] On easyadmin's planned User management page, what happens when an
+  admin stages a change to their own account's roles (for example removing
+  their own admin role, which can lock them out of the page and of Splunk
+  administration)? Options: (a) allowed, with a warning in the save
+  confirmation naming their own account, as Role management already warns
+  when a save changes a role you hold; (b) refused at staging, so the page
+  never changes the signed-in user's own roles; (c) allowed without a
+  warning. Recommendation: (a), the same behaviour as Role management.
+
+Probe first: the `authentication/users` fields for unlocking an account and
+forcing a password change on 9.3 and 10.x, how splunkd marks an LDAP or SAML
+user (the `type` field), and whether Splunk Cloud lists system users that an
+`sc_admin` cannot edit.
+
 ### 2. Export and import an app as JSON
 Status: blocked
 Context: Save a whole app (its knowledge objects and lookups) as a JSON file
@@ -287,49 +338,6 @@ Probe first: splunkd's `apps/local/<app>/package` endpoint on 9.3 and 10.6
 whether a handler that reads another app's files passes the Splunk Cloud
 AppInspect checks; if neither works on Splunk Cloud, report back to the
 owner before building.
-
-### User management page
-Status: blocked
-Context: A new easyadmin page like Role management, but for users: a grid of
-users against roles plus a table of their other settings, changed in bulk
-and saved together. The open question decides what the page does when an
-admin changes the roles of their own account.
-
-- Same intent as Role management, but for bulk user configuration.
-- Editable in the first version: roles, default app, time zone, real name
-  and email, unlocking a locked-out account, and forcing a password change
-  at next sign-in. Not in the first version: creating and deleting users,
-  and setting passwords, so no secret is ever typed into the page.
-- Laid out like Role management: a grid of users against roles with tick
-  boxes, plus a table of the other settings.
-- Users signed in through LDAP or SAML (roles from group mappings) are
-  listed read-only, saying why.
-- [x] Which user settings can the page change? Options: roles, default
-  app, time zone, real name and email, unlocking a locked-out account,
-  forcing a password change at next sign-in, creating and deleting users,
-  setting passwords. Recommendation: everything except creating, deleting
-  and passwords in the first version, so no secret is ever typed into the
-  page.: As recommended.
-- [x] How is it laid out? Options: (a) like Role management, a grid of
-  users against roles with tick boxes, plus a table of the other settings;
-  (b) a list of users with a panel that edits the selected ones together.
-  Recommendation: (a), so both admin pages work the same way.: (a).
-- [x] Users signed in through LDAP or SAML get their roles from group
-  mappings, so their roles cannot be changed here. Options: (a) list them
-  read-only, saying why; (b) leave them out. Recommendation: (a).: (a).
-- [ ] On easyadmin's planned User management page, what happens when an
-  admin stages a change to their own account's roles (for example removing
-  their own admin role, which can lock them out of the page and of Splunk
-  administration)? Options: (a) allowed, with a warning in the save
-  confirmation naming their own account, as Role management already warns
-  when a save changes a role you hold; (b) refused at staging, so the page
-  never changes the signed-in user's own roles; (c) allowed without a
-  warning. Recommendation: (a), the same behaviour as Role management.
-
-Probe first: the `authentication/users` fields for unlocking an account and
-forcing a password change on 9.3 and 10.x, how splunkd marks an LDAP or SAML
-user (the `type` field), and whether Splunk Cloud lists system users that an
-`sc_admin` cannot edit.
 
 ### Proposed: The UX audit never draws the struck "moving to" row
 Status: proposed
