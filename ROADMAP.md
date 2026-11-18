@@ -63,6 +63,26 @@ are kept here as the record:
 - Security: the caller would need both delete and create rights on the
   object, with their own session token; no new privilege.
 
+### Role management: filter by row (role)
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+filter the grid's rows by role.
+
+### Role management: highlight staged added columns
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+columns added as a staged change are highlighted until applied or discarded.
+
+### Role management: discard button for staged free-text changes
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+each staged change to a free-text field has its own discard button.
+
+### Role management: export to CSV for each tab
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+an option to export each tab to a CSV file.
+
 ### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
 Status: blocked
 Context: On the App management page, a filter can leave many app boxes
