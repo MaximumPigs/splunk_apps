@@ -98,7 +98,7 @@ When viewing apps in App Management with a filter applied, apps with no matching
   dragged (boxes then shift under the pointer). Recommendation: (b).
 
 ### App Management - filtering is slow when there are lots of apps.
-Status: ready
+Status: in-progress
 
 When in app management and there are lots of apps and knowledge objects - the filter is very slow to react to input. It may be trying to filter with every new character input. Find a way to make it faster, perhaps a short wait for more input before triggering filter.
 
