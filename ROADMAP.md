@@ -62,10 +62,11 @@ are kept here as the record:
   object, with their own session token; no new privilege.
 
 ### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
-Status: request
+Status: blocked
 When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
 
 ### App Management - filtering is slow when there are lots of apps.
+Status: blocked
 When in app management and there are lots of apps and knowledge objects - the filter is very slow to react to input. It may be trying to filter with every new character input. Find a way to make it faster, perhaps a short wait for more input before triggering filter.
 
 ### User management page
