@@ -64,11 +64,57 @@ are kept here as the record:
 
 ### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
 Status: blocked
+Context: On the App management page, a filter can leave many app boxes
+showing no objects, which crowds the screen. This adds a switch, on by
+default, that hides those boxes. The open questions decide when the switch
+hides an app, and how an object can still be dropped on an app it hid.
+
 When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
 
+- Today the object filter and the Types menu narrow objects, never apps, on
+  purpose: every app box stays on show as a place to drop a dragged object
+  (`visibleApps`, `apps/easyadmin/appserver/static/easyadmin_apps.js:1014`).
+  Hiding boxes changes that design, hence the questions below. The details
+  panel's App and Copy to lists name every app whatever is on show, so a
+  move or copy into a hidden app stays possible from the panel.
+- A box with staged changes, and a pending new app, keep showing as today,
+  whatever the switch says. The switch sits beside "Show Splunk's built-in
+  apps" and, like it, is not remembered between page loads.
+- [ ] On easyadmin's App management page, when should the new "hide apps
+  with no matching objects" switch hide an app? Options: (a) only while
+  text is typed in "Filter objects by name", as the request describes;
+  (b) whenever the app's box would list no objects, filter or not, so an
+  app with none of the types chosen in the Types menu (such as one just
+  created) is hidden too until the switch is turned off. Recommendation:
+  (a), so an empty or newly created app stays in view when nothing is typed.
+- [ ] On easyadmin's App management page, objects are moved by dragging
+  them onto another app's box, and the new switch hides boxes with no
+  matching objects, which are often the destination. How does a person
+  reach a hidden app? Options: (a) they cannot drop on it: they use the
+  object's details panel (its App and Copy to lists name every app) or turn
+  the switch off; (b) as (a), and an app whose name matches text typed in
+  "Filter apps by name" always shows, so a destination can be brought back
+  by typing its name; (c) hidden apps reappear while an object is being
+  dragged (boxes then shift under the pointer). Recommendation: (b).
+
 ### App Management - filtering is slow when there are lots of apps.
-Status: blocked
+Status: ready
+
 When in app management and there are lots of apps and knowledge objects - the filter is very slow to react to input. It may be trying to filter with every new character input. Find a way to make it faster, perhaps a short wait for more input before triggering filter.
+
+- Today every keystroke in "Filter objects by name" and "Filter apps by
+  name" calls `render()`, which rebuilds the whole page
+  (`apps/easyadmin/appserver/static/easyadmin_apps.js:1155-1168`).
+- Fix both filters: wait for a short pause in typing (about 250 ms) before
+  filtering, keeping the caret and focus in the field as today, and make the
+  render itself cheaper where profiling shows the time goes.
+- A UI test that the list updates after typing stops, and that typing
+  several characters quickly renders once.
+
+Probe first: measure keystroke-to-render time before and after, with the
+page given a large model (for example a UI test stubbing the apps
+endpoint's response with a few hundred apps and several thousand objects),
+and record both numbers in the PR.
 
 ### User management page
 Status: blocked
@@ -429,6 +475,24 @@ no prompt. Fix: that case, asserting no dialog and no panel. Tests only.
   could be built with "Two UI test gaps for the staged move away row",
   which edits the same test file.)
 
+### Proposed: The access-log order check has a fallback that has never run
+Status: proposed
+Context: A live test checks that Splunk's access log becomes searchable in
+the order requests were made, which another test relies on. If indexing
+lags, it falls back to a weaker check that has never run and cannot see a
+gap. Doing this replaces the fallback with a visible skip. Tests only.
+
+Left by the splunk-reviewer on #90 (1.7.1, tests only), low. In
+`test_access_log_becomes_searchable_in_request_order`
+(`tests/live/easyadmin/test_easyadmin_apps_live.py:439-455`) the branch for
+"indexing lagged the whole probe" checks only the final set of markers, so
+it cannot see a transient gap, and no probe so far (220 snapshots) has
+reached it. A pass from it would be close to vacuous. Fix: drop the branch
+and `pytest.skip` with the reason when no snapshot saw a marker. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a few lines; a
+  visible skip is more honest than a weak pass.)
+
 ## fillcontinuous
 
 ### Done
@@ -525,6 +589,14 @@ in an interactive session.
   (a); test code that talks to splunkd is still code, and the review costs
   minutes.: Yes, taken as the recommendation: (a), always run it.
 
+Again on #90 (easyadmin 1.7.1, tests only): the review step started at
+09:32:11 local, recorded `splk review security easyadmin pass` at 09:32:40
+("Tests-only change: ...") and again at 09:45:47 ("Re-recorded after
+reviewer fixes; tests only") in `.agent/runs/2026-11-18.jsonl`, and its
+session (transcript `796bc7c8`) called only the `splunk-reviewer` agent,
+never the `splunk-security-review` skill or the `security-reviewer` agent
+(`.agent/loop/steps/20261118-094550-review.json`).
+
 ### Proposed: The review step reads the groom commit as part of the change
 Status: interactive
 
@@ -603,7 +675,8 @@ end at "(non-fast-", so the notification cut off the cause ("the tip of
 your current branch is behind its remote counterpart"), and `state.json`
 holds the full git output as `stuck_reason`. Their continuation lines start
 with a space, which sorts before "2", so only the gh line keeps returning.
-And for the sixth time in the groom after #84 merged (2026-11-18).
+And for the sixth time in the groom after #84 merged (2026-11-18), and the
+seventh in the groom after #90 merged (2026-11-18).
 
 - [x] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.): Yes.
