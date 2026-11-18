@@ -64,7 +64,7 @@ are kept here as the record:
   object, with their own session token; no new privilege.
 
 ### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
-Status: ready
+Status: in-progress
 
 When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
 
