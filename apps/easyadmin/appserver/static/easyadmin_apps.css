@@ -283,6 +283,68 @@
     background: var(--ea-drop-bg);
 }
 
+/*
+ * "Hidden apps": a drop area shown only while an object is being dragged and
+ * the "Hide apps with no matching objects" switch has hidden an app. It is
+ * fixed to the window's bottom centre, so showing it never moves anything
+ * under the pointer, and it clears Splunk's left navigation and the panel on
+ * the right. Hovering it opens the list.
+ */
+#easyadmin-apps .ea-hidden-drop {
+    display: none;
+}
+
+#easyadmin-apps .ea-hidden-drop.ea-show {
+    display: block;
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 16px;
+    width: 320px;
+    z-index: 950;
+    color: var(--ea-fg);
+    background: var(--ea-bg);
+    border: 2px dashed var(--ea-drop);
+    box-shadow: 0 2px 8px var(--ea-shadow);
+}
+
+#easyadmin-apps .ea-hidden-title {
+    margin: 0;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+#easyadmin-apps .ea-hidden-hint {
+    margin: 0;
+    padding: 0 12px 8px;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-hidden-list {
+    display: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+    border-top: 1px solid var(--ea-border);
+}
+
+#easyadmin-apps .ea-hidden-drop.ea-hidden-open .ea-hidden-list {
+    display: block;
+}
+
+#easyadmin-apps .ea-hidden-target {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--ea-grid);
+}
+
+#easyadmin-apps .ea-hidden-target.ea-drop {
+    outline: 2px solid var(--ea-drop);
+    outline-offset: -2px;
+    background: var(--ea-drop-bg);
+}
+
 #easyadmin-apps .ea-app-head {
     padding: 6px 8px;
     background: var(--ea-head);

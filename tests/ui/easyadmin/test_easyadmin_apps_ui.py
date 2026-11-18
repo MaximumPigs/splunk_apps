@@ -45,7 +45,9 @@ def _sweep_orphans(client):
         except SplunkError:
             continue
         for entry in entries:
-            found = re.fullmatch(r"easyadmin_ui_(\d{13})", entry["name"])
+            # Also the conf tab's clashing macro (easyadmin_ui_conf_<ms>): its fixture
+            # swallows a failed delete, and one left over made these counts one too high.
+            found = re.fullmatch(r"easyadmin_ui_(?:conf_)?(\d{13})", entry["name"])
             if found and int(found.group(1)) < _STARTED_MS and entry["acl"]["app"] == app:
                 try:
                     client.request("DELETE", "/servicesNS/nobody/%s/admin/macros/%s" % (app, q(entry["name"])))
@@ -93,6 +95,47 @@ def _room_to_drag(page):
     on screen.
     """
     page.set_viewport_size({"width": 1440, "height": 2600})
+
+
+HIDE = ROOT + ' input[data-fid="hide-empty"]'
+HIDDEN_AREA = ROOT + " .ea-hidden-drop.ea-show"
+
+
+def _show_empty_apps(page):
+    """Untick "Hide apps with no matching objects", so every box is a drop target as before."""
+    page.locator(HIDE).uncheck()
+
+
+def _begin_drag(page, row):
+    """Press on ``row`` and move a little: the drag starts and the page reacts to it."""
+    row.hover()
+    box = row.bounding_box()
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] / 2 + 10, box["y"] + box["height"] / 2 + 10, steps=3)
+
+
+def _open_hidden_area(page):
+    """Wait for the "Hidden apps" area to appear mid-drag, then hover its title so the list opens."""
+    area = page.locator(HIDDEN_AREA)
+    area.wait_for()
+    box = area.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=5)
+
+
+def _hover_hidden_app(page, app):
+    """Move onto a listed hidden app (the list opens when the area is hovered)."""
+    target = page.locator(ROOT + ' .ea-hidden-target[data-app="%s"]' % app)
+    target.wait_for()
+    box = target.bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=5)
+
+
+def _drag_to_hidden_app(page, row, app):
+    """Drag ``row`` onto ``app`` in the "Hidden apps" area, as a person would with the pointer."""
+    _begin_drag(page, row)
+    _open_hidden_area(page)
+    _hover_hidden_app(page, app)
+    page.mouse.up()
 
 
 def _object(page, app, name):
@@ -384,16 +427,147 @@ def test_filter_narrows_objects_and_says_when_nothing_matches(open_view, macro):
     assert page.locator(ROOT + " .ea-object").count() == 1
     assert _object(page, "search", name).count() == 1
     _filter(page, "no_such_object_anywhere")
-    assert 'No objects match the filter "no_such_object_anywhere"' in page.locator(ROOT).inner_text()
-    # Apps stay on show while filtering, so an object can be found and then
-    # dragged to any of them.
+    text = page.locator(ROOT).inner_text()
+    assert 'No objects match the filter "no_such_object_anywhere"' in text
+    # No app has a matching object, so the switch hides them all: the page says
+    # that, not that the account sees no apps.
+    assert page.locator(ROOT + " .ea-app").count() == 0
+    assert "No apps are visible to your account" not in text
+    assert 'No app has objects matching "no_such_object_anywhere"' in text
+    # Unticked, every app stays on show, as a place to drop an object.
+    _show_empty_apps(page)
     assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 1
+
+
+def test_apps_with_no_matching_objects_hide_while_filtering(open_view, macro):
+    """"Hide apps with no matching objects" hides boxes only while text is typed in the object filter."""
+    name = macro()
+    page = _open(open_view)
+    tick = page.locator(HIDE)
+    assert tick.is_checked()
+    assert "Hide apps with no matching objects" in page.locator(ROOT + " .ea-toolbar").inner_text()
+    launcher = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
+    assert launcher.count() == 1   # nothing typed: every app shows
+    _filter(page, name)
+    assert launcher.count() == 0
+    assert page.locator(ROOT + ' .ea-app[data-app="search"]').count() == 1
+    summary = page.locator(ROOT + " .ea-summary").inner_text()
+    assert "with no matching objects" in summary and 'untick "Hide apps with no matching objects"' in summary
+    tick.uncheck()
+    assert launcher.count() == 1
+    tick.check()
+    assert launcher.count() == 0
+    _filter(page, "")   # clearing the text brings every app back
+    assert launcher.count() == 1
+
+
+def test_hide_switch_is_not_kept_across_page_loads(open_view):
+    """Like the built-in toggle, the switch starts ticked on every visit."""
+    page = _open(open_view)
+    page.locator(HIDE).uncheck()
+    assert not page.locator(HIDE).is_checked()
+    page.reload()
+    page.wait_for_selector(READY)
+    assert page.locator(HIDE).is_checked()
+
+
+def test_dragging_onto_a_hidden_app_stages_a_move(open_view, macro, sandbox_client, shot):
+    """Hidden apps are listed in an area that appears during a drag; dropping on one does what its box does."""
+    name = macro()
+    page = _open(open_view)
+    _room_to_drag(page)
+    _filter(page, name)
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 0
+    assert page.locator(HIDDEN_AREA).count() == 0   # only while dragging
+    row = _object(page, "search", name)
+    _begin_drag(page, row)
+    _open_hidden_area(page)
+    _hover_hidden_app(page, "launcher")
+    listed = page.locator(ROOT + " .ea-hidden-target").evaluate_all(
+        "nodes => nodes.map(n => n.getAttribute('data-app'))")
+    assert "launcher" in listed
+    assert "search" not in listed   # on show, so a box of its own
+    shot(page, "app_management_hidden_apps_area")   # taken mid-drag, for the UX review
+    page.mouse.up()
+    assert 'Staged a move of 1 object to "Home" (launcher)' in page.locator(ROOT + " .ea-messages").inner_text()
+    moved = _object(page, "launcher", name)   # the app now has a staged change, so its box shows
+    assert moved.count() == 1 and "moving from search" in moved.inner_text()
+    assert page.locator(HIDDEN_AREA).count() == 0   # gone with the drag
+    assert page.locator(ROOT + " .ea-apply").inner_text() == "Apply changes to 1 object"
+    assert _acl(sandbox_client, "search", name)["app"] == "search"   # nothing written until Apply
+
+
+def test_dropping_a_default_object_on_a_hidden_app_stages_a_copy(open_view, sandbox_client, cleanup_launcher_macros):
+    """Through the area, as on a box, an object in a default folder is copied rather than moved."""
+    name = _shipped_search_macro(sandbox_client)
+    cleanup_launcher_macros.append(name)
+    page = _open(open_view)
+    _room_to_drag(page)
+    _filter(page, name)
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 0
+    _drag_to_hidden_app(page, _object(page, "search", name), "launcher")
+    text = page.locator(ROOT + " .ea-messages").inner_text()
+    assert 'Staged a copy of 1 object into "Home" (launcher).' in text
+    ghost = page.locator(ROOT + ' .ea-app[data-app="launcher"] .ea-ghost:has(.ea-object-name:text-is("%s"))' % name)
+    assert ghost.count() == 1 and "copy from search" in ghost.inner_text()
+
+
+def test_a_cancelled_drag_removes_the_hidden_apps_area(open_view, macro):
+    """Letting go over empty space ends the drag: the area goes and nothing is staged."""
+    name = macro()
+    page = _open(open_view)
+    _room_to_drag(page)
+    _filter(page, name)
+    _begin_drag(page, _object(page, "search", name))
+    _open_hidden_area(page)
+    _hover_hidden_app(page, "launcher")
+    page.mouse.move(1400, 300, steps=5)   # past the last box
+    page.mouse.up()
+    page.locator(HIDDEN_AREA).wait_for(state="detached")
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 0
+
+
+def test_no_hidden_apps_area_when_nothing_is_hidden(open_view, macro):
+    """The area appears only when the switch has hidden an app: not with no text typed, nor unticked."""
+    name = macro()
+    page = _open(open_view)
+    _room_to_drag(page)
+    # No text typed: nothing is hidden.
+    _begin_drag(page, _object(page, "search", name))
+    page.wait_for_timeout(500)
+    assert page.locator(HIDDEN_AREA).count() == 0
+    page.mouse.up()
+    # Text typed but the switch cleared: nothing is hidden either.
+    _filter(page, name)
+    _show_empty_apps(page)
+    _begin_drag(page, _object(page, "search", name))
+    page.wait_for_timeout(500)
+    assert page.locator(HIDDEN_AREA).count() == 0
+    page.mouse.up()
+
+
+def test_staged_and_new_apps_show_whatever_the_switch_says(open_view, macro, cleanup_launcher_macros):
+    """A box with staged changes and a pending new app stay on show while the switch hides the rest."""
+    name = macro()
+    cleanup_launcher_macros.append(name)
+    page = _open(open_view)
+    _stage_new_app(page)
+    _filter(page, name)
+    _object(page, "search", name).locator(".ea-select").check()
+    page.locator(ROOT + " .ea-move-target").select_option("launcher")
+    page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
+    _filter(page, "no_such_object_anywhere")
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 1
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 1
+    assert page.locator(ROOT + ' .ea-app[data-app="easyadmin"]').count() == 0   # nothing staged: hidden
 
 
 def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, sandbox_client, shot):
     """Dragging an object onto another app's box stages a move, marked on the object; Apply moves it."""
     name = macro()
     page = _open(open_view)
+    _show_empty_apps(page)   # the switch would hide launcher's box while filtering
     _room_to_drag(page)
     _filter(page, name)
     # Dropped back on its own app: nothing is staged, and the page says so.
@@ -593,6 +767,7 @@ def test_dragging_a_default_object_stages_a_copy(open_view, sandbox_client, clea
     name = _shipped_search_macro(sandbox_client)
     cleanup_launcher_macros.append(name)
     page = _open(open_view)
+    _show_empty_apps(page)   # the switch would hide launcher's box while filtering
     _room_to_drag(page)
     _filter(page, name)
     source = _object(page, "search", name)

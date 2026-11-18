@@ -37,6 +37,7 @@ its format is fixed:
 | 1.7.1 | While a panel is open (an object's details, Edit permissions, New app or Clone) the toolbar keeps clear of it, so New app, Reload, Discard changes and Apply changes stay in view. Pressing one closes the panel first; if the panel holds typing that is not staged (a setting being edited or added, permission choices, a changed new app or clone form) the page asks "Discard what you typed in the panel and continue?" and does nothing if declined. Close, Escape, Cancel, Clone, another object and the selection bar's buttons are unchanged. |
 | 1.7.1 (tests only) | The live check that the details panel does not read `user-prefs` relies on `splunkd_access` lines becoming searchable in the order they were written. That is now observed (four probe runs, 220 snapshots, never a later request searchable before an earlier one; Splunk 10.6.1, one ingestion pipeline) and a live test checks it on every run. No change to the app. |
 | 1.7.2 | "Filter objects by name" and "Filter apps by name" wait for a quarter-second pause in typing before filtering, and a filter change redraws only the app boxes, not the whole page; the field keeps focus and caret. Row icons are built once and copied. A click during the pause acts on the list on screen, and any other full redraw (Reload, a tick) applies the typed text first. |
+| 1.8.0 | A "Hide apps with no matching objects" tick box beside "Show Splunk's built-in apps" (ticked at first, not kept between visits): while text is typed in "Filter objects by name", an app whose box would list no object is hidden, and the summary says how many. An app with staged changes and a pending new app stay on show. While an object is dragged and at least one app is hidden, a "Hidden apps" area at the bottom centre lists them when hovered; dropping on one does what its box does. Probed in Chromium only (Playwright's drag); Firefox and a real pointer drag were not tried. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -62,58 +63,6 @@ are kept here as the record:
 - `_audit` would record a delete and a create, not an edit.
 - Security: the caller would need both delete and create rights on the
   object, with their own session token; no new privilege.
-
-### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
-Status: in-progress
-
-When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
-
-- The switch hides an app only while text is typed in "Filter objects by
-  name" and the app's box would list none of the matching objects. With no
-  text typed, every app shows as today, including an empty or newly created
-  one.
-- Today the object filter and the Types menu narrow objects, never apps, on
-  purpose: every app box stays on show as a place to drop a dragged object
-  (`visibleApps`, `apps/easyadmin/appserver/static/easyadmin_apps.js:1014`).
-  The details panel's App and Copy to lists name every app whatever is on
-  show, so a move or copy into a hidden app stays possible from the panel.
-- Dropping on a hidden app: once a drag starts, and only if the switch has
-  hidden at least one app, a "Hidden apps" area appears; hovering the
-  dragged objects over it lists the hidden apps, and dropping on one of
-  them does what dropping on that app's box does (move, or copy with Ctrl
-  or Cmd held or for objects in a default folder). The area goes away when
-  the drag ends. The app then has a staged change, so its box shows.
-- A box with staged changes, and a pending new app, keep showing as today,
-  whatever the switch says. The switch sits beside "Show Splunk's built-in
-  apps" and, like it, is not remembered between page loads.
-- [x] On easyadmin's App management page, when should the new "hide apps
-  with no matching objects" switch hide an app? Options: (a) only while
-  text is typed in "Filter objects by name", as the request describes;
-  (b) whenever the app's box would list no objects, filter or not, so an
-  app with none of the types chosen in the Types menu (such as one just
-  created) is hidden too until the switch is turned off. Recommendation:
-  (a), so an empty or newly created app stays in view when nothing is
-  typed.: (a).
-- [x] On easyadmin's App management page, objects are moved by dragging
-  them onto another app's box, and the new switch hides boxes with no
-  matching objects, which are often the destination. How does a person
-  reach a hidden app? Options: (a) they cannot drop on it: they use the
-  object's details panel (its App and Copy to lists name every app) or turn
-  the switch off; (b) as (a), and an app whose name matches text typed in
-  "Filter apps by name" always shows, so a destination can be brought back
-  by typing its name; (c) hidden apps reappear while an object is being
-  dragged (boxes then shift under the pointer). Recommendation: (b).: The
-  owner asked instead for a "Hidden apps" area, shown once a drag has
-  started, that lists the hidden apps when the dragged items hover over it,
-  to drop on. It can be built: the page uses the browser's own drag and
-  drop, whose drag-over events fire on any element (`dragover` handlers in
-  `easyadmin_apps.js`).
-
-Probe first: that adding the "Hidden apps" area to the page as a drag
-starts does not cancel the drag in Chrome and Firefox (some browsers end a
-drag when the page changes inside `dragstart`; adding it just after, or
-keeping it in the page hidden until then, avoids that), with a UI test that
-drags an object onto a listed hidden app.
 
 ### User management page
 Status: ready
