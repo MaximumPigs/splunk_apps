@@ -101,9 +101,13 @@ def wait_for_marker(client, search, user, timeout=90):
 
     Why: "no such request in the log" proves nothing while the log is still
     being indexed. splunkd writes an access line when a request finishes, and
-    splunkd_access.log is indexed in file order (inferred, not observed), so
-    once this later request is searchable, an earlier request by ``user`` would
-    be too. Returns the marker's rows (empty when it never arrived).
+    splunkd_access lines become searchable in the order they were written
+    (observed on 10.6.1 with one ingestion pipeline: in batches that were
+    always a prefix, never a later line before an earlier one; checked on
+    every live run by test_access_log_becomes_searchable_in_request_order), so
+    once this later request is searchable, an earlier request by ``user`` is
+    too. Not observed with several pipelines or on an indexer cluster.
+    Returns the marker's rows (empty when it never arrived).
     """
     marker = "splktest_marker_%d_%s" % (int(time.time() * 1000), uuid.uuid4().hex[:4])
     try:
@@ -112,6 +116,37 @@ def wait_for_marker(client, search, user, timeout=90):
         # A 404 is what we expect: the macro does not exist; the request is logged all the same.
         log.debug("marker request %s answered %s", marker, error)
     return wait_for_access_rows(search, user, "*%s*" % marker, timeout)
+
+
+def access_log_order_snapshots(client, count=40):
+    """Send ``count`` marker requests one after another; after each, list which markers are searchable.
+
+    Returns ``(prefix, snapshots)``: the unique marker prefix and one
+    ``(sent, seen, low, top)`` tuple of ints per request. ``low`` and ``top``
+    are the smallest and largest marker number searchable at that point (0
+    when none is: the search returns no such fields then, observed on 10.6.1).
+
+    Why ``map``: it runs the iterations serially, so request n has finished,
+    and been logged, before request n+1 is sent, and each snapshot is taken
+    without a Python round trip in between. The request is a 404 GET of a
+    macro that does not exist (splunkd logs it all the same); the 404 comes
+    back inside the search and ``map`` carries on. ``maxsearches`` must equal
+    ``count``, or ``map`` stops early without saying so.
+    """
+    prefix = "splktest_order_%d_%s" % (int(time.time() * 1000), uuid.uuid4().hex[:4])
+    spl = ('| makeresults count=%(n)d | streamstats count as n'
+           ' | map maxsearches=%(n)d search="'
+           '| rest splunk_server=local count=0 /servicesNS/nobody/search/admin/macros/%(p)s_$n$'
+           ' | append [search index=_internal sourcetype=splunkd_access uri=\\"*%(p)s_*\\"'
+           ' earliest=-5m latest=+5m'
+           ' | rex field=uri \\"%(p)s_(?<m>\\d+)\\" | eval m=tonumber(m)'
+           ' | stats dc(m) as seen max(m) as top min(m) as low]'
+           ' | eval sent=$n$ | where isnotnull(seen) | table sent seen low top"'
+           ' | sort 0 num(sent)' % {"n": count, "p": prefix})
+    rows = client.oneshot(spl, earliest="-5m", latest="+5m", timeout=240)
+    snapshots = [tuple(int(row.get(key) or 0) for key in ("sent", "seen", "low", "top")) for row in rows]
+    log.info("order probe %s: %d snapshot(s)", prefix, len(snapshots))
+    return prefix, snapshots
 
 
 def wait_for_access_rows(search, user, uri, timeout=90):
