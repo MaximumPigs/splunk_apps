@@ -204,21 +204,150 @@ def test_type_menu_shows_common_types_first(open_view, shot):
 def test_app_filter_narrows_the_boxes(open_view):
     """"Filter apps by name" keeps only apps whose label or directory name contains the text."""
     page = _open(open_view)
-    page.locator(ROOT + " .ea-app-filter").fill("easy")
+    _app_filter(page, "easy")
     apps = page.locator(ROOT + " .ea-app").evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))")
     assert apps == ["easyadmin"]
-    page.locator(ROOT + " .ea-app-filter").fill("reporting")   # matches the label Search & Reporting
+    _app_filter(page, "reporting")   # matches the label Search & Reporting
     apps = page.locator(ROOT + " .ea-app").evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))")
     assert apps == ["search"]
-    page.locator(ROOT + " .ea-app-filter").fill("no_such_app_anywhere")
+    _app_filter(page, "no_such_app_anywhere")
     assert 'No apps match the filter "no_such_app_anywhere"' in page.locator(ROOT).inner_text()
+
+
+PAUSE_MS = 250   # the page waits this long after the last keystroke before it filters
+
+
+def _watch_redraws(page):
+    """Count, from now on, how many grids and toolbars the page draws.
+
+    A render replaces its parent, so the added node holds the grid; matching
+    only the added node itself would miss that.
+    """
+    page.evaluate("""(root) => {
+        window.__eaDraws = {grids: 0, bars: 0};
+        const count = (node, selector) => node.nodeType === 1
+            ? (node.matches(selector) ? 1 : 0) + node.querySelectorAll(selector).length : 0;
+        new MutationObserver(records => {
+            for (const record of records) {
+                for (const node of record.addedNodes) {
+                    window.__eaDraws.grids += count(node, '.ea-grid-wrap');
+                    window.__eaDraws.bars += count(node, '.ea-toolbar');
+                }
+            }
+        }).observe(document.querySelector(root), {childList: true, subtree: true});
+    }""", ROOT)
+
+
+def _redraws(page):
+    return page.evaluate("() => Object.assign({}, window.__eaDraws)")
+
+
+def _wait_drawn(page, attr, text):
+    """Wait for the grid drawn with this filter text (data-filter or data-app-filter).
+
+    The page filters after a pause in typing, so what is on screen right after a
+    fill is the old list: wait for the state that proves the new render.
+    """
+    page.wait_for_function(
+        "([attr, text]) => { const w = document.querySelector('#easyadmin-apps .ea-grid-wrap');"
+        " return !!w && w.getAttribute(attr) === text; }", arg=[attr, text])
+
+
+def _filter(page, text):
+    """Fill "Filter objects by name" and wait for the list it produces."""
+    page.locator(ROOT + " .ea-filter").fill(text)
+    _wait_drawn(page, "data-filter", text)
+
+
+def _app_filter(page, text):
+    """Fill "Filter apps by name" and wait for the list it produces."""
+    page.locator(ROOT + " .ea-app-filter").fill(text)
+    _wait_drawn(page, "data-app-filter", text)
+
+
+def _focus_state(page):
+    return page.evaluate("() => { const a = document.activeElement;"
+                         " return [a.className, a.value, a.selectionStart]; }")
+
+
+def test_object_filter_waits_for_a_pause_then_renders_once(open_view, macro):
+    """Typing a name quickly filters once, after the pause, and the field keeps focus and caret."""
+    name = macro()
+    page = _open(open_view)
+    _watch_redraws(page)
+    page.locator(ROOT + " .ea-filter").press_sequentially(name, delay=40)
+    _wait_drawn(page, "data-filter", name)
+    assert page.locator(ROOT + " .ea-object").count() == 1
+    assert _object(page, "search", name).count() == 1
+    assert _redraws(page) == {"grids": 1, "bars": 0}   # not one body redraw per character
+    classes, value, caret = _focus_state(page)
+    assert "ea-filter" in classes.split() and value == name and caret == len(name)
+
+
+def test_app_filter_waits_for_a_pause_then_renders_once(open_view):
+    """The same for "Filter apps by name": one redraw, focus and caret kept."""
+    page = _open(open_view)
+    _watch_redraws(page)
+    page.locator(ROOT + " .ea-app-filter").press_sequentially("easyadmin", delay=40)
+    _wait_drawn(page, "data-app-filter", "easyadmin")
+    apps = page.locator(ROOT + " .ea-app").evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))")
+    assert apps == ["easyadmin"]
+    assert _redraws(page) == {"grids": 1, "bars": 0}
+    classes, value, caret = _focus_state(page)
+    assert "ea-app-filter" in classes.split() and value == "easyadmin" and caret == len("easyadmin")
+
+
+def test_a_click_in_the_pause_acts_on_the_list_shown(open_view, macro):
+    """Until the pause ends the grid shows the old list, so a select-all tick acts on that list."""
+    first, second = macro(), macro()
+    shared = first
+    while not second.startswith(shared):
+        shared = shared[:-1]
+    assert len(first) > len(shared), "the two macro names must differ"
+    page = _open(open_view)
+    page.locator(ROOT + " .ea-filter").fill(shared)
+    # Wait on what the list shows (two rows), not on the page's own marker, so
+    # the reproduction on code without the pause reaches the tick below.
+    page.wait_for_function("(root) => document.querySelectorAll(root + ' .ea-object').length === 2", arg=ROOT)
+    # One more character, matching only the first macro, then the tick, in one
+    # call so the pause cannot run out in between on a slow machine.
+    page.evaluate("""([root, text]) => {
+        const input = document.querySelector(root + ' .ea-filter');
+        input.value = text;
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        document.querySelector(root + ' .ea-app[data-app="search"] .ea-select-app').click();
+    }""", [ROOT, first[:len(shared) + 1]])
+    assert "2 objects selected" in page.locator(ROOT + " .ea-selection").inner_text()
+    _wait_drawn(page, "data-filter", first[:len(shared) + 1])
+    assert _object(page, "search", first).count() == 1 and page.locator(ROOT + " .ea-object").count() == 1
+    assert "2 objects selected" in page.locator(ROOT + " .ea-selection").inner_text()
+
+
+def test_reload_during_the_pause_keeps_the_typed_filter(open_view, macro):
+    """A full render in the pause (Reload) applies the typed text; no second redraw follows."""
+    name = macro()
+    page = _open(open_view)
+    _watch_redraws(page)
+    page.evaluate("""([root, text]) => {
+        const input = document.querySelector(root + ' .ea-filter');
+        input.value = text;
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        document.querySelector(root + ' button[data-fid="reload"]').click();
+    }""", [ROOT, name])
+    page.locator(ROOT + " .ea-busy").wait_for(state="detached")
+    _wait_drawn(page, "data-filter", name)
+    assert page.locator(ROOT + " .ea-filter").input_value() == name
+    assert _object(page, "search", name).count() == 1 and page.locator(ROOT + " .ea-object").count() == 1
+    page.evaluate("() => { window.__eaDraws = {grids: 0, bars: 0}; }")
+    page.wait_for_timeout(PAUSE_MS + 50)   # a timer left behind would redraw by now
+    assert _redraws(page) == {"grids": 0, "bars": 0}
 
 
 def test_select_all_in_an_app_selects_what_it_shows(open_view, macro):
     """One tick in an app's header selects every object shown in it; half-ticked when only some are."""
     first, second = macro(), macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    _filter(page, "easyadmin_ui_")
     box = page.locator(ROOT + ' .ea-app[data-app="search"]')
     box.locator(".ea-select-app").check()
     assert "2 objects selected" in page.locator(ROOT + " .ea-selection").inner_text()
@@ -238,7 +367,7 @@ def test_sharing_is_colour_coded_and_labelled(open_view, macro, sandbox_client):
     sandbox_client.request("POST", "/servicesNS/nobody/search/admin/macros/%s/acl" % q(name),
                            {"sharing": "global", "owner": "admin", "perms.read": "*", "perms.write": "admin"})
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     badge = _object(page, "search", name).locator(".ea-share")
     assert badge.inner_text() == "All apps"
     assert "ea-share-global" in badge.get_attribute("class")
@@ -251,10 +380,10 @@ def test_filter_narrows_objects_and_says_when_nothing_matches(open_view, macro):
     """The filter keeps only objects whose name contains the text, and names a filter with no matches."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     assert page.locator(ROOT + " .ea-object").count() == 1
     assert _object(page, "search", name).count() == 1
-    page.locator(ROOT + " .ea-filter").fill("no_such_object_anywhere")
+    _filter(page, "no_such_object_anywhere")
     assert 'No objects match the filter "no_such_object_anywhere"' in page.locator(ROOT).inner_text()
     # Apps stay on show while filtering, so an object can be found and then
     # dragged to any of them.
@@ -266,7 +395,7 @@ def test_drag_to_another_app_stages_a_move_and_apply_makes_it(open_view, macro, 
     name = macro()
     page = _open(open_view)
     _room_to_drag(page)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     # Dropped back on its own app: nothing is staged, and the page says so.
     _object(page, "search", name).drag_to(page.locator(ROOT + ' .ea-app[data-app="search"] .ea-app-head'))
     assert "Nothing to do" in page.locator(ROOT + " .ea-messages").inner_text()
@@ -299,7 +428,7 @@ def test_select_and_bulk_move_with_the_keyboard_controls(open_view, macro, sandb
     """Ticking objects and choosing an app in "Move to app" stages a move without dragging."""
     first, second = macro(), macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    _filter(page, "easyadmin_ui_")
     for name in (first, second):
         _object(page, "search", name).locator(".ea-select").check()
     assert "2 objects selected" in page.locator(ROOT + " .ea-selection").inner_text()
@@ -315,7 +444,7 @@ def test_panel_shows_settings_and_stages_permission_changes(open_view, macro, sa
     """Clicking an object opens a panel with every setting; changing sharing there is staged and applied."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-object-name").click()
     panel = page.locator(ROOT + " .ea-panel")
     panel.locator(".ea-settings").wait_for()
@@ -336,7 +465,7 @@ def test_delete_is_staged_and_discard_drops_it(open_view, macro, sandbox_client)
     """Delete marks the object "will be deleted"; Discard changes drops every staged change."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + ' button[data-fid="delete-selected"]').click()
     assert "will be deleted" in _object(page, "search", name).inner_text()
@@ -378,7 +507,7 @@ def test_a_locked_object_with_local_changes_names_the_file_that_holds_them(open_
     if obj is None or not obj.get("local_file"):
         pytest.skip("the report is not shipped here, or has no local layer (the live test makes one)")
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     row = _object(page, "splunk_instrumentation", name)
     lock = row.locator(".ea-locked")
     assert "It has local changes" in lock.get_attribute("title")
@@ -401,7 +530,7 @@ def test_leaving_with_staged_changes_asks_first(open_view, macro):
     """The browser asks before a page with staged changes is left."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + ' button[data-fid="delete-selected"]').click()
     seen = []
@@ -419,7 +548,7 @@ def test_bulk_owner_change_is_staged_and_applied(open_view, macro, sandbox_clien
     """Edit permissions on ticked objects: typing only a new owner is enough to stage it for all of them."""
     first, second = macro(), macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    _filter(page, "easyadmin_ui_")
     for name in (first, second):
         _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + ' button[data-fid="bulk-acl"]').click()
@@ -465,7 +594,7 @@ def test_dragging_a_default_object_stages_a_copy(open_view, sandbox_client, clea
     cleanup_launcher_macros.append(name)
     page = _open(open_view)
     _room_to_drag(page)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     source = _object(page, "search", name)
     assert source.get_attribute("draggable") == "true"
     source.drag_to(page.locator(ROOT + ' .ea-app[data-app="launcher"]'))
@@ -488,7 +617,7 @@ def test_copy_from_the_selection_bar(open_view, macro, sandbox_client, cleanup_l
     name = macro()
     cleanup_launcher_macros.append(name)
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
     page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
@@ -503,7 +632,7 @@ def test_copy_from_the_panel(open_view, macro, sandbox_client, cleanup_launcher_
     name = macro()
     cleanup_launcher_macros.append(name)
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-object-name").click()
     panel = page.locator(ROOT + " .ea-panel")
     panel.locator("#ea-copy").select_option("launcher")
@@ -524,7 +653,7 @@ def test_copy_to_an_app_that_has_the_name_is_caught_when_staging(open_view, macr
     sandbox_client.request("POST", "/servicesNS/nobody/launcher/admin/macros",
                            {"name": name, "definition": "index=_audit"})
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
     page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
@@ -536,7 +665,7 @@ def test_each_staged_change_can_be_discarded_on_its_own(open_view, macro, shot):
     """The x on a staged-change badge discards that change only; the object's other changes stay."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     # Stage two changes on one object: a move and a permission change.
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
@@ -568,7 +697,7 @@ def test_each_staged_change_can_be_discarded_on_its_own(open_view, macro, shot):
 
 
 def _stage_move_to_launcher(page, name):
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
     page.locator(ROOT + ' button[data-fid="move-selected"]').click()
@@ -635,7 +764,7 @@ def test_select_all_skips_the_struck_row(open_view, macro):
     """Ticking an app's select-all does not select an object that is leaving it."""
     moving, staying = macro(), macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    _filter(page, "easyadmin_ui_")
     _object(page, "search", moving).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
     page.locator(ROOT + ' button[data-fid="move-selected"]').click()
@@ -651,7 +780,7 @@ def test_a_staged_copy_can_be_discarded_from_its_dashed_row(open_view, macro):
     """The x on a staged copy's row in the target app drops the copy and nothing else."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
     page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
@@ -667,7 +796,7 @@ def test_panel_shows_the_objects_own_settings_first(open_view, macro, shot):
     """The panel lists only the settings set in the object; inherited ones come on request."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-object-name").click()
     panel = page.locator(ROOT + " .ea-panel")
     panel.locator(".ea-settings").first.wait_for()
@@ -706,7 +835,7 @@ def test_move_button_copies_what_cannot_be_moved(open_view, sandbox_client, clea
         if e["acl"]["app"] == "search" and not e["acl"].get("removable"))
     cleanup_launcher_reports.append(shipped)
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(shipped)
+    _filter(page, shipped)
     row = _object(page, "search", shipped)
     assert row.locator(".ea-locked").count() == 1
     row.locator(".ea-select").check()
@@ -805,9 +934,9 @@ def test_a_new_app_is_staged_as_a_box_and_can_be_discarded(open_view, shot):
     # A new app holds nothing yet, so it has no Clone button.
     assert box.locator(".ea-clone").count() == 0
     # The app filter cannot hide a staged box.
-    page.locator(ROOT + " .ea-app-filter").fill("zzz-no-such-app")
+    _app_filter(page, "zzz-no-such-app")
     assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % NEW_APP).count() == 1
-    page.locator(ROOT + " .ea-app-filter").fill("")
+    _app_filter(page, "")
     shot(page, "app_management_new_app_staged")
     # Its x drops it; nothing was staged into it, so there is no confirmation.
     cross = box.locator(".ea-discard-app")
@@ -837,7 +966,7 @@ def test_a_staged_app_takes_copies_and_its_x_asks_first(open_view, macro):
     name = macro()
     page = _open(open_view)
     box = _stage_new_app(page)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option(NEW_APP)
     page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
@@ -857,7 +986,7 @@ def test_dropping_an_object_on_a_staged_app_stages_a_move(open_view, macro):
     page = _open(open_view)
     box = _stage_new_app(page)
     _room_to_drag(page)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).drag_to(box)
     moved = _object(page, NEW_APP, name)
     assert moved.count() == 1 and "moving from search" in moved.inner_text()
@@ -956,7 +1085,7 @@ def test_a_clone_box_counts_its_staged_copies_and_those_the_filters_hide(open_vi
     assert box.locator(".ea-hidden-staged").count() == 0
 
     # A name filter lists the one matching copy and counts the rest as hidden.
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     assert box.locator(".ea-ghost").count() == 1
     assert "0 matches, 1 staged" in meta.inner_text()
     assert box.locator(".ea-hidden-staged").inner_text() == "%s hidden by the filters." % (
@@ -973,17 +1102,17 @@ def test_a_box_with_only_hidden_staged_copies_stays_on_show(open_view, macro, cl
     name = macro()
     cleanup_launcher_macros.append(name)
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + " .ea-move-target").select_option("launcher")
     page.locator(ROOT + ' button[data-fid="copy-selected"]').click()
     assert "copying to launcher" in _object(page, "search", name).inner_text()
-    page.locator(ROOT + " .ea-filter").fill("")
+    _filter(page, "")
 
     page.locator(ROOT + ' button[data-fid="types-button"]').click()
     page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
     page.keyboard.press("Escape")
-    page.locator(ROOT + " .ea-app-filter").fill("search")
+    _app_filter(page, "search")
     box = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
     assert box.count() == 1
     assert box.locator(".ea-hidden-staged").inner_text() == "1 staged copy is hidden by the filters."
@@ -1004,7 +1133,7 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     page = _open(open_view)
 
     def stage(name, button, target=None):
-        page.locator(ROOT + " .ea-filter").fill(name)
+        _filter(page, name)
         _object(page, "search", name).locator(".ea-select").check()
         if target:
             page.locator(ROOT + " .ea-move-target").select_option(target)
@@ -1014,7 +1143,7 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     stage(moved, "move-selected", "launcher")
     stage(deleted, "delete-selected")
     assert "will be deleted" in _object(page, "search", deleted).inner_text()
-    page.locator(ROOT + " .ea-filter").fill("")
+    _filter(page, "")
     assert "moving from search" in page.locator(ROOT + " .ea-app[data-app='launcher']").inner_text()
 
     page.locator(ROOT + ' button[data-fid="types-button"]').click()
@@ -1034,7 +1163,7 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     page.locator(ROOT + ' input[data-fid="type:macro"]').check()
     page.keyboard.press("Escape")
     stage(copied, "copy-selected", "launcher")
-    page.locator(ROOT + " .ea-filter").fill("")
+    _filter(page, "")
     page.locator(ROOT + ' button[data-fid="types-button"]').click()
     page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
     page.keyboard.press("Escape")
@@ -1074,7 +1203,7 @@ def _uncovered(page, fid):
 
 
 def _open_object_panel(page, name):
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-object-name").click()
     page.locator(PANEL + " .ea-settings").first.wait_for()
     return page.locator(PANEL)
@@ -1105,7 +1234,7 @@ def test_toolbar_buttons_stay_uncovered_while_a_panel_is_open(open_view, macro, 
     """Object details, Edit permissions, New app and Clone leave New app, Reload, Discard and Apply in view."""
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + ' button[data-fid="delete-selected"]').click()   # a staged change enables Discard and Apply
     assert page.locator(ROOT + " .ea-apply").is_enabled()
@@ -1178,7 +1307,7 @@ def test_an_unstaged_setting_edit_is_asked_about_and_kept_if_declined(open_view,
 def test_a_half_typed_new_setting_counts_as_typing(open_view, macro):
     name = macro()
     page = _open(open_view)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + ' button[data-fid="delete-selected"]').click()   # one change staged elsewhere
     panel = _open_object_panel(page, name)
@@ -1216,7 +1345,7 @@ def test_untouched_clone_form_and_bulk_choices(open_view, macro):
     page.locator(ROOT + ' button[data-fid="reload"]').click(timeout=5000)   # pre-filled values are not typing
     assert dialogs.seen == [] and page.locator(PANEL).count() == 0
     _idle(page)
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, "search", name).locator(".ea-select").check()
     page.locator(ROOT + ' button[data-fid="bulk-acl"]').click()
     page.locator(PANEL + " #ea-sharing").select_option("global")

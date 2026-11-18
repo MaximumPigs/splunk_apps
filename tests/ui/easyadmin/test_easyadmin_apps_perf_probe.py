@@ -109,10 +109,10 @@ TYPE = """async ([selector, attr, word, gap]) => {""" + SETTLED + """
 }"""
 
 NAMES = ["render", "renderGrid", "renderApp", "renderObject", "renderMovingOut", "renderGhost", "icon", "objectsByApp",
-         "hiddenStagedByApp", "visibleApps", "snapshot", "restore", "renderToolbar", "renderTypeMenu", "renderLegend",
+         "hiddenStagedByApp", "visibleApps", "snapshot", "restore", "renderFilterResults", "buildIcon", "flushFilters",
+         "renderToolbar", "renderTypeMenu", "renderLegend",
          "renderSelectionBar", "buildPanel", "announce", "el", "matches", "appList", "splunkIsDark", "renderMessages",
          "renderTabs", "plural", "aclOf", "changeParts", "appMatches", "focus", "empty", "cleanData"]
-# Add any function the change introduces (for example the grid-only render) here.
 
 
 def _profile(cdp, action):

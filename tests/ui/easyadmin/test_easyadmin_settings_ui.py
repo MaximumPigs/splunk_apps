@@ -11,7 +11,7 @@ import urllib.parse
 import pytest
 from playwright.sync_api import expect
 
-from test_easyadmin_apps_ui import (APP, READY, ROOT, VIEW, _apply, _object, _open,  # noqa: F401
+from test_easyadmin_apps_ui import (APP, READY, ROOT, VIEW, _apply, _filter, _object, _open,  # noqa: F401
                                     macro, q)
 
 ENDPOINT = "/services/easyadmin/apps"
@@ -19,7 +19,7 @@ PANEL = ROOT + " .ea-panel"
 
 
 def _open_panel(page, name, app="search"):
-    page.locator(ROOT + " .ea-filter").fill(name)
+    _filter(page, name)
     _object(page, app, name).locator(".ea-object-name").click()
     page.locator(PANEL + " .ea-settings").first.wait_for()
     return page.locator(PANEL)

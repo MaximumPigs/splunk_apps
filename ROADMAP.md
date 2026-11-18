@@ -36,6 +36,7 @@ its format is fixed:
 | 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
 | 1.7.1 | While a panel is open (an object's details, Edit permissions, New app or Clone) the toolbar keeps clear of it, so New app, Reload, Discard changes and Apply changes stay in view. Pressing one closes the panel first; if the panel holds typing that is not staged (a setting being edited or added, permission choices, a changed new app or clone form) the page asks "Discard what you typed in the panel and continue?" and does nothing if declined. Close, Escape, Cancel, Clone, another object and the selection bar's buttons are unchanged. |
 | 1.7.1 (tests only) | The live check that the details panel does not read `user-prefs` relies on `splunkd_access` lines becoming searchable in the order they were written. That is now observed (four probe runs, 220 snapshots, never a later request searchable before an earlier one; Splunk 10.6.1, one ingestion pipeline) and a live test checks it on every run. No change to the app. |
+| 1.7.2 | "Filter objects by name" and "Filter apps by name" wait for a quarter-second pause in typing before filtering, and a filter change redraws only the app boxes, not the whole page; the field keeps focus and caret. Row icons are built once and copied. A click during the pause acts on the list on screen, and any other full redraw (Reload, a tick) applies the typed text first. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -96,25 +97,6 @@ When viewing apps in App Management with a filter applied, apps with no matching
   "Filter apps by name" always shows, so a destination can be brought back
   by typing its name; (c) hidden apps reappear while an object is being
   dragged (boxes then shift under the pointer). Recommendation: (b).
-
-### App Management - filtering is slow when there are lots of apps.
-Status: in-progress
-
-When in app management and there are lots of apps and knowledge objects - the filter is very slow to react to input. It may be trying to filter with every new character input. Find a way to make it faster, perhaps a short wait for more input before triggering filter.
-
-- Today every keystroke in "Filter objects by name" and "Filter apps by
-  name" calls `render()`, which rebuilds the whole page
-  (`apps/easyadmin/appserver/static/easyadmin_apps.js:1155-1168`).
-- Fix both filters: wait for a short pause in typing (about 250 ms) before
-  filtering, keeping the caret and focus in the field as today, and make the
-  render itself cheaper where profiling shows the time goes.
-- A UI test that the list updates after typing stops, and that typing
-  several characters quickly renders once.
-
-Probe first: measure keystroke-to-render time before and after, with the
-page given a large model (for example a UI test stubbing the apps
-endpoint's response with a few hundred apps and several thousand objects),
-and record both numbers in the PR.
 
 ### User management page
 Status: blocked

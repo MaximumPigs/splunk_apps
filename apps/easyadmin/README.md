@@ -158,8 +158,8 @@ added from the **Types** menu.
 
 | Control | What it does |
 | --- | --- |
-| **Filter objects by name** and **Types** | Narrow the objects in every box. **Types** is a drop-down of every type, with shortcuts for the common types, all and none. Every app stays on show, so you can filter for an object and then drag it to any app. |
-| **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. |
+| **Filter objects by name** and **Types** | Narrow the objects in every box. **Types** is a drop-down of every type, with shortcuts for the common types, all and none. Every app stays on show, so you can filter for an object and then drag it to any app. The list narrows once you pause typing for about a quarter of a second, and the field keeps focus and the cursor meanwhile. |
+| **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. Like the object filter, it applies after a short pause in typing. |
 | The tick box in an app's title | Selects every object shown in that app (after the filters). It is half-ticked when only some are selected. |
 | Drag an object onto another app's box | Stages a move, or a copy for an object that ships in a default folder (which cannot be moved). Hold Ctrl (Cmd on a Mac) while dropping to copy instead. Dragging a ticked object takes every ticked object. |
 | Tick objects, then **To app...** and **Move** or **Copy** | Stages a move or a copy without dragging. **Move** copies the objects that cannot be moved, as a drop does, and says so. |
