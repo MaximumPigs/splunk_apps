@@ -15,7 +15,7 @@ permission change or a delete adds about 60 to a change.
 
 import pytest
 
-from test_easyadmin_apps_ui import (APP, READY, ROOT, VIEW, _object, macro, q)  # noqa: F401
+from test_easyadmin_apps_ui import (APP, READY, ROOT, VIEW, _filter, _object, macro, q)  # noqa: F401
 from test_easyadmin_settings_ui import PANEL, _dt, _open_panel, _setting
 
 MESSAGES = ROOT + " .ea-messages"
@@ -34,7 +34,7 @@ def _staged_count(page):
 
 
 def _select(page, names):
-    page.locator(ROOT + " .ea-filter").fill("easyadmin_ui_")
+    _filter(page, "easyadmin_ui_")
     for name in names:
         _object(page, "search", name).locator(".ea-select").check()
 

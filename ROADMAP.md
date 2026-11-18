@@ -36,6 +36,7 @@ its format is fixed:
 | 1.7.0 | A locked object (shipped in a default folder) that also has a stanza in the app's `local` file names that file in the lock's tooltip, the disabled Delete button's tooltip and the legend; no delete is built, since on 10.6.1 no REST call removes only the local layer (eight DELETE variants probed on a saved search; the `properties` stanza DELETE answers success and changes nothing). New model key `local_file`, filled in for callers with `admin_all_objects`. |
 | 1.7.1 | While a panel is open (an object's details, Edit permissions, New app or Clone) the toolbar keeps clear of it, so New app, Reload, Discard changes and Apply changes stay in view. Pressing one closes the panel first; if the panel holds typing that is not staged (a setting being edited or added, permission choices, a changed new app or clone form) the page asks "Discard what you typed in the panel and continue?" and does nothing if declined. Close, Escape, Cancel, Clone, another object and the selection bar's buttons are unchanged. |
 | 1.7.1 (tests only) | The live check that the details panel does not read `user-prefs` relies on `splunkd_access` lines becoming searchable in the order they were written. That is now observed (four probe runs, 220 snapshots, never a later request searchable before an earlier one; Splunk 10.6.1, one ingestion pipeline) and a live test checks it on every run. No change to the app. |
+| 1.7.2 | "Filter objects by name" and "Filter apps by name" wait for a quarter-second pause in typing before filtering, and a filter change redraws only the app boxes, not the whole page; the field keeps focus and caret. Row icons are built once and copied. A click during the pause acts on the list on screen, and any other full redraw (Reload, a tick) applies the typed text first. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -64,11 +65,38 @@ are kept here as the record:
 
 ### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
 Status: blocked
+Context: On the App management page, a filter can leave many app boxes
+showing no objects, which crowds the screen. This adds a switch, on by
+default, that hides those boxes. The open questions decide when the switch
+hides an app, and how an object can still be dropped on an app it hid.
+
 When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
 
-### App Management - filtering is slow when there are lots of apps.
-Status: blocked
-When in app management and there are lots of apps and knowledge objects - the filter is very slow to react to input. It may be trying to filter with every new character input. Find a way to make it faster, perhaps a short wait for more input before triggering filter.
+- Today the object filter and the Types menu narrow objects, never apps, on
+  purpose: every app box stays on show as a place to drop a dragged object
+  (`visibleApps`, `apps/easyadmin/appserver/static/easyadmin_apps.js:1014`).
+  Hiding boxes changes that design, hence the questions below. The details
+  panel's App and Copy to lists name every app whatever is on show, so a
+  move or copy into a hidden app stays possible from the panel.
+- A box with staged changes, and a pending new app, keep showing as today,
+  whatever the switch says. The switch sits beside "Show Splunk's built-in
+  apps" and, like it, is not remembered between page loads.
+- [ ] On easyadmin's App management page, when should the new "hide apps
+  with no matching objects" switch hide an app? Options: (a) only while
+  text is typed in "Filter objects by name", as the request describes;
+  (b) whenever the app's box would list no objects, filter or not, so an
+  app with none of the types chosen in the Types menu (such as one just
+  created) is hidden too until the switch is turned off. Recommendation:
+  (a), so an empty or newly created app stays in view when nothing is typed.
+- [ ] On easyadmin's App management page, objects are moved by dragging
+  them onto another app's box, and the new switch hides boxes with no
+  matching objects, which are often the destination. How does a person
+  reach a hidden app? Options: (a) they cannot drop on it: they use the
+  object's details panel (its App and Copy to lists name every app) or turn
+  the switch off; (b) as (a), and an app whose name matches text typed in
+  "Filter apps by name" always shows, so a destination can be brought back
+  by typing its name; (c) hidden apps reappear while an object is being
+  dragged (boxes then shift under the pointer). Recommendation: (b).
 
 ### User management page
 Status: blocked
@@ -429,6 +457,24 @@ no prompt. Fix: that case, asserting no dialog and no panel. Tests only.
   could be built with "Two UI test gaps for the staged move away row",
   which edits the same test file.)
 
+### Proposed: The access-log order check has a fallback that has never run
+Status: proposed
+Context: A live test checks that Splunk's access log becomes searchable in
+the order requests were made, which another test relies on. If indexing
+lags, it falls back to a weaker check that has never run and cannot see a
+gap. Doing this replaces the fallback with a visible skip. Tests only.
+
+Left by the splunk-reviewer on #90 (1.7.1, tests only), low. In
+`test_access_log_becomes_searchable_in_request_order`
+(`tests/live/easyadmin/test_easyadmin_apps_live.py:439-455`) the branch for
+"indexing lagged the whole probe" checks only the final set of markers, so
+it cannot see a transient gap, and no probe so far (220 snapshots) has
+reached it. A pass from it would be close to vacuous. Fix: drop the branch
+and `pytest.skip` with the reason when no snapshot saw a marker. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a few lines; a
+  visible skip is more honest than a weak pass.)
+
 ## fillcontinuous
 
 ### Done
@@ -525,6 +571,14 @@ in an interactive session.
   (a); test code that talks to splunkd is still code, and the review costs
   minutes.: Yes, taken as the recommendation: (a), always run it.
 
+Again on #90 (easyadmin 1.7.1, tests only): the review step started at
+09:32:11 local, recorded `splk review security easyadmin pass` at 09:32:40
+("Tests-only change: ...") and again at 09:45:47 ("Re-recorded after
+reviewer fixes; tests only") in `.agent/runs/2026-11-18.jsonl`, and its
+session (transcript `796bc7c8`) called only the `splunk-reviewer` agent,
+never the `splunk-security-review` skill or the `security-reviewer` agent
+(`.agent/loop/steps/20261118-094550-review.json`).
+
 ### Proposed: The review step reads the groom commit as part of the change
 Status: interactive
 
@@ -603,7 +657,8 @@ end at "(non-fast-", so the notification cut off the cause ("the tip of
 your current branch is behind its remote counterpart"), and `state.json`
 holds the full git output as `stuck_reason`. Their continuation lines start
 with a space, which sorts before "2", so only the gh line keeps returning.
-And for the sixth time in the groom after #84 merged (2026-11-18).
+And for the sixth time in the groom after #84 merged (2026-11-18), and the
+seventh in the groom after #90 merged (2026-11-18).
 
 - [x] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.): Yes.

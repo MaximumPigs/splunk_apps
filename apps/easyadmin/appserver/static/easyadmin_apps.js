@@ -114,7 +114,18 @@ require([
 
     // An inline SVG icon. ``label`` names it for assistive technology; without
     // one it is decorative and hidden from it.
+    // Built once per name and label and cloned after: a box lists hundreds of
+    // rows that share a handful of icons, and building each from scratch was a
+    // fifth of a large page's render.
+    var iconCache = newMap();
+
     function icon(name, label) {
+        var cacheKey = name + '\u0000' + (label || '');
+        if (!iconCache[cacheKey]) { iconCache[cacheKey] = buildIcon(name, label); }
+        return iconCache[cacheKey].cloneNode(true);
+    }
+
+    function buildIcon(name, label) {
         var svg = document.createElementNS(SVG_NS, 'svg');
         svg.setAttribute('viewBox', '0 0 16 16');
         svg.setAttribute('width', '16');
@@ -164,8 +175,10 @@ require([
         capRefusal: null,           // the request-cap refusal, shown in the panel (it covers the message area)
         settingEdit: null,          // {key, name, value, original}: the setting being edited in the panel
         settingAdd: newMap(),       // object key -> {name, value}: the "add a setting" draft
-        filter: '',            // object name filter
-        appFilter: '',         // app name or label filter
+        filter: '',            // object name filter the grid shows
+        appFilter: '',         // app name or label filter the grid shows
+        filterDraft: '',       // what the field holds: becomes filter once typing pauses
+        appFilterDraft: '',
         types: null,           // type id -> true for the types on show (set on first load)
         typesOpen: false,      // the type menu is open
         // The tab on show: 'apps' or 'conf'. #precedence in the URL opens the
@@ -1035,8 +1048,9 @@ require([
 
     // ------------------------------------------------------------- render
 
-    // Re-rendering replaces the DOM; keep the focused control and each box's
-    // scroll position so typing in the filter or ticking a box is not lost.
+    // A full render replaces the DOM; keep the focused control and each box's
+    // scroll position so ticking a box is not lost. A filter change redraws
+    // only the grid (renderFilterResults), so typing never goes through this.
     function snapshot() {
         var active = document.activeElement;
         var scroll = newMap();
@@ -1065,6 +1079,35 @@ require([
                 try { found.setSelectionRange(snap.caret, snap.caret); } catch (ignore) { /* not a text field */ }
             }
         }
+    }
+
+    // The two name filters wait for a pause in typing: filtering on every
+    // keystroke redrew every box and row, which took seconds on a large model.
+    // The fields hold the drafts; state.filter and state.appFilter are what the
+    // grid shows, so a click in the pause acts on the list the person can see.
+    var FILTER_DELAY_MS = 250;
+    var filterTimer = null;
+
+    // Let a full render show the fields' text, and leave no timer to redraw
+    // the grid a second time.
+    function flushFilters() {
+        if (filterTimer !== null) {
+            clearTimeout(filterTimer);
+            filterTimer = null;
+        }
+        state.filter = state.filterDraft;
+        state.appFilter = state.appFilterDraft;
+    }
+
+    function filterSoon() {
+        if (filterTimer !== null) { clearTimeout(filterTimer); }
+        filterTimer = setTimeout(function () {
+            filterTimer = null;
+            if (state.filter === state.filterDraft && state.appFilter === state.appFilterDraft) { return; }
+            state.filter = state.filterDraft;
+            state.appFilter = state.appFilterDraft;
+            renderFilterResults();
+        }, FILTER_DELAY_MS);
     }
 
     // Screen readers announce a live region's changes only when the region
@@ -1152,9 +1195,9 @@ require([
         $bar.append(el('input', 'ea-filter').attr({
             type: 'text', placeholder: 'Filter objects by name', 'aria-label': 'Filter objects by name',
             'data-fid': 'filter'
-        }).val(state.filter).on('input', function () {
-            state.filter = $(this).val();
-            render();
+        }).val(state.filterDraft).on('input', function () {
+            state.filterDraft = $(this).val();
+            filterSoon();
         }));
 
         $bar.append(renderTypeMenu());
@@ -1162,9 +1205,9 @@ require([
         $bar.append(el('input', 'ea-app-filter').attr({
             type: 'text', placeholder: 'Filter apps by name', 'aria-label': 'Filter apps by name',
             'data-fid': 'app-filter'
-        }).val(state.appFilter).on('input', function () {
-            state.appFilter = $(this).val();
-            render();
+        }).val(state.appFilterDraft).on('input', function () {
+            state.appFilterDraft = $(this).val();
+            filterSoon();
         }));
 
         var $builtin = el('label', 'ea-check');
@@ -1469,37 +1512,59 @@ require([
         return $li;
     }
 
+    // A plain DOM element. The rows are the bulk of a large page (thousands of
+    // them), and building each through jQuery chains cost about as much as the
+    // browser's own layout. Same safety as el(): server data reaches the page
+    // only through textContent and setAttribute, never as markup.
+    function node(tag, className, text) {
+        var made = document.createElement(tag);
+        if (className) { made.className = className; }
+        if (text !== undefined && text !== null) { made.textContent = text; }
+        return made;
+    }
+
+    function setAttrs(made, attrs) {
+        for (var name in attrs) { made.setAttribute(name, attrs[name]); }
+        return made;
+    }
+
     function renderObject(obj) {
         var pending = state.pending[obj.key];
         var acl = aclOf(obj);
         var typeLabel = state.typeLabels[obj.type] || obj.type;
-        var $li = el('li', 'ea-object').attr('data-key', obj.key);
-        if (pending) { $li.addClass('ea-changed'); }
-        if (pending && pending.del) { $li.addClass('ea-deleted'); }
-        if (obj.movable || obj.copyable) { $li.attr('draggable', 'true'); }
+        var li = node('li', 'ea-object' + (pending ? ' ea-changed' : '') + (pending && pending.del ? ' ea-deleted' : ''));
+        li.setAttribute('data-key', obj.key);
+        if (obj.movable || obj.copyable) { li.setAttribute('draggable', 'true'); }
 
-        $li.append(el('input', 'ea-select').attr({
+        var tick = setAttrs(node('input', 'ea-select'), {
             type: 'checkbox', 'aria-label': 'Select ' + typeLabel.toLowerCase() + ' ' + obj.name,
             'data-fid': 'sel:' + obj.key
-        }).prop('checked', !!state.selected[obj.key]));
-        $li.append(icon(obj.type, typeLabel));
-        $li.append(el('button', 'ea-object-name', obj.name).attr({
+        });
+        tick.checked = !!state.selected[obj.key];
+        li.appendChild(tick);
+        li.appendChild(icon(obj.type, typeLabel));
+        li.appendChild(setAttrs(node('button', 'ea-object-name', obj.name), {
             type: 'button', title: typeLabel + ': ' + obj.name + ' (owner ' + obj.owner + ')',
             'data-fid': 'open:' + obj.key
         }));
-        var $tags = el('span', 'ea-tags');
+        var tags = node('span', 'ea-tags');
         if (!obj.movable && !obj.removable) {
-            $tags.append(el('span', 'ea-badge ea-locked').attr('title', lockedTitle(obj))
-                .append(icon('lock'), document.createTextNode(' default')));
+            var locked = setAttrs(node('span', 'ea-badge ea-locked'), { title: lockedTitle(obj) });
+            locked.appendChild(icon('lock'));
+            locked.appendChild(document.createTextNode(' default'));
+            tags.appendChild(locked);
         }
         // Colour-coded by sharing, and always labelled, so colour is never the only cue.
-        $tags.append(el('span', 'ea-badge ea-share ea-share-' + acl.sharing, SHARING_LABELS[acl.sharing] || acl.sharing));
-        if (obj.disabled) { $tags.append(el('span', 'ea-badge', 'disabled')); }
+        tags.appendChild(node('span', 'ea-badge ea-share ea-share-' + acl.sharing,
+            SHARING_LABELS[acl.sharing] || acl.sharing));
+        if (obj.disabled) { tags.appendChild(node('span', 'ea-badge', 'disabled')); }
         $.each(changeParts(obj), function (i, part) {
-            $tags.append(el('span', 'ea-badge ea-badge-changed', part.text).append(discardButton(obj, part)));
+            var badge = node('span', 'ea-badge ea-badge-changed', part.text);
+            badge.appendChild(discardButton(obj, part)[0]);
+            tags.appendChild(badge);
         });
-        $li.append($tags);
-        return $li;
+        li.appendChild(tags);
+        return li;
     }
 
     function renderApp(app, objects, hiddenStaged) {
@@ -1579,7 +1644,9 @@ require([
         var byApp = objectsByApp();
         var hidden = hiddenStagedByApp();
         var apps = visibleApps(byApp, hidden);
-        var $wrap = el('div', 'ea-grid-wrap');
+        // Names the filters it was drawn with: tests wait on these, as the redraw
+        // after a pause in typing is not otherwise observable.
+        var $wrap = el('div', 'ea-grid-wrap').attr({ 'data-filter': state.filter, 'data-app-filter': state.appFilter });
         var builtinHidden = $.grep(state.data.apps, function (app) {
             return app.builtin && !state.showBuiltin && appMatches(app);
         }).length;
@@ -2724,6 +2791,7 @@ require([
             // persistent live regions and the body that renders rebuild.
             $root.empty().append($liveStatus, $liveAlert, $body);
         }
+        flushFilters();
         var snap = snapshot();
         $body.empty();
         announce();
@@ -2748,6 +2816,35 @@ require([
         $panel.append(renderGrid());
         buildPanel();
         restore(snap);
+    }
+
+    // A filter changed: swap in a new grid and leave the rest of the page alone.
+    // The toolbar field is never replaced, so the caret stays where the person
+    // is typing and no focus has to be restored (which forced a layout of the
+    // whole page, about 40% of a large model's render). Nothing inside the grid
+    // has a handler bound directly (they are all delegated from $root), so the
+    // old grid needs no jQuery clean-up and can be replaced natively.
+    function renderFilterResults() {
+        var old = $root.find('.ea-grid-wrap')[0];
+        if (!old || !state.data || state.tab !== 'apps') {
+            render();
+            return;
+        }
+        var scroll = newMap();
+        $(old).find('.ea-objects').each(function () { scroll[this.getAttribute('data-app')] = this.scrollTop; });
+        var active = document.activeElement;
+        var fid = active && old.contains(active) ? active.getAttribute('data-fid') : null;
+        var next = renderGrid()[0];
+        old.parentNode.replaceChild(next, old);
+        $(next).find('.ea-objects').each(function () {
+            var top = scroll[this.getAttribute('data-app')];
+            if (top) { this.scrollTop = top; }
+        });
+        if (fid) {
+            // Focus was on a row control (reached by Tab) and the swap dropped it.
+            var found = $(next).find('[data-fid]').filter(function () { return this.getAttribute('data-fid') === fid; })[0];
+            if (found) { found.focus(); }
+        }
     }
 
     // --------------------------------------------------------------- events

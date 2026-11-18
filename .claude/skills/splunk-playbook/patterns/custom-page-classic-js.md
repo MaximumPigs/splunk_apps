@@ -53,6 +53,9 @@ search results, use Dashboard Studio instead (see the searches-dashboards rule).
      (`renderMovingOut`, `objectsByApp`; 1.6.4, three UI tests red on 1.6.3
      then green). The row was never seen in a UX-review screenshot, so look
      at it once in a real browser.
+   - a filter over a large list is debounced and redraws only the grid, not
+     the page (`patterns/large-list-filter-debounce.md`; 1.7.2). The "filters
+     re-render and restore focus" approach above is only fine for small models.
    - tabs: `role=tablist/tab/tabpanel` with `aria-controls`, roving tabindex
      and arrow keys; a `#hash` deep link kept with `history.replaceState`;
      explanations in a `<details>` whose open state is kept in page state so
