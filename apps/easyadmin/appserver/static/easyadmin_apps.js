@@ -1145,7 +1145,7 @@ require([
     var $hiddenDrop = el('div', 'ea-hidden-drop').attr('aria-hidden', 'true');   // pointer aid; the panel lists every app for the keyboard
     var $hiddenTitle = el('p', 'ea-hidden-title');
     var $hiddenList = el('ul', 'ea-hidden-list');
-    var $hiddenHint = el('p', 'ea-muted ea-hidden-hint', 'Drag onto here, then drop on an app the filter hid.');
+    var $hiddenHint = el('p', 'ea-muted ea-hidden-hint', 'Hold here, then drop on a hidden app.');
     $hiddenDrop.append($hiddenTitle, $hiddenHint, $hiddenList);
     var hiddenTargets = [];   // apps the switch hid that take a drop, from the last grid drawn
 
