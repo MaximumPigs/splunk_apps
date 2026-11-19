@@ -64,6 +64,61 @@ are kept here as the record:
 - Security: the caller would need both delete and create rights on the
   object, with their own session token; no new privilege.
 
+### Role management: filter by row (role)
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+filter the grid's rows by role.
+
+### Role management: highlight staged added columns
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+columns added as a staged change are highlighted until applied or discarded.
+
+### Role management: discard button for staged free-text changes
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+each staged change to a free-text field has its own discard button.
+
+### Role management: export to CSV for each tab
+Status: blocked
+High priority (owner's request, 2026-11-19). On the Role management page,
+an option to export each tab to a CSV file.
+
+### An option to hide all apps in "app management" which do not have any knowledge objects displayed.
+Status: blocked
+Context: On the App management page, a filter can leave many app boxes
+showing no objects, which crowds the screen. This adds a switch, on by
+default, that hides those boxes. The open questions decide when the switch
+hides an app, and how an object can still be dropped on an app it hid.
+
+When viewing apps in App Management with a filter applied, apps with no matching knowledge objects are shown which can crowd the screen when there are logs of apps. Add switch to hide apps with no matching knowledge objects (hidden by default)
+
+- Today the object filter and the Types menu narrow objects, never apps, on
+  purpose: every app box stays on show as a place to drop a dragged object
+  (`visibleApps`, `apps/easyadmin/appserver/static/easyadmin_apps.js:1014`).
+  Hiding boxes changes that design, hence the questions below. The details
+  panel's App and Copy to lists name every app whatever is on show, so a
+  move or copy into a hidden app stays possible from the panel.
+- A box with staged changes, and a pending new app, keep showing as today,
+  whatever the switch says. The switch sits beside "Show Splunk's built-in
+  apps" and, like it, is not remembered between page loads.
+- [ ] On easyadmin's App management page, when should the new "hide apps
+  with no matching objects" switch hide an app? Options: (a) only while
+  text is typed in "Filter objects by name", as the request describes;
+  (b) whenever the app's box would list no objects, filter or not, so an
+  app with none of the types chosen in the Types menu (such as one just
+  created) is hidden too until the switch is turned off. Recommendation:
+  (a), so an empty or newly created app stays in view when nothing is typed.
+- [ ] On easyadmin's App management page, objects are moved by dragging
+  them onto another app's box, and the new switch hides boxes with no
+  matching objects, which are often the destination. How does a person
+  reach a hidden app? Options: (a) they cannot drop on it: they use the
+  object's details panel (its App and Copy to lists name every app) or turn
+  the switch off; (b) as (a), and an app whose name matches text typed in
+  "Filter apps by name" always shows, so a destination can be brought back
+  by typing its name; (c) hidden apps reappear while an object is being
+  dragged (boxes then shift under the pointer). Recommendation: (b).
+
 ### User management page
 Status: ready
 
