@@ -147,6 +147,8 @@ Splunk's own apps (Home, the Monitoring Console and the like) are hidden
 until you tick **Show Splunk's built-in apps**. Search & Reporting and
 Enterprise Security (`SplunkEnterpriseSecuritySuite`) are always shown with
 the installed apps, since that is where users keep their objects.
+While you drag an object, a **Built-in apps** area lists the built-in apps
+that are hidden, as the **Hidden apps** area does for the others (see below).
 
 At first the page shows the types users create day to day: reports and
 alerts, dashboards, search macros, event types, tags, field extractions,
@@ -162,7 +164,7 @@ added from the **Types** menu.
 | **Hide apps with no matching objects** | Ticked at first; not remembered between visits. Hides the box of every app that would list no object, with or without a filter applied, and the summary line says how many are hidden. That includes an empty or newly created app: drag onto the **Hidden apps** area (see below) to reach it, or untick the box. An app with staged changes, and a new or clone box, always stay on show. |
 | **Filter apps by name** | Shows only the apps whose name or label contains the text. An app with staged changes stays on show. Like the object filter, it applies after a short pause in typing. |
 | The tick box in an app's title | Selects every object shown in that app (after the filters). It is half-ticked when only some are selected. |
-| Drag an object onto another app's box | Stages a move, or a copy for an object that ships in a default folder (which cannot be moved). Hold Ctrl (Cmd on a Mac) while dropping to copy instead. Dragging a ticked object takes every ticked object. While you drag, and only if **Hide apps with no matching objects** has hidden an app that can take objects, a **Hidden apps** area appears at the bottom centre of the window. Hold the dragged objects over it and it lists the hidden apps; drop on one as on its box (the app's box then shows, with the staged change). The area goes when the drag ends. It is for the pointer: with the keyboard, **To app...** and the details panel list every app. |
+| Drag an object onto another app's box | Stages a move, or a copy for an object that ships in a default folder (which cannot be moved). Hold Ctrl (Cmd on a Mac) while dropping to copy instead. Dragging a ticked object takes every ticked object. While you drag, and only if **Hide apps with no matching objects** has hidden an app that can take objects, a **Hidden apps** area appears at the bottom centre of the window. Hold the dragged objects over it and it lists the hidden apps; drop on one as on its box (the app's box then shows, with the staged change). Likewise, while **Show Splunk's built-in apps** is unticked, a **Built-in apps** area beside it lists the hidden built-in apps that can take objects, with its own list opening on hover. Both go when the drag ends. They are for the pointer: with the keyboard, **To app...** and the details panel list every app. |
 | Tick objects, then **To app...** and **Move** or **Copy** | Stages a move or a copy without dragging. **Move** copies the objects that cannot be moved, as a drop does, and says so. |
 | **Edit permissions** | Opens a panel to set sharing, owner, and read and write roles on every ticked object. Fields left unchanged keep each object's own value. |
 | **Delete** | Stages the ticked objects for deletion. |

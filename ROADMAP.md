@@ -102,6 +102,10 @@ When viewing apps in App Management with a filter applied, apps with no matching
 - A box with staged changes, and a pending new app, keep showing as today,
   whatever the switch says. The switch sits beside "Show Splunk's built-in
   apps" and, like it, is not remembered between page loads.
+- Owner feedback on PR #100 (2026-11-19): Splunk's built-in apps, hidden until
+  "Show Splunk's built-in apps" is ticked, get the same drop area while
+  dragging, as a box of its own with its own hover-open list ("Built-in
+  apps"), and the app boxes are wider (460px minimum) so names wrap less.
 - [ ] On easyadmin's App management page, when should the new "hide apps
   with no matching objects" switch hide an app? Options: (a) only while
   text is typed in "Filter objects by name", as the request describes;

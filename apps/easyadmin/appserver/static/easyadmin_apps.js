@@ -1037,9 +1037,12 @@ require([
     // "Hidden apps" area shown while dragging (and, as always, through the
     // panel's App and Copy to lists), so the exception does not strand an
     // object (lesson ux-filter-hides-drop-target).
-    // Returns {shown: apps to draw, empty: apps the switch hid}.
+    // Likewise the built-in apps, hidden until "Show Splunk's built-in apps" is
+    // ticked: they get their own area while dragging.
+    // Returns {shown: apps to draw, empty: apps the switch hid, builtin: built-in apps the tick box hid}.
     function appsOnShow(byApp, hidden) {
         var empty = [];
+        var builtin = [];
         var shown = $.grep(appList(), function (app) {
             if (app.pending) { return true; }   // staged: always on show, whatever the filters say
             if (hidden && hidden[app.name]) { return true; }
@@ -1048,7 +1051,11 @@ require([
             }).length) {
                 return true;
             }
-            if (!appMatches(app) || (app.builtin && !state.showBuiltin)) { return false; }
+            if (!appMatches(app)) { return false; }
+            if (app.builtin && !state.showBuiltin) {
+                builtin.push(app);
+                return false;
+            }
             // No row at all, ghosts included: the box would list nothing.
             if (state.hideEmpty && !(byApp[app.name] || []).length) {
                 empty.push(app);
@@ -1056,7 +1063,7 @@ require([
             }
             return true;
         });
-        return { shown: shown, empty: empty };
+        return { shown: shown, empty: empty, builtin: builtin };
     }
 
     function targetApps() {
@@ -1137,32 +1144,54 @@ require([
 
     var HIDE_EMPTY_LABEL = 'Hide apps with no matching objects';
 
-    // The "Hidden apps" drop area. Created once and kept in the page from the
-    // first render, hidden by CSS: it is shown from a timer after a drag
+    // The drop areas for hidden apps. Created once and kept in the page from the
+    // first render, hidden by CSS: they are shown from a timer after a drag
     // starts and never added inside dragstart, because a browser may end the
-    // drag when the page changes there. It is outside $body, so a render does
-    // not remove it.
+    // drag when the page changes there. They are outside $body, so a render
+    // does not remove them. There are two, each with its own list that opens
+    // on hover: apps the "Hide apps with no matching objects" switch hid, and
+    // Splunk's built-in apps while "Show Splunk's built-in apps" is unticked.
     var $hiddenDrop = el('div', 'ea-hidden-drop').attr('aria-hidden', 'true');   // pointer aid; the panel lists every app for the keyboard
-    var $hiddenTitle = el('p', 'ea-hidden-title');
-    var $hiddenList = el('ul', 'ea-hidden-list');
-    var $hiddenHint = el('p', 'ea-muted ea-hidden-hint', 'Hold here, then drop on a hidden app.');
-    $hiddenDrop.append($hiddenTitle, $hiddenHint, $hiddenList);
-    var hiddenTargets = [];   // apps the switch hid that take a drop, from the last grid drawn
+    var hiddenAreas = {
+        empty: makeHiddenArea('empty', 'Hidden apps', 'Hold here, then drop on a hidden app.'),
+        builtin: makeHiddenArea('builtin', 'Built-in apps', 'Hold here, then drop on a built-in app.')
+    };
+    var hiddenTargets = { empty: [], builtin: [] };   // apps in each area that take a drop, from the last grid drawn
+
+    function makeHiddenArea(kind, title, hint) {
+        var area = {
+            $box: el('div', 'ea-hidden-area').attr('data-kind', kind),
+            $title: el('p', 'ea-hidden-title'),
+            $list: el('ul', 'ea-hidden-list')
+        };
+        area.$box.append(area.$title, el('p', 'ea-muted ea-hidden-hint', hint), area.$list);
+        area.title = title;
+        $hiddenDrop.append(area.$box);
+        return area;
+    }
 
     function showHiddenDrop() {
-        if (!state.dragKeys || !hiddenTargets.length) { return; }
-        $hiddenTitle.text('Hidden apps (' + hiddenTargets.length + ')');
-        $hiddenList.empty();
-        $.each(hiddenTargets, function (i, app) {
-            var text = app.label === app.name ? app.name : app.label + ' (' + app.name + ')';
-            $hiddenList.append(el('li', 'ea-hidden-target', text).attr('data-app', app.name));
+        if (!state.dragKeys) { return; }
+        var any = false;
+        $.each(hiddenAreas, function (kind, area) {
+            var targets = hiddenTargets[kind];
+            area.$box.removeClass('ea-hidden-open');
+            area.$list.empty();
+            if (!targets.length) { area.$box.removeClass('ea-show'); return; }
+            any = true;
+            area.$title.text(area.title + ' (' + targets.length + ')');
+            $.each(targets, function (i, app) {
+                var text = app.label === app.name ? app.name : app.label + ' (' + app.name + ')';
+                area.$list.append(el('li', 'ea-hidden-target', text).attr('data-app', app.name));
+            });
+            area.$box.addClass('ea-show');
         });
-        $hiddenDrop.removeClass('ea-hidden-open').addClass('ea-show');
+        if (any) { $hiddenDrop.addClass('ea-show'); }
     }
 
     function hideHiddenDrop() {
-        $hiddenDrop.removeClass('ea-show ea-hidden-open');
-        $hiddenList.find('.ea-drop').removeClass('ea-drop');
+        $hiddenDrop.removeClass('ea-show').find('.ea-hidden-area').removeClass('ea-show ea-hidden-open');
+        $hiddenDrop.find('.ea-drop').removeClass('ea-drop');
     }
 
     function announce() {
@@ -1272,6 +1301,7 @@ require([
                 state.hideEmpty = this.checked;
                 render();
             }));
+        $builtin.attr('title', 'Built-in apps can still take a drop: drag objects over the "Built-in apps" area.');
         $hideEmpty.attr('title', 'Hides apps whose box would list no object. Hidden apps can still take a drop: drag objects over the "Hidden apps" area.');
         $hideEmpty.append(document.createTextNode(' ' + HIDE_EMPTY_LABEL));
         $bar.append($hideEmpty);
@@ -1704,7 +1734,10 @@ require([
         var apps = onShow.shown;
         // Kept for the drag code: the apps the switch hid that can take a drop,
         // so dragstart does not rebuild the model of thousands of objects.
-        hiddenTargets = $.grep(onShow.empty, function (app) { return app.target; });
+        hiddenTargets = {
+            empty: $.grep(onShow.empty, function (app) { return app.target; }),
+            builtin: $.grep(onShow.builtin, function (app) { return app.target; })
+        };
         // Names the filters it was drawn with: tests wait on these, as the redraw
         // after a pause in typing is not otherwise observable.
         var $wrap = el('div', 'ea-grid-wrap').attr({ 'data-filter': state.filter, 'data-app-filter': state.appFilter });
@@ -3006,11 +3039,11 @@ require([
 
     // The list opens when the pointer enters the area and stays open until the
     // drag ends, so it does not flicker as the pointer moves between items.
-    $root.on('dragenter', '.ea-hidden-drop', function () {
-        if (state.dragKeys) { $hiddenDrop.addClass('ea-hidden-open'); }
+    $root.on('dragenter', '.ea-hidden-area', function () {
+        if (state.dragKeys) { $(this).addClass('ea-hidden-open'); }
     });
 
-    $root.on('dragover', '.ea-hidden-drop', function (event) {
+    $root.on('dragover', '.ea-hidden-area', function (event) {
         if (state.dragKeys) { event.preventDefault(); }   // keeps the area a live drag target
     });
 

@@ -98,7 +98,8 @@ def _room_to_drag(page):
 
 
 HIDE = ROOT + ' input[data-fid="hide-empty"]'
-HIDDEN_AREA = ROOT + " .ea-hidden-drop.ea-show"
+HIDDEN_AREA = ROOT + ' .ea-hidden-area[data-kind="empty"].ea-show'
+BUILTIN_AREA = ROOT + ' .ea-hidden-area[data-kind="builtin"].ea-show'
 
 
 def _show_empty_apps(page):
@@ -122,7 +123,8 @@ def _an_empty_app(page):
     tick.check()
     # A box that only the switch hides, and that takes a drop (a new-app box is staged, so always on show).
     empty = sorted(every - on_show)
-    assert empty, "this target has no app without objects: the switch has nothing to hide"
+    if not empty:
+        pytest.skip("this target has no app without objects: the switch has nothing to hide")
     return empty[0]
 
 
@@ -134,9 +136,9 @@ def _begin_drag(page, row):
     page.mouse.move(box["x"] + box["width"] / 2 + 10, box["y"] + box["height"] / 2 + 10, steps=3)
 
 
-def _open_hidden_area(page):
-    """Wait for the "Hidden apps" area to appear mid-drag, then hover its title so the list opens."""
-    area = page.locator(HIDDEN_AREA)
+def _open_hidden_area(page, area=HIDDEN_AREA):
+    """Wait for a drop area ("Hidden apps" unless told otherwise) to appear mid-drag, then hover it so its list opens."""
+    area = page.locator(area)
     area.wait_for()
     box = area.bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=5)
@@ -150,10 +152,10 @@ def _hover_hidden_app(page, app):
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2, steps=5)
 
 
-def _drag_to_hidden_app(page, row, app):
-    """Drag ``row`` onto ``app`` in the "Hidden apps" area, as a person would with the pointer."""
+def _drag_to_hidden_app(page, row, app, area=HIDDEN_AREA):
+    """Drag ``row`` onto ``app`` in a drop area ("Hidden apps" unless told otherwise), as a person would with the pointer."""
     _begin_drag(page, row)
-    _open_hidden_area(page)
+    _open_hidden_area(page, area)
     _hover_hidden_app(page, app)
     page.mouse.up()
 
@@ -466,6 +468,7 @@ def test_apps_with_no_matching_objects_hide_with_or_without_a_filter(open_view, 
     tick = page.locator(HIDE)
     assert tick.is_checked()
     assert "Hide apps with no matching objects" in page.locator(ROOT + " .ea-toolbar").inner_text()
+    assert 'drag objects over the "Hidden apps" area' in page.locator(ROOT + ' label.ea-check:has(input[data-fid="hide-empty"])').get_attribute("title")
     # Nothing typed: an app that holds no object is hidden all the same, and one that holds some shows.
     empty = _an_empty_app(page)
     launcher = page.locator(ROOT + ' .ea-app[data-app="%s"]' % empty)
@@ -511,7 +514,12 @@ def test_dragging_onto_a_hidden_app_stages_a_move(open_view, macro, sandbox_clie
         "nodes => nodes.map(n => n.getAttribute('data-app'))")
     assert "launcher" in listed
     assert "search" not in listed   # on show, so a box of its own
+    assert page.locator(HIDDEN_AREA + " .ea-hidden-hint").inner_text() == "Hold here, then drop on a hidden app."
+    assert page.locator(HIDDEN_AREA + " .ea-hidden-title").inner_text().startswith("Hidden apps (")
     shot(page, "app_management_hidden_apps_area")   # taken mid-drag, for the UX review
+    # The same state in the other theme: the area only exists mid-drag, so flip the class the page sets itself.
+    page.evaluate("root => root.classList.toggle('ea-dark')", page.locator(ROOT).element_handle())
+    shot(page, "app_management_hidden_apps_area_other_theme")
     page.mouse.up()
     assert 'Staged a move of 1 object to "Home" (launcher)' in page.locator(ROOT + " .ea-messages").inner_text()
     moved = _object(page, "launcher", name)   # the app now has a staged change, so its box shows
@@ -578,6 +586,64 @@ def test_no_hidden_apps_area_when_nothing_is_hidden(open_view, macro):
     page.wait_for_timeout(500)
     assert page.locator(HIDDEN_AREA).count() == 0
     page.mouse.up()
+
+
+def test_no_app_has_an_object_to_list_says_so(open_view):
+    """With no object type chosen, the switch hides every box and the page says why, not that no app is visible."""
+    page = _open(open_view)
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    page.locator(ROOT + ' button[data-fid="types-2"]').click()   # None
+    page.keyboard.press("Escape")
+    assert page.locator(ROOT + " .ea-app").count() == 0
+    assert "No app has any object to list." in page.locator(ROOT + " .ea-empty").inner_text()
+
+
+def test_builtin_apps_are_reached_through_their_own_area_while_dragging(open_view, macro, sandbox_client, shot):
+    """Hidden built-in apps get a "Built-in apps" area of their own, apart from "Hidden apps"."""
+    name = macro()
+    page = _open(open_view, builtin=False)
+    _room_to_drag(page)
+    assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 0
+    assert "Built-in apps" in page.locator(ROOT + ' label.ea-check:has(input[data-fid="builtin"])').get_attribute("title")
+    row = _object(page, "search", name)
+    _begin_drag(page, row)
+    _open_hidden_area(page, BUILTIN_AREA)
+    _hover_hidden_app(page, "launcher")
+    area = page.locator(BUILTIN_AREA)
+    assert area.locator(".ea-hidden-title").inner_text().startswith("Built-in apps (")
+    assert area.locator(".ea-hidden-hint").inner_text() == "Hold here, then drop on a built-in app."
+    listed = area.locator(".ea-hidden-target").evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))")
+    assert "launcher" in listed and "search" not in listed
+    # Each area lists only its own apps: no built-in app in "Hidden apps" while the tick box hides it.
+    other = page.locator(HIDDEN_AREA + " .ea-hidden-target")
+    assert "launcher" not in (other.evaluate_all("nodes => nodes.map(n => n.getAttribute('data-app'))") if other.count() else [])
+    shot(page, "app_management_builtin_apps_area")   # mid-drag, for the UX review
+    page.evaluate("root => root.classList.toggle('ea-dark')", page.locator(ROOT).element_handle())
+    shot(page, "app_management_builtin_apps_area_other_theme")
+    page.mouse.up()
+    assert 'Staged a move of 1 object to "Home" (launcher)' in page.locator(ROOT + " .ea-messages").inner_text()
+    assert _object(page, "launcher", name).count() == 1   # staged, so the box shows
+    assert page.locator(BUILTIN_AREA).count() == 0   # gone with the drag
+    assert _acl(sandbox_client, "search", name)["app"] == "search"   # nothing written until Apply
+
+
+def test_no_builtin_area_when_built_in_apps_are_shown(open_view, macro):
+    """Ticking "Show Splunk's built-in apps" puts the boxes on show, so there is no area for them."""
+    name = macro()
+    page = _open(open_view)
+    _room_to_drag(page)
+    _begin_drag(page, _object(page, "search", name))
+    page.wait_for_timeout(500)
+    assert page.locator(BUILTIN_AREA).count() == 0
+    page.mouse.up()
+
+
+def test_app_boxes_are_wide_enough_for_long_names(open_view):
+    """Boxes are at least 460px wide where the window has room, so names wrap less."""
+    page = _open(open_view)
+    page.set_viewport_size({"width": 1800, "height": 900})
+    widths = page.locator(ROOT + " .ea-app").evaluate_all("nodes => nodes.map(n => n.getBoundingClientRect().width)")
+    assert widths and min(widths) >= 459
 
 
 def test_staged_and_new_apps_show_whatever_the_switch_says(open_view, macro, cleanup_launcher_macros):
