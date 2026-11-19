@@ -1142,10 +1142,10 @@ require([
     // starts and never added inside dragstart, because a browser may end the
     // drag when the page changes there. It is outside $body, so a render does
     // not remove it.
-    var $hiddenDrop = el('div', 'ea-hidden-drop');
+    var $hiddenDrop = el('div', 'ea-hidden-drop').attr('aria-hidden', 'true');   // pointer aid; the panel lists every app for the keyboard
     var $hiddenTitle = el('p', 'ea-hidden-title');
     var $hiddenList = el('ul', 'ea-hidden-list');
-    var $hiddenHint = el('p', 'ea-muted ea-hidden-hint', 'Hover here, then drop on an app the filter hid.');
+    var $hiddenHint = el('p', 'ea-muted ea-hidden-hint', 'Drag onto here, then drop on an app the filter hid.');
     $hiddenDrop.append($hiddenTitle, $hiddenHint, $hiddenList);
     var hiddenTargets = [];   // apps the switch hid that take a drop, from the last grid drawn
 
@@ -1272,6 +1272,7 @@ require([
                 state.hideEmpty = this.checked;
                 render();
             }));
+        $hideEmpty.attr('title', 'Applies while text is typed in Filter objects by name.');
         $hideEmpty.append(document.createTextNode(' ' + HIDE_EMPTY_LABEL));
         $bar.append($hideEmpty);
 
