@@ -198,7 +198,7 @@ require([
         },
         showBuiltin: false,
         // Not remembered between page loads, like showBuiltin (owner's decision).
-        hideEmpty: true,       // hide apps with no matching objects while text is typed in the object filter
+        hideEmpty: true,       // hide apps that list no object, with or without a filter applied
         panel: null,          // {mode: 'object', key}, {mode: 'bulk'} or {mode: 'newapp', cloneOf, draft}
         busy: false,
         message: null,         // {kind: 'error' | 'success' | 'info', lines: [..]}
@@ -1032,11 +1032,11 @@ require([
     // filter and the built-in toggle, and a box with staged changes always
     // shows, including one whose only staged changes the filters hide.
     // The one exception is "Hide apps with no matching objects", which the
-    // person may untick: while text is typed in the object filter it hides
-    // boxes that list no object. Those apps stay reachable as drop targets
-    // through the "Hidden apps" area shown while dragging (and, as always,
-    // through the panel's App and Copy to lists), so the exception does not
-    // strand an object (lesson ux-filter-hides-drop-target).
+    // person may untick: it hides boxes that list no object, with or without
+    // a filter applied. Those apps stay reachable as drop targets through the
+    // "Hidden apps" area shown while dragging (and, as always, through the
+    // panel's App and Copy to lists), so the exception does not strand an
+    // object (lesson ux-filter-hides-drop-target).
     // Returns {shown: apps to draw, empty: apps the switch hid}.
     function appsOnShow(byApp, hidden) {
         var empty = [];
@@ -1050,7 +1050,7 @@ require([
             }
             if (!appMatches(app) || (app.builtin && !state.showBuiltin)) { return false; }
             // No row at all, ghosts included: the box would list nothing.
-            if (state.hideEmpty && state.filter !== '' && !(byApp[app.name] || []).length) {
+            if (state.hideEmpty && !(byApp[app.name] || []).length) {
                 empty.push(app);
                 return false;
             }
@@ -1272,7 +1272,7 @@ require([
                 state.hideEmpty = this.checked;
                 render();
             }));
-        $hideEmpty.attr('title', 'Applies while text is typed in Filter objects by name.');
+        $hideEmpty.attr('title', 'Hides apps whose box would list no object. Hidden apps can still take a drop: drag objects over the "Hidden apps" area.');
         $hideEmpty.append(document.createTextNode(' ' + HIDE_EMPTY_LABEL));
         $bar.append($hideEmpty);
 
@@ -1739,7 +1739,8 @@ require([
         }
         if (!apps.length) {
             // The switch can hide every app: say so, rather than that none is visible.
-            var none = onShow.empty.length ? 'No app has objects matching "' + state.filter + '".' :
+            var none = onShow.empty.length ? (state.filter !== '' ? 'No app has objects matching "' + state.filter + '".' :
+                'No app has any object to list.') :
                 (state.appFilter ? 'No apps match the filter "' + state.appFilter + '".' :
                     'No apps are visible to your account.');
             $wrap.append(el('p', 'ea-empty', none));

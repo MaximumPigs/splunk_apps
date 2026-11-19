@@ -106,6 +106,26 @@ def _show_empty_apps(page):
     page.locator(HIDE).uncheck()
 
 
+def _an_empty_app(page):
+    """Name an app that lists no object on this target: its box shows only once the switch is unticked.
+
+    Not a fixed app: even launcher holds a view, a nav and tags here, and what
+    each dev instance ships differs. Leaves the switch ticked.
+    """
+    tick = page.locator(HIDE)
+    names = lambda: set(page.locator(ROOT + " .ea-app").evaluate_all(
+        "nodes => nodes.map(n => n.getAttribute('data-app'))"))
+    tick.check()
+    on_show = names()
+    tick.uncheck()
+    every = names()
+    tick.check()
+    # A box that only the switch hides, and that takes a drop (a new-app box is staged, so always on show).
+    empty = sorted(every - on_show)
+    assert empty, "this target has no app without objects: the switch has nothing to hide"
+    return empty[0]
+
+
 def _begin_drag(page, row):
     """Press on ``row`` and move a little: the drag starts and the page reacts to it."""
     row.hover()
@@ -439,15 +459,19 @@ def test_filter_narrows_objects_and_says_when_nothing_matches(open_view, macro):
     assert page.locator(ROOT + ' .ea-app[data-app="launcher"]').count() == 1
 
 
-def test_apps_with_no_matching_objects_hide_while_filtering(open_view, macro):
-    """"Hide apps with no matching objects" hides boxes only while text is typed in the object filter."""
+def test_apps_with_no_matching_objects_hide_with_or_without_a_filter(open_view, macro):
+    """"Hide apps with no matching objects" hides boxes that list nothing, whether or not text is typed."""
     name = macro()
     page = _open(open_view)
     tick = page.locator(HIDE)
     assert tick.is_checked()
     assert "Hide apps with no matching objects" in page.locator(ROOT + " .ea-toolbar").inner_text()
-    launcher = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
-    assert launcher.count() == 1   # nothing typed: every app shows
+    # Nothing typed: an app that holds no object is hidden all the same, and one that holds some shows.
+    empty = _an_empty_app(page)
+    launcher = page.locator(ROOT + ' .ea-app[data-app="%s"]' % empty)
+    assert launcher.count() == 0
+    assert page.locator(ROOT + ' .ea-app[data-app="search"]').count() == 1
+    assert "with no matching objects" in page.locator(ROOT + " .ea-summary").inner_text()
     _filter(page, name)
     assert launcher.count() == 0
     assert page.locator(ROOT + ' .ea-app[data-app="search"]').count() == 1
@@ -457,8 +481,8 @@ def test_apps_with_no_matching_objects_hide_while_filtering(open_view, macro):
     assert launcher.count() == 1
     tick.check()
     assert launcher.count() == 0
-    _filter(page, "")   # clearing the text brings every app back
-    assert launcher.count() == 1
+    _filter(page, "")   # clearing the text: still hidden, as the switch is ticked
+    assert launcher.count() == 0
 
 
 def test_hide_switch_is_not_kept_across_page_loads(open_view):
@@ -497,6 +521,21 @@ def test_dragging_onto_a_hidden_app_stages_a_move(open_view, macro, sandbox_clie
     assert _acl(sandbox_client, "search", name)["app"] == "search"   # nothing written until Apply
 
 
+def test_dragging_onto_a_hidden_app_works_with_no_filter(open_view, macro, sandbox_client):
+    """The owner's case: no filter applied, an empty app is hidden, and the area still reaches it."""
+    name = macro()
+    page = _open(open_view)
+    _room_to_drag(page)
+    empty = _an_empty_app(page)
+    assert page.locator(ROOT + ' .ea-app[data-app="%s"]' % empty).count() == 0
+    _drag_to_hidden_app(page, _object(page, "search", name), empty)
+    assert 'Staged a move of 1 object to' in page.locator(ROOT + " .ea-messages").inner_text()
+    # The app's label, with its id in brackets when the two differ.
+    assert empty in page.locator(ROOT + " .ea-messages").inner_text()
+    assert _object(page, empty, name).count() == 1
+    assert _acl(sandbox_client, "search", name)["app"] == "search"   # nothing written until Apply
+
+
 def test_dropping_a_default_object_on_a_hidden_app_stages_a_copy(open_view, sandbox_client, cleanup_launcher_macros):
     """Through the area, as on a box, an object in a default folder is copied rather than moved."""
     name = _shipped_search_macro(sandbox_client)
@@ -529,16 +568,10 @@ def test_a_cancelled_drag_removes_the_hidden_apps_area(open_view, macro):
 
 
 def test_no_hidden_apps_area_when_nothing_is_hidden(open_view, macro):
-    """The area appears only when the switch has hidden an app: not with no text typed, nor unticked."""
+    """The area appears only when the switch has hidden an app: not once it is unticked."""
     name = macro()
     page = _open(open_view)
     _room_to_drag(page)
-    # No text typed: nothing is hidden.
-    _begin_drag(page, _object(page, "search", name))
-    page.wait_for_timeout(500)
-    assert page.locator(HIDDEN_AREA).count() == 0
-    page.mouse.up()
-    # Text typed but the switch cleared: nothing is hidden either.
     _filter(page, name)
     _show_empty_apps(page)
     _begin_drag(page, _object(page, "search", name))
