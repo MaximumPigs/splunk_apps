@@ -1772,9 +1772,10 @@ require([
         }
         if (!apps.length) {
             // The switch can hide every app: say so, rather than that none is visible.
-            var none = onShow.empty.length ? (state.filter !== '' ? 'No app has objects matching "' + state.filter + '".' :
-                'No app has any object to list.') :
-                (state.appFilter ? 'No apps match the filter "' + state.appFilter + '".' :
+            var none = state.appFilter ? 'No apps match the filter "' + state.appFilter + '"' +
+                (onShow.empty.length ? ' that have objects to list.' : '.') :
+                (onShow.empty.length ? (state.filter !== '' ? 'No app has objects matching "' + state.filter + '".' :
+                    'No app has any object to list.') :
                     'No apps are visible to your account.');
             $wrap.append(el('p', 'ea-empty', none));
             return $wrap;
