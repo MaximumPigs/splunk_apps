@@ -266,7 +266,7 @@
 /* App boxes: as many columns as fit, in alphabetical order. */
 #easyadmin-apps .ea-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
     gap: 12px;
     align-items: start;
 }
@@ -280,6 +280,77 @@
 #easyadmin-apps .ea-app.ea-drop {
     border-color: var(--ea-drop);
     box-shadow: 0 0 0 2px var(--ea-drop);
+    background: var(--ea-drop-bg);
+}
+
+/*
+ * Drop areas for hidden apps, shown only while an object is being dragged:
+ * "Hidden apps" (the "Hide apps with no matching objects" switch hid them) and
+ * "Built-in apps" (hidden until "Show Splunk's built-in apps" is ticked). Each
+ * is a box of its own in a row fixed to the window's bottom centre, so showing
+ * them never moves anything under the pointer, and they clear Splunk's left
+ * navigation and the panel on the right. Hovering a box opens its list.
+ */
+#easyadmin-apps .ea-hidden-drop,
+#easyadmin-apps .ea-hidden-area {
+    display: none;
+}
+
+#easyadmin-apps .ea-hidden-drop.ea-show {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 16px;
+    z-index: 950;
+}
+
+#easyadmin-apps .ea-hidden-area.ea-show {
+    display: block;
+    width: 320px;
+    color: var(--ea-fg);
+    background: var(--ea-bg);
+    border: 2px dashed var(--ea-drop);
+    box-shadow: 0 2px 8px var(--ea-shadow);
+}
+
+#easyadmin-apps .ea-hidden-title {
+    color: var(--ea-fg);   /* Splunk's own styles colour paragraphs; do not inherit that */
+    margin: 0;
+    padding: 8px 12px;
+    font-weight: 600;
+}
+
+#easyadmin-apps .ea-hidden-hint {
+    margin: 0;
+    padding: 0 12px 8px;
+    font-size: 12px;
+}
+
+#easyadmin-apps .ea-hidden-list {
+    display: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 50vh;
+    overflow-y: auto;
+    border-top: 1px solid var(--ea-border);
+}
+
+#easyadmin-apps .ea-hidden-area.ea-hidden-open .ea-hidden-list {
+    display: block;
+}
+
+#easyadmin-apps .ea-hidden-target {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--ea-grid);
+}
+
+#easyadmin-apps .ea-hidden-target.ea-drop {
+    outline: 2px solid var(--ea-drop);
+    outline-offset: -2px;
     background: var(--ea-drop-bg);
 }
 

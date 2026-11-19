@@ -37,6 +37,7 @@ its format is fixed:
 | 1.7.1 | While a panel is open (an object's details, Edit permissions, New app or Clone) the toolbar keeps clear of it, so New app, Reload, Discard changes and Apply changes stay in view. Pressing one closes the panel first; if the panel holds typing that is not staged (a setting being edited or added, permission choices, a changed new app or clone form) the page asks "Discard what you typed in the panel and continue?" and does nothing if declined. Close, Escape, Cancel, Clone, another object and the selection bar's buttons are unchanged. |
 | 1.7.1 (tests only) | The live check that the details panel does not read `user-prefs` relies on `splunkd_access` lines becoming searchable in the order they were written. That is now observed (four probe runs, 220 snapshots, never a later request searchable before an earlier one; Splunk 10.6.1, one ingestion pipeline) and a live test checks it on every run. No change to the app. |
 | 1.7.2 | "Filter objects by name" and "Filter apps by name" wait for a quarter-second pause in typing before filtering, and a filter change redraws only the app boxes, not the whole page; the field keeps focus and caret. Row icons are built once and copied. A click during the pause acts on the list on screen, and any other full redraw (Reload, a tick) applies the typed text first. |
+| 1.8.0 | A "Hide apps with no matching objects" tick box beside "Show Splunk's built-in apps" (ticked at first, not kept between visits): an app whose box would list no object is hidden, with or without a filter applied (owner's decision, PR review), and the summary says how many. An app with staged changes and a pending new app stay on show. While an object is dragged and at least one app is hidden, a "Hidden apps" area at the bottom centre lists them when hovered; dropping on one does what its box does. Probed in Chromium only (Playwright's drag); Firefox and a real pointer drag were not tried. |
 
 Not built (owner's decision, 2026-11-16, #53): deleting a single setting by
 deleting the whole knowledge object and recreating it without that setting.
@@ -101,6 +102,10 @@ When viewing apps in App Management with a filter applied, apps with no matching
 - A box with staged changes, and a pending new app, keep showing as today,
   whatever the switch says. The switch sits beside "Show Splunk's built-in
   apps" and, like it, is not remembered between page loads.
+- Owner feedback on PR #100 (2026-11-19): Splunk's built-in apps, hidden until
+  "Show Splunk's built-in apps" is ticked, get the same drop area while
+  dragging, as a box of its own with its own hover-open list ("Built-in
+  apps"), and the app boxes are wider (460px minimum) so names wrap less.
 - [ ] On easyadmin's App management page, when should the new "hide apps
   with no matching objects" switch hide an app? Options: (a) only while
   text is typed in "Filter objects by name", as the request describes;
@@ -119,11 +124,7 @@ When viewing apps in App Management with a filter applied, apps with no matching
   dragged (boxes then shift under the pointer). Recommendation: (b).
 
 ### User management page
-Status: blocked
-Context: A new easyadmin page like Role management, but for users: a grid of
-users against roles plus a table of their other settings, changed in bulk
-and saved together. The open question decides what the page does when an
-admin changes the roles of their own account.
+Status: ready
 
 - Same intent as Role management, but for bulk user configuration.
 - Editable in the first version: roles, default app, time zone, real name
@@ -134,6 +135,9 @@ admin changes the roles of their own account.
   boxes, plus a table of the other settings.
 - Users signed in through LDAP or SAML (roles from group mappings) are
   listed read-only, saying why.
+- An admin may stage a change to their own account's roles; the save
+  confirmation then warns, naming their own account, as Role management
+  warns when a save changes a role the signed-in user holds.
 - [x] Which user settings can the page change? Options: roles, default
   app, time zone, real name and email, unlocking a locked-out account,
   forcing a password change at next sign-in, creating and deleting users,
@@ -147,14 +151,14 @@ admin changes the roles of their own account.
 - [x] Users signed in through LDAP or SAML get their roles from group
   mappings, so their roles cannot be changed here. Options: (a) list them
   read-only, saying why; (b) leave them out. Recommendation: (a).: (a).
-- [ ] On easyadmin's planned User management page, what happens when an
+- [x] On easyadmin's planned User management page, what happens when an
   admin stages a change to their own account's roles (for example removing
   their own admin role, which can lock them out of the page and of Splunk
   administration)? Options: (a) allowed, with a warning in the save
   confirmation naming their own account, as Role management already warns
   when a save changes a role you hold; (b) refused at staging, so the page
   never changes the signed-in user's own roles; (c) allowed without a
-  warning. Recommendation: (a), the same behaviour as Role management.
+  warning. Recommendation: (a), the same behaviour as Role management.: (a).
 
 Probe first: the `authentication/users` fields for unlocking an account and
 forcing a password change on 9.3 and 10.x, how splunkd marks an LDAP or SAML
@@ -495,6 +499,72 @@ and `pytest.skip` with the reason when no snapshot saw a marker. Tests only.
 - [ ] Confirm: should this be done? (Recommended: yes, a few lines; a
   visible skip is more honest than a weak pass.)
 
+### Proposed: The filter's result count is not announced to screen readers
+Status: proposed
+Context: On the App management page, typing in a name filter redraws the
+app boxes and updates the "Showing N apps and M objects" line, but a screen
+reader does not read the new count aloud. Doing this has the page announce
+the count after each filter change.
+
+Left by the UX review on #94 (1.7.2), polish. The summary and the "No
+objects match the filter" message
+(`apps/easyadmin/appserver/static/easyadmin_apps.js:1660`) sit in the
+redrawn grid, which is not a live region, so after the debounced redraw a
+screen-reader user hears nothing. The page already has a polite live
+region (`$liveStatus`, `:1117`) that `renderFilterResults` (`:2827`) does
+not write to. The code before 1.7.2 did not announce it either. Fix: write
+the summary into `$liveStatus` from `renderFilterResults`, with a UI test
+on the region's text.
+
+- [ ] Confirm: on easyadmin's App management page, should a screen reader
+  announce the new "Showing N apps and M objects" count after each change
+  to a name filter? (Recommended: yes, a few lines; the polite region only
+  speaks once typing pauses, so it does not interrupt.)
+
+### Proposed: No test for typing a character and deleting it within the pause
+Status: proposed
+Context: Since 1.7.2 the App management name filters wait for a short
+pause in typing before redrawing. If a person types a character and
+deletes it within the pause, nothing should be redrawn. That case is
+untested. Doing this adds the test. Tests only.
+
+Left by the splunk-reviewer on #94 (1.7.2), minor. `filterSoon`
+(`apps/easyadmin/appserver/static/easyadmin_apps.js:1102-1111`) returns
+without redrawing when the typed text equals the filter already applied;
+correct by reading, but none of the four debounce UI tests in
+`tests/ui/easyadmin/test_easyadmin_apps_ui.py` (`:273-340`) exercises it.
+Fix: a UI test that types then deletes a character within 250 ms and
+asserts the grid was not redrawn. Tests only.
+
+- [ ] Confirm: should this be done? (Recommended: yes, a few lines; it
+  could be built with "No test that an untouched permissions panel closes
+  silently", which edits the same test file.)
+
+### Proposed: A filter change on a very large App management page still takes about a second
+Status: proposed
+Context: 1.7.2 made the App management filters wait for a pause in typing
+and redraw less; on a test page with 300 apps and 5,000 objects, typing a
+word now settles in about 1.2 s instead of 8 s. Going further means drawing
+fewer rows at once, which changes what a box shows. The question is
+whether to do that.
+
+Left open by the implement step of #94 (1.7.2): on that stubbed model a
+single filter change still costs about 0.6 s of browser layout after the
+pause (`.agent/loop/steps/20261118-212334-implement.json`). Cutting it
+means not drawing every matching row of every box at once. Probe first:
+how many apps and objects the owner's instances have, measured with the
+same stubbed-model timing as #94, before and after.
+
+- [ ] Confirm: on easyadmin's App management page with hundreds of apps and
+  thousands of objects, a filter change still takes about a second to show
+  (down from 8 s before 1.7.2). Options: (a) leave it as 1.7.2 left it;
+  (b) each box draws its first 100 matching objects and a "Show all N"
+  button, so a long box needs one click to see the rest; (c) a box draws
+  its rows only once it scrolls into view, so what a box lists is unchanged
+  but rows appear a moment after scrolling. (Recommended: (a) unless the
+  page is still slow on your instances; (b) and (c) each change how boxes
+  behave for a small gain on very large instances.)
+
 ## fillcontinuous
 
 ### Done
@@ -560,6 +630,19 @@ Again on #84 (easyadmin 1.7.1): the implement step's first attempts at its
 result said `failed`, because "the last full run was still going (only the
 build stage had logged) when I had to stop" (session transcript
 `4757c819`, `.agent/loop/steps/20261118-052720-implement.json`).
+
+Again on #94 (easyadmin 1.7.2): the review step started the
+`splunk-reviewer` agent in the background at 10:38:36Z, then, to wait for
+it, called the wake-up scheduling tool meant for interactive `/loop`
+sessions and ended its turn. The session forced a structured result at
+10:39:55Z, which said `failed` ("The splunk-reviewer agent was still
+running when this step ended"); the agent's hand-back then re-woke the
+session, which wrote the findings and finished in text only, so the step
+record holds `output: {}` and the run log "FAIL easyadmin loop-review ok"
+(session transcript `3c37ac08`,
+`.agent/loop/steps/20261118-214405-review.json`). `phase_review`
+(`tools/splk/loop.py:744-751`) checks only the step's `kind`, so the loop
+went on; no harm this time, but the record says nothing true.
 
 - [x] Confirm: should the step instructions say to run `splk dev` and
   `splk test --ui` in the background with at least an hour's limit, and to
@@ -678,7 +761,8 @@ your current branch is behind its remote counterpart"), and `state.json`
 holds the full git output as `stuck_reason`. Their continuation lines start
 with a space, which sorts before "2", so only the gh line keeps returning.
 And for the sixth time in the groom after #84 merged (2026-11-18), and the
-seventh in the groom after #90 merged (2026-11-18).
+seventh in the groom after #90 merged (2026-11-18), and the eighth in the
+groom after #94 merged (2026-11-19).
 
 - [x] Confirm: should this be done? (Recommended: yes, two lines; low
   value on its own, so it could join the next loop change.): Yes.
@@ -749,10 +833,10 @@ Changes `tools/splk/`, so it would be built in an interactive session.
 ### Proposed: A step whose result is rejected leaves no trace of why
 Status: proposed
 Context: Each loop step ends by handing the loop a short result (done,
-blocked or failed, and a summary). On one PR every attempt to hand it over
-was rejected, so the loop logged a failure that just reads "ok", with no
-reason anywhere. Doing this records the step's last words and logs a clear
-"no result" instead.
+blocked or failed, and a summary). On two PRs a step ended without one, so
+the loop logged a failure that just reads "ok", with no reason anywhere.
+Doing this records the step's last words and logs a clear "no result"
+instead.
 
 On #84 (easyadmin 1.7.1) the implement step tried its structured result 11
 times and each was rejected by the schema check: the `status` value carried
@@ -775,6 +859,15 @@ supervisor's verify, which decides. Lesson
 and the last 500 characters of its `result` text in the record's `detail`,
 and log "no structured result: <detail>", with a unit test. Changes
 `tools/splk/`, so it would be built in an interactive session.
+
+Again on #94 (easyadmin 1.7.2), with another cause: the review step gave a
+structured result (`failed`) while its background reviewer agent still
+ran, then carried on when the agent finished and ended in text only, so
+the record again has `kind: ok`, `output: {}` and the run log "FAIL
+easyadmin loop-review ok" (`.agent/loop/steps/20261118-214405-review.json`,
+transcript `3c37ac08`; see "A step can end its turn while its own
+background work still runs"). The lesson now has 2 hits. Keeping the last
+result text, as proposed, would have shown the step's real outcome.
 
 - [ ] Confirm: when a loop step ends without a usable result, should the
   loop record the step's last message and log "no structured result" with
@@ -810,3 +903,33 @@ Changes `.claude/loop/`, so it would be built in an interactive session.
   recording the UX review? (Recommended: yes, a prompt line and a few
   minutes per fix; otherwise a visible change can ship that nobody looked
   at.)
+
+### Proposed: What the implement step leaves for the owner never reaches the roadmap
+Status: proposed
+Context: When the loop builds an item, it sometimes stops short of a part
+that needs the owner's choice and says so only in the pull request text.
+Nothing then turns that into a roadmap question, so it can be forgotten
+once the PR merges. Doing this queues such leftovers for the next roadmap
+grooming, as review findings already are.
+
+On #94 (easyadmin 1.7.2) the implement step's result said a filter change
+on a very large page "still takes about 0.6 s of browser layout after the
+pause. Fixing that means capping or lazily drawing rows, which changes what
+a box lists, so I left it for the owner"
+(`.agent/loop/steps/20261118-212334-implement.json`). It went into the PR
+body only. The review step's findings, which the groom reads, held two
+other points and not this one (`.agent/loop/inbox/findings.md`), so it
+reached the roadmap only because this groom read the loop log. Cause:
+`.claude/loop/prompts/implement.md` says to put "anything left open" in the
+PR body, while only `review.md` writes the findings file that
+`hand_over_findings` (`tools/splk/loop.py:559`) queues for the groom. Fix:
+`implement.md` also writes each point it leaves for the owner to the
+findings file, in the review step's format, and `review.md` keeps entries
+already in it rather than replacing the file. Changes `.claude/loop/`, so
+it would be built in an interactive session.
+
+- [ ] Confirm: should the loop's implement step queue anything it leaves for
+  the owner as a proposal for the next roadmap grooming, as the review step
+  already does with its findings? (Recommended: yes, a prompt line each in
+  two step instructions; otherwise a choice raised only in a merged pull
+  request is easily lost.)
