@@ -33,12 +33,9 @@ apps/<app>/            one directory per app, named for its app id
 scripts/               packaging and dependency vendoring
 splunkbase/<app>/      listing copy for the app's Splunkbase page
 tests/                 pytest suite covering every app's core logic
-tests/live/<app>/      live tests run against a Splunk target by splk
-tools/splk/            the splk CLI: build, inspect, deploy, live test
-config/targets.toml    Splunk targets for splk (no secrets)
-config/loop.toml       models, limits and notifications for `splk loop`
+tests/live/<app>/      live tests, run against a Splunk target by the development loop
+tests/ui/<app>/        browser tests of the apps' pages, run the same way
 packages/              the latest .spl of each app, for a manual install
-.claude/               coding-agent rules, skills, agents, hooks and lessons
 .github/workflows/     CI and release automation
 ```
 
@@ -105,286 +102,19 @@ giving up the 3.9 runtime.
 > template ignores it, which would silently ship apps that cannot import
 > `splunklib`. If you regenerate `.gitignore`, remove that line again.
 
-## Local development loop: `splk` and the coding agent
+## Development loop
 
-`splk` is the one entry point for building, vetting, deploying and testing an
-app against a live Splunk instance. Humans, the coding agent and CI run the same
-commands, so a result in one place reproduces in the others.
+Building, vetting, deploying and testing the apps against a live Splunk instance, and the
+unattended coding loop that works this repository's issues into pull requests, live outside
+this repository, in an instance of
+[agentic_development_loop](https://github.com/MaximumPigs/agentic_development_loop)
+(branch `instance/splunk_app_dev`). That instance holds the `splk` tool, the coding-agent
+rules, the lessons learned and the owner's conventions, so this repository holds only the
+apps, their tests, packaging and CI.
 
-### Setup
-
-```bash
-pip install -e ".[dev]"         # puts `splk` on PATH, with pytest, AppInspect and Playwright
-python -m playwright install chromium   # the browser for UI tests and `splk shot`
-cp .env.example .env            # then paste a Splunk auth token into SPLUNK_TOKEN,
-                                # and a Splunk Web username and password for UI tests
-splk doctor                     # reachable? token valid? which version?
-```
-
-Targets live in [`config/targets.toml`](config/targets.toml). The default,
-`local`, is `https://localhost:8089` with TLS verification off for the
-self-signed certificate of a fresh install, and Splunk Web at
-`http://localhost:8000` (`web_url`) for browser tests. Live tests that seed
-events need a dev-only index called `splk_test` on the target (create it once
-in Splunk Web).
-
-### Commands
-
-| Command | What it does |
-| --- | --- |
-| `splk dev <app>` | Build, unit tests, AppInspect, install on the target, live tests, then UI tests and the UX audit for apps that have them. Stops at the first red stage. |
-| `splk dev <app> --skip-inspect` | The same without AppInspect, for a faster inner loop. |
-| `splk test [--live] [--ui] <app>` | Unit tests; with `--live`, also `tests/live/<app>/` on the target; with `--ui`, also `tests/ui/<app>/` in a browser (`--headed` to watch). |
-| `splk inspect <app>` | Build and run the full AppInspect check set. |
-| `splk deploy <app> [--restart]` | Build and install via `POST /services/apps/local`, verify the installed version, reload. Restarts only with `--restart` on a target that allows it. |
-| `splk search "<spl>"` | Run one query on the target and print rows as JSON. |
-| `splk shot <app>[/<view>] [--theme dark]` | Open a Splunk Web page in a browser, save a screenshot to `build/reports/ui/shots/`, and print the final URL and any JavaScript errors as JSON. |
-| `splk ux <app> [--view <v>] [--theme <t>]` | Open every view of the app in light and dark, save screenshots, scan them for accessibility problems (axe-core) and record JavaScript errors. Report in `build/reports/ux/<app>/report.md`. |
-| `splk review security\|ux <scope> pass\|fail --summary ...` | Record the outcome of a security or UX review in the run log. |
-| `splk runs` | Recent stage results from the run log. |
-
-`--json` gives machine-readable results; `-v` gives debug output. Every run
-logs to `.agent/logs/splk.log` (JSON lines, tokens masked) and records each
-stage result in `.agent/runs/`. Exit codes: 0 green, 1 a stage failed, 2 usage
-or configuration error.
-
-### Live tests
-
-`tests/live/<app>/` holds tests that run SPL on the target and assert on the
-rows. They are skipped by plain `pytest` and in CI, and run via `splk test
---live <app>` or as the last stage of `splk dev`. Fixtures in
-[`tests/live/conftest.py`](tests/live/conftest.py): `search`, `seed` (index raw
-events into the test index under a unique `source`), `splunk`, `target`.
-
-### UI tests
-
-`tests/ui/<app>/` holds tests that drive Splunk Web in a real browser
-(Playwright, headless Chromium) and assert on what the page renders: a view
-loads, its controls work, it follows the user's theme. They sign in with
-`SPLUNK_WEB_USERNAME` and `SPLUNK_WEB_PASSWORD` from `.env`, once per run (the
-session is cached in `.agent/ui/`), because Splunk Web does not accept auth
-tokens. Use a dev instance: those credentials sit in `.env` in plain text.
-
-Like live tests they never run in plain `pytest` or CI. Each run leaves
-screenshots in `build/reports/ui/<app>/`, and for a failure a screenshot and a
-trace you can replay with `python -m playwright show-trace <file>.zip`.
-Fixtures in [`tests/ui/conftest.py`](tests/ui/conftest.py): `open_view`,
-`shot`, `page_log`, `page`, `web`.
-
-### UX audit
-
-`splk ux <app>`, also the last stage of `splk dev`, opens every view under
-`apps/<app>/default/data/ui/views/` in both themes. For each it saves a
-screenshot, reads the theme the page actually drew, runs an
-[axe-core](https://github.com/dequelabs/axe-core) scan of the app's own
-content against the WCAG 2.2 A and AA rules, and records uncaught exceptions
-and console errors. The stage fails on:
-
-- an uncaught exception, or a console error from the app's own static files
-  or REST endpoints (`/splunkd/__raw/services/<app>/`); Splunk Web logs
-  errors of its own, which are reported with their source but do not fail it;
-- a view that never shows its ready selector;
-- an accessibility violation of serious or critical impact that is not waived.
-
-Lesser findings are reported for review. Each app sets, per view, a `ready`
-selector and a `scope` (its root element, so Splunk Web's own header is not
-scanned) in `tests/ui/<app>/ux.toml`, which can also waive a finding with a
-written reason. A page that follows the user's theme preference refuses the
-other `?theme=`, so each theme is one pass with the signed-in user's
-preference set to it (through `sandbox`, put back afterwards; an interrupted
-audit is repaired by the next). Without a token the preference is left alone
-and the report says which theme was not audited. A view can also list
-`[[views.<view>.states]]`: panels and other states reached by `click`
-selectors and URL `query` parameters, each screenshotted and scanned like the
-view itself (see `tests/ui/easyadmin/ux.toml`).
-
-The audit catches what a machine can. Layout, wording, loading, empty and
-error states are judged by the `ux-reviewer` agent against the
-[`splunk-ux`](.claude/skills/splunk-ux/SKILL.md) standard, from the
-screenshots and the source.
-
-axe-core is vendored in `tools/splk/vendor/axe-core/` (MPL-2.0, licence
-alongside) by `python scripts/vendor_axe.py`, which checks the npm registry's
-SHA-512 before writing anything.
-
-### Coding agent configuration
-
-The repository carries configuration for the coding agent described under
-[AI assistance](#ai-assistance):
-
-| Path | Role |
-| --- | --- |
-| [`CLAUDE.md`](CLAUDE.md) | Always-loaded project instructions: the `splk` commands and the definition of done. |
-| `.claude/rules/` | Path-scoped rules (Python, conf files, search commands, inputs/props, searches/dashboards, pages in Splunk Web, Splunkbase listings, CI and release) that load only when matching files are touched, plus always-on Windows environment rules. |
-| `.claude/skills/` | `dev-loop`, `splunk-playbook`, `write-live-test`, `write-ui-test`, `appinspect-fix`, `splunk-security-review`, `splunk-ux` (the UX standard), `splunk-ux-review`, `new-app`, `release-app`, `retro`. |
-| `.claude/skills/splunk-playbook/` | What works: proven recipes per feature (custom pages, REST endpoints behind a page, theme support, search commands, checking UI in a browser), with the approaches that failed. |
-| `.claude/agents/` | `splunk-reviewer` (read-only review), `security-reviewer` (read-only security review), `ux-reviewer` (read-only UX review from screenshots) and `learner` (maintains lessons and the playbook). |
-| `.claude/hooks/` + `.claude/settings.json` | Deterministic guards: deny raw REST/restarts/`etc/apps` copies and edits to `local/`, lint every edited file (Python 3.9 grammar, conf syntax, BOMs and mojibake, ASCII-only listings), inject target status at session start, and before a session ends ask for a retro (after a fix, or after any app deploy), a security review (after code changes) and a UX review (after changes to what users see). |
-| `.claude/agent-memory/learner/` | Lessons learned, committed and reviewed like code. |
-
-Hooks run `python`, so a Python 3.9+ interpreter must be on PATH under that
-name (true for the python.org installer on Windows).
-
-**How it improves itself:** it keeps two kinds of memory. *Lessons* record
-what went wrong (symptom, cause, fix, how to catch it earlier). *Playbook
-patterns* record what works: the recipe for a feature, why each step is there,
-and which approaches failed first. The second matters as much as the first:
-easyadmin's theme support took three attempts without any `splk` stage going
-red, so a failure-only loop would have learned nothing from it.
-
-Every `splk` stage result, and every security review outcome, is recorded.
-Before a session ends, the Stop hook asks the agent to run `retro` when a
-failure was fixed or an app was deployed (naming apps that needed three or
-more deploys), to run `splunk-security-review` when code changed after the
-last review, and to run `splunk-ux-review` when a view, page script or
-stylesheet changed after the last UX review. The `learner` agent writes the lessons and patterns. A lesson seen
-twice is promoted into a rule or skill; a pattern confirmed in a second app
-becomes a scaffold step or check; anything that must never recur becomes a
-test or hook check. Those promotions arrive as ordinary diffs in a pull request.
-
-## Roadmap loop: `splk loop`
-
-`splk loop run` works through [ROADMAP.md](ROADMAP.md) unattended, one pull
-request at a time. Merging is the only manual step.
-
-```
-groom -> plan -> implement -> verify -> review -> verify -> retro -> publish -> wait for merge
-      \-> nothing ready: code review -> proposals PR       merged -> groom the next item
-      \-> waiting on answers: poll the question issues     CI red / review comments -> fix -> push
-```
-
-- **Groom** reads the whole roadmap every round, records the owner's answers
-  and adds `- [ ]` questions wherever an implementer would have to guess. An
-  item with an open question never starts. Each blocked item gets a GitHub
-  issue labelled `loop-question`. Answer there (only the owner's comments
-  are read) and the next groom records the answer in the roadmap. When
-  groom adds questions to an item that already has an issue, the issue's
-  body is updated to list them all.
-- Findings the **review** step leaves unfixed go in the PR's "Open findings"
-  and are queued for the next groom, which adds each as a `Status: proposed`
-  item (or folds it into an item that already covers it), so the owner
-  confirms or declines it like an audit proposal.
-- Groom also **reviews the loop itself**: the supervisor gives it every step
-  record and notification since the previous groom, and it proposes fixes
-  for problems they show (under `## Tooling`, at most three per round).
-- Agreed work that changes what loop steps may not edit (the loop, hooks,
-  prompts, settings) gets `Status: interactive`. The loop never picks it;
-  build it in an interactive session.
-- Before each step the supervisor marks the repo trusted in the CLI's
-  `~/.claude.json`. A loop never shows the trust dialog, and an untrusted
-  workspace ignores the allowlist in `.claude/settings.json`.
-- The loop takes the **first actionable item**, skipping blocked ones. With
-  nothing actionable, it reviews the code for bugs, security, efficiency and
-  refactoring, then adds up to eight `Status: proposed` items. Each has a
-  "Confirm" question, so nothing is built until the owner agrees. It audits
-  again only once those proposals are answered.
-- A question found mid-work **parks** the item. Its branch is pushed, an
-  issue is opened, and the loop moves on. The item resumes when the owner
-  answers.
-- Each judgement step is a separate headless run of the coding agent, with
-  a fresh context and its own model (`config/loop.toml`). Planning and
-  grooming use the strongest model. Implementing, reviewing and fixing use
-  the efficient one, and implementing moves up to the strong one after two
-  red rounds. `splk dev` decides whether the work is green, not the model.
-- **publish** commits the app's latest `.spl` to `packages/`, pushes the
-  branch, opens the PR and notifies the owner. Only the owner merges.
-- **Pause and resume**: `splk loop pause [reason]` stops after the running
-  step, and `splk loop resume` clears it. Then `splk loop run` again.
-  `splk loop status` shows where it is. All state is in
-  `.agent/loop/state.json` and is saved after each phase. Ctrl+C or a
-  reboot loses at most the running step.
-- **Usage limits**: a step that hits one is retried with backoff (5, 10, 20,
-  40, then every 60 minutes) until the limit resets. The owner is notified
-  after about 35 minutes. Other errors are retried twice. After four red
-  `splk dev` rounds the loop stops, pauses itself and notifies the owner.
-- **Notifications** go to `.agent/loop/notifications.log` and the run log,
-  and also to [ntfy](https://ntfy.sh) when `SPLK_NTFY_TOPIC` is set in `.env`
-  (install the ntfy app and subscribe to the same long random topic).
-
-Steps never push, merge, open PRs or call the GitHub API: the supervisor does
-those. Steps run with `SPLK_LOOP=1`, which turns on stricter hook rules (no
-pushes or GitHub writes; no edits to hooks, settings, prompts, the loop, or
-the `splk` code that decides green). They also run without `.env`'s secrets
-and without git credentials. Hooks are only a client-side check, though, so
-before the first run:
-
-1. Add a ruleset on `main` on GitHub (require a pull request and green CI,
-   block force pushes and deletions). This stops direct pushes. It does not
-   stop a merge made with the owner's own credentials.
-2. Put a read-only fine-grained token for this repo in `.env` as
-   `SPLK_LOOP_GH_TOKEN`. Steps then use it instead of the owner's `gh` login,
-   so a step that *accidentally* runs a GitHub write is refused by GitHub.
-   It is not a hard boundary: steps run as the owner's OS user, whose
-   credential store still holds the owner's login. Only a separate OS user
-   or container for the loop (planned with the move to a server) closes that.
-   The supervisor keeps using the owner's login to push and open PRs.
-
-Repo-wide Tooling items that change `tools/splk/` or the packager cannot be
-built by the loop (steps may not edit what verifies and packages their own
-work); the step finishes blocked and the item is done interactively.
-
-### Running the loop on a server
-
-[docker/compose.yaml](docker/compose.yaml) runs the loop around the clock,
-for example on an Unraid server, in one container
-([docker/dev/Dockerfile](docker/dev/Dockerfile)). That container holds
-Python, AppInspect, Playwright with Chromium, git, `gh` and a pinned Claude
-Code. It tests against a Splunk instance that you run and manage separately:
-the `server` target in `config/targets.toml`, whose host and folders come
-from `SPLK_TARGET_*` variables, so they stay out of this public repo.
-
-1. **Prepare your Splunk instance.** It should be a dev instance with the
-   Developer licence (the Free licence turns off users and roles, which the
-   tests need). Give it a `splk_test` index and a token (Settings > Tokens).
-2. **Share a folder for packages.** `splk deploy` installs by telling
-   splunkd a path, so both sides need the same folder:
-   - `SPLK_STAGE_HOST_PATH` is the host folder, mounted at `/stage` in the
-     container;
-   - `SPLK_TARGET_SERVER_STAGE_DIR` is the same folder as splunkd sees it.
-
-   The loop user (`LOOP_UID`/`LOOP_GID`; on Unraid shares, 99/100) must be
-   able to write it, and nothing else should: splunkd installs whatever is
-   there with admin rights. Keep it out of SMB/NFS exports that other
-   machines can write to.
-3. **Fill in `docker/.env`** from `docker/.env.example`.
-   `SPLK_TARGET_ALLOW_RESTART` is false unless you allow restarts. Without
-   it, a deploy that needs a restart fails and the loop stops for you.
-4. **Start it:** `docker compose up -d --build`. On first start the
-   container clones the repo into its `work` volume. It then waits until
-   `splk doctor` passes, and runs `splk loop run` from then on.
-5. **Control it** with
-   `docker compose exec -u loop -w /work/splunk_apps dev splk loop status`
-   (or `pause` or `resume`), and follow it with `docker compose logs -f dev`.
-
-The container gets an explicit list of variables, never the whole `.env`.
-It starts as root only long enough to write its secrets to the clone's
-`.env`. It then drops to the `loop` user with a clean environment holding
-only `CLAUDE_CODE_OAUTH_TOKEN`, which steps need. No secret is left in an
-environment the loop user can read, and `splk loop` keeps `.env` values out of
-every step.
-
-The `.env` file is still readable by the loop user, so a step that
-deliberately looked could read the supervisor's token. Only running steps
-under another user would close that. The ruleset on `main` is the boundary,
-as on Windows.
-
-On restart the loop refuses to start if the checked-out branch changed the
-tooling (`tools/`, hooks, loop and target settings, the packager), because
-the supervisor runs `splk` from that branch.
-
-The target settings are written to `.env` as well. In a loop step, `splk`
-reads the target name and the `SPLK_TARGET_*` overrides only from that file,
-never from the step's own environment. So one step command cannot send the
-Splunk token to another host or turn restarts on.
-
-`splk` sends the Splunk token with every request. With
-`SPLK_TARGET_VERIFY_TLS=false` (the default, for a self-signed certificate),
-anyone on the network path could impersonate splunkd and collect the token.
-Give splunkd a certificate the container trusts and set it to `true`, or keep
-both machines on a network you control.
-
-Not pinned yet: the base image digest, and checksums for the Claude Code
-installer and the `gh` apt key. Pin them on the first successful build.
+The live tests (`tests/live/<app>/`) and browser tests (`tests/ui/<app>/`) belong here but
+need that tool and a Splunk instance: they never run in plain `pytest` or CI. Work is
+requested by opening an issue on this repository.
 
 ## Packaging
 
@@ -492,7 +222,7 @@ python scripts/package_app.py fillcontinuous --outdir dist
 splunk-appinspect inspect dist/fillcontinuous-1.1.2.spl --mode test
 ```
 
-Or `splk inspect fillcontinuous`, which does both steps and also fails on any
+Or the development loop's `inspect` stage, which does both steps and also fails on any
 manual check not recorded in `.appinspect.manualcheck.yaml`, as CI does.
 
 Note the absence of `--included-tags`. CI runs the complete set for the same

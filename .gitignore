@@ -12,7 +12,7 @@ dist/
 *.spl
 *.tar.gz
 *.tgz
-# Except the latest package of each app, committed by `splk loop` so it can
+# Except the latest package of each app, committed with the change so it can
 # be downloaded from GitHub for a manual install.
 !packages/*.spl
 
@@ -83,11 +83,8 @@ Thumbs.db
 desktop.ini
 
 # ---------------------------------------------------------------------------
-# Agentic dev environment (splk + coding agent)
+# Coding-agent working files
 # ---------------------------------------------------------------------------
-# Machine-local run log, hook state and logs: evidence for the learning loop,
-# not source. Lessons distilled from it live in .claude/agent-memory/.
-.agent/
 # Personal agent overrides and personal subagent memory.
 CLAUDE.local.md
 .claude/settings.local.json
