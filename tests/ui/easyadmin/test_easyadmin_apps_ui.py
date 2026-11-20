@@ -1399,6 +1399,24 @@ def test_a_box_with_only_hidden_staged_copies_stays_on_show(open_view, macro, cl
     assert page.locator(ROOT + " .ea-apply").is_disabled()
 
 
+def _stage(page, name, button, target=None):
+    """Select the object called ``name`` in search, optionally pick a target app, click ``button``."""
+    _filter(page, name)
+    _object(page, "search", name).locator(".ea-select").check()
+    if target:
+        page.locator(ROOT + " .ea-move-target").select_option(target)
+    page.locator(ROOT + ' button[data-fid="%s"]' % button).click()
+    page.locator(ROOT + ' button[data-fid="clear-selection"]').click()
+
+
+def _macros_listed(page, shown):
+    """Tick or untick "macro" in the Types menu, so the staged macros are shown or hidden."""
+    page.locator(ROOT + ' button[data-fid="types-button"]').click()
+    box = page.locator(ROOT + ' input[data-fid="type:macro"]')
+    box.check() if shown else box.uncheck()
+    page.keyboard.press("Escape")
+
+
 def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cleanup_launcher_macros):
     """A move is counted in the box it goes to, a deletion in the box the object is in, when the
     Types menu keeps the object out of the list; both are said alongside a hidden copy."""
@@ -1406,23 +1424,13 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     cleanup_launcher_macros.extend([moved, copied])
     page = _open(open_view)
 
-    def stage(name, button, target=None):
-        _filter(page, name)
-        _object(page, "search", name).locator(".ea-select").check()
-        if target:
-            page.locator(ROOT + " .ea-move-target").select_option(target)
-        page.locator(ROOT + ' button[data-fid="%s"]' % button).click()
-        page.locator(ROOT + ' button[data-fid="clear-selection"]').click()
-
-    stage(moved, "move-selected", "launcher")
-    stage(deleted, "delete-selected")
+    _stage(page, moved, "move-selected", "launcher")
+    _stage(page, deleted, "delete-selected")
     assert "will be deleted" in _object(page, "search", deleted).inner_text()
     _filter(page, "")
     assert "moving from search" in page.locator(ROOT + " .ea-app[data-app='launcher']").inner_text()
 
-    page.locator(ROOT + ' button[data-fid="types-button"]').click()
-    page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
-    page.keyboard.press("Escape")
+    _macros_listed(page, False)
     launcher = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
     search = page.locator(ROOT + ' .ea-app[data-app="search"]')
     assert launcher.locator(".ea-hidden-staged").inner_text() == "1 staged move is hidden by the filters."
@@ -1433,14 +1441,10 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     assert moved not in search.inner_text()
 
     # A copy into the same box is said in the same line.
-    page.locator(ROOT + ' button[data-fid="types-button"]').click()
-    page.locator(ROOT + ' input[data-fid="type:macro"]').check()
-    page.keyboard.press("Escape")
-    stage(copied, "copy-selected", "launcher")
+    _macros_listed(page, True)
+    _stage(page, copied, "copy-selected", "launcher")
     _filter(page, "")
-    page.locator(ROOT + ' button[data-fid="types-button"]').click()
-    page.locator(ROOT + ' input[data-fid="type:macro"]').uncheck()
-    page.keyboard.press("Escape")
+    _macros_listed(page, False)
     assert launcher.locator(".ea-hidden-staged").inner_text() == \
         "1 staged copy and 1 staged move are hidden by the filters."
     assert search.locator(".ea-hidden-staged").inner_text() == \
@@ -1451,6 +1455,84 @@ def test_hidden_staged_moves_and_deletions_are_counted_too(open_view, macro, cle
     assert len(seen) == 1
     assert page.locator(ROOT + " .ea-apply").is_disabled()
     assert page.locator(ROOT + " .ea-hidden-staged").count() == 0
+
+
+def test_hidden_staged_moves_away_are_counted_alone_and_in_the_plural(open_view, macro, cleanup_launcher_macros):
+    """The note names a hidden move away on its own, singular and plural, with the verb agreeing;
+    the box the objects go to counts the same moves as "moves" (exact text: the plural contains
+    the singular's words)."""
+    first, second = macro(), macro()
+    cleanup_launcher_macros.extend([first, second])
+    page = _open(open_view)
+    launcher = page.locator(ROOT + ' .ea-app[data-app="launcher"]')
+    search = page.locator(ROOT + ' .ea-app[data-app="search"]')
+
+    _stage(page, first, "move-selected", "launcher")
+    _filter(page, "")
+    _macros_listed(page, False)
+    assert search.locator(".ea-hidden-staged").inner_text() == "1 staged move away is hidden by the filters."
+    assert launcher.locator(".ea-hidden-staged").inner_text() == "1 staged move is hidden by the filters."
+
+    _macros_listed(page, True)
+    _stage(page, second, "move-selected", "launcher")
+    _filter(page, "")
+    _macros_listed(page, False)
+    assert search.locator(".ea-hidden-staged").inner_text() == "2 staged moves away are hidden by the filters."
+    assert launcher.locator(".ea-hidden-staged").inner_text() == "2 staged moves are hidden by the filters."
+
+    seen = _accept_dialogs(page)
+    page.locator(ROOT + ' button[data-fid="discard"]').click()
+    assert len(seen) == 1
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
+    assert page.locator(ROOT + " .ea-hidden-staged").count() == 0
+
+
+def _focused(page):
+    """The focused element's data-fid and the app box it is in."""
+    return page.evaluate("""() => { const a = document.activeElement;
+        const box = a && a.closest ? a.closest('.ea-app') : null;
+        return [a && a.getAttribute ? a.getAttribute('data-fid') : null,
+                box ? box.getAttribute('data-app') : null]; }""")
+
+
+def test_the_struck_row_keeps_the_keyboard_when_the_filter_redraws(open_view, macro):
+    """The struck row's name has its own focus id (moving:<key>), distinct from the real row's in
+    the box the object goes to; focus on it comes back to it after the filter redraws the grid
+    and after the panel it opened is closed with Escape."""
+    name = macro()
+    page = _open(open_view)
+    _stage_move_to_launcher(page, name)
+    origin = _moving_out(page, "search", name)
+    fid = "moving:" + origin.get_attribute("data-key")
+    narrower = name[:-1]
+
+    # Typing the filter and moving focus in one call, so the pause cannot run out between them;
+    # the keys hold characters a raw attribute selector may not accept, hence the equality test.
+    page.evaluate("""([root, text, fid]) => {
+        const input = document.querySelector(root + ' .ea-filter');
+        input.value = text;
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        const button = Array.from(document.querySelectorAll(root + ' [data-fid]'))
+            .find(b => b.getAttribute('data-fid') === fid);
+        button.focus();
+    }""", [ROOT, narrower, fid])
+    _wait_drawn(page, "data-filter", narrower)
+    assert _focused(page) == [fid, "search"]
+
+    # A second redraw by another path: the panel opened from the struck name returns to it.
+    origin = _moving_out(page, "search", name)
+    origin.locator(".ea-object-name").click()
+    page.locator(ROOT + " .ea-panel .ea-settings").wait_for()
+    page.keyboard.press("Escape")
+    page.wait_for_function(
+        "fid => { const a = document.activeElement; return !!a && a.getAttribute('data-fid') === fid; }",
+        arg=fid)
+    assert _focused(page) == [fid, "search"]
+
+    seen = _accept_dialogs(page)
+    page.locator(ROOT + ' button[data-fid="discard"]').click()
+    assert len(seen) == 1
+    assert page.locator(ROOT + " .ea-apply").is_disabled()
 
 
 # ------------------------------------------- the panel and the page buttons
